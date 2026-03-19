@@ -1,0 +1,90 @@
+[gd_scene load_steps=2 format=3 uid="uid://chat_scene"]
+
+[ext_resource type="Script" path="res://scripts/amadeus_chat_ui.gd" id="1"]
+
+[node name="AmadeusChat" type="Node"]
+script = ExtResource("1")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="UI" type="Control" parent="CanvasLayer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="Panel" parent="CanvasLayer/UI"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="VBox" type="VBoxContainer" parent="CanvasLayer/UI"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = -80.0
+
+[node name="Title" type="Label" parent="CanvasLayer/UI/VBox"]
+layout_mode = 2
+text = "=== Amadeus Chat 实验版 ==="
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="CanvasLayer/UI/VBox"]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="CanvasLayer/UI/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ChatHistory" type="RichTextLabel" parent="CanvasLayer/UI/VBox/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+bbcode_enabled = true
+text = "欢迎使用 Amadeus Chat！
+请在下方输入你的消息开始对话。
+"
+scroll_following = true
+
+[node name="InputContainer" type="HBoxContainer" parent="CanvasLayer/UI"]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -60.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="InputEdit" type="LineEdit" parent="CanvasLayer/UI/InputContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "输入消息..."
+expand_to_text_length = true
+
+[node name="SendButton" type="Button" parent="CanvasLayer/UI/InputContainer"]
+layout_mode = 2
+text = "发送"
+
+[node name="StatusLabel" type="Label" parent="CanvasLayer/UI"]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -100.0
+offset_right = -20.0
+offset_bottom = -80.0
+text = "状态: 就绪"
+horizontal_alignment = 1
