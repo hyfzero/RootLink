@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-03-22T17:39:37.289117",
+  "providers": {
+    "minimax": {
+      "base_url": "https://api.minimaxi.com/v1",
+      "api_type": "anthropic-messages",
+      "auth_header": true,
+      "api_key": "sk-cp-vAU2LGd4d-l4_nkQGV2yQh_QeWxPFh2GZPsQLx0q4YyLMzwf2kAyjBs1-OIeJSChQxFuQyVtJ6aXk3gPthXALlYzL06p3_HYDlS7316Up80p0EoDZqVftcY"
+    }
+  },
+  "default_provider": "minimax",
+  "default_model": null
+}

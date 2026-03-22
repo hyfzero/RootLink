@@ -25,7 +25,7 @@ from agent_core import (
     PromptBuilder,
     build_full_conversation_prompt,
 )
-from agent_core.config import AgentConfig
+from agent_core.brain import AgentConfig
 
 
 def create_kurisu_persona() -> Persona:

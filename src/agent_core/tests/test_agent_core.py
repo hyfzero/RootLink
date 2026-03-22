@@ -6,12 +6,12 @@ import os
 # Add grandparent (src/) to path for absolute imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from agent_core.persona import Persona, PersonaProfile, MemoryEntry
-from agent_core.history import MessageHistory, MessageRole, calculate_message_weight, estimate_tokens
-from agent_core.tags import TagGenerator, TagCache, ReplyTag
-from agent_core.config import AgentConfig, HistoryConfig
-from agent_core.persistence import AgentStorage
-from agent_core.prompt_builder import PromptBuilder, build_full_conversation_prompt
+from agent_core.brain import Persona, PersonaProfile, MemoryEntry
+from agent_core.brain import MessageHistory, MessageRole, calculate_message_weight, estimate_tokens
+from agent_core.brain import TagGenerator, TagCache, ReplyTag
+from agent_core.brain import AgentConfig, HistoryConfig
+from agent_core.brain import AgentStorage
+from agent_core.brain import PromptBuilder, build_full_conversation_prompt
 
 
 def test_persona():
