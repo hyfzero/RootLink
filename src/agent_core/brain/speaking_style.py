@@ -275,12 +275,14 @@ class SpeakingStyleEngine:
         self,
         base_style: Optional[SpeakingStyle] = None,
         preset_name: Optional[str] = None,
+        influence_weight: float = 1.0,
     ):
         """初始化说话风格引擎。
 
         Args:
             base_style: 自定义基础风格
             preset_name: 预设风格名称
+            influence_weight: 影响权重 (0.0-1.0)，0.0 = 几乎不影响，1.0 = 完全影响
         """
         if preset_name and preset_name in PRESET_STYLES:
             self.base_style = PRESET_STYLES[preset_name]
@@ -289,6 +291,7 @@ class SpeakingStyleEngine:
         else:
             self.base_style = SpeakingStyle()
 
+        self.influence_weight = influence_weight
         self._current_emotion: Optional[str] = None
         self._custom_modifiers: dict[str, StyleModifier] = {}
 
@@ -405,7 +408,7 @@ class SpeakingStyleEngine:
     def build_style_prompt(self, emotion: Optional[str] = None) -> str:
         """构建风格指导Prompt。
 
-        用于在系统提示中加入说话风格指导。
+        用于在系统提示中加入说话风格指导。影响权重越低，内容越简略。
 
         Args:
             emotion: 可选的当前情绪
@@ -413,38 +416,48 @@ class SpeakingStyleEngine:
         Returns:
             风格指导文本
         """
+        # 权重为0时完全不输出风格指导
+        if self.influence_weight <= 0.0:
+            return ""
+
         style = self.get_style(emotion)
         parts = []
 
-        # 词汇复杂度
-        if style.vocabulary_level == "simple":
-            parts.append("使用简单易懂的语言，避免生僻词汇。")
-        elif style.vocabulary_level == "academic":
-            parts.append("使用正式、专业的学术语言。")
+        # 根据权重决定详细程度
+        weight = self.influence_weight
 
-        # 句长偏好
-        if style.sentence_length == "short":
-            parts.append("使用短句，简洁明了。")
-        elif style.sentence_length == "long":
-            parts.append("使用长句，详细阐述。")
+        # 词汇复杂度 (权重 > 0.3 时输出)
+        if weight > 0.3:
+            if style.vocabulary_level == "simple":
+                parts.append("使用简单易懂的语言。")
+            elif style.vocabulary_level == "academic":
+                parts.append("使用正式、专业的学术语言。")
 
-        # 口头禅
-        if style.filler_words:
-            fillers = "、".join(style.filler_words[:3])
-            parts.append(f"可以适当使用口头禅：{fillers}。")
+        # 句长偏好 (权重 > 0.3 时输出)
+        if weight > 0.3:
+            if style.sentence_length == "short":
+                parts.append("使用短句，简洁明了。")
+            elif style.sentence_length == "long":
+                parts.append("使用长句，详细阐述。")
 
-        # 情绪词
-        if style.emotion_words:
+        # 口头禅 (权重 > 0.6 时输出，避免口癖太重)
+        if weight > 0.6 and style.filler_words:
+            fillers = "、".join(style.filler_words[:2])
+            parts.append(f"偶尔使用口头禅：{fillers}。")
+
+        # 情绪词 (权重 > 0.7 时输出)
+        if weight > 0.7 and style.emotion_words:
             for emotion, words in style.emotion_words.items():
                 if words:
                     emotion_word = words[0]
                     parts.append(f"表达{emotion}时可用：{emotion_word}。")
 
-        # 标点习惯
-        if style.exclamation_rate > 0.2:
-            parts.append("可以适当使用感叹号表达情感。")
-        elif style.exclamation_rate < 0.05:
-            parts.append("保持克制的标点使用，避免过多感叹号。")
+        # 标点习惯 (权重 > 0.5 时输出)
+        if weight > 0.5:
+            if style.exclamation_rate > 0.2:
+                parts.append("可以适当使用感叹号表达情感。")
+            elif style.exclamation_rate < 0.05:
+                parts.append("保持克制的标点使用。")
 
         return " ".join(parts)
 
@@ -452,6 +465,7 @@ class SpeakingStyleEngine:
         """转换为字典格式。"""
         return {
             "base_style": self.base_style.to_dict(),
+            "influence_weight": self.influence_weight,
             "current_emotion": self._current_emotion,
             "custom_modifiers": {
                 k: {
@@ -471,7 +485,8 @@ class SpeakingStyleEngine:
     def from_dict(cls, data: dict) -> "SpeakingStyleEngine":
         """从字典创建对象。"""
         base_style = SpeakingStyle.from_dict(data.get("base_style", {}))
-        engine = cls(base_style=base_style)
+        influence_weight = data.get("influence_weight", 1.0)
+        engine = cls(base_style=base_style, influence_weight=influence_weight)
         engine._current_emotion = data.get("current_emotion")
 
         for k, v in data.get("custom_modifiers", {}).items():

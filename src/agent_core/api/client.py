@@ -161,7 +161,10 @@ class ChatAgent:
             except json.JSONDecodeError:
                 continue
 
-        return final_chunk or StreamChunk(delta=accumulated, is_complete=True)
+        # 构建完整的响应
+        is_complete = final_chunk.is_complete if final_chunk else True
+        reasoning = final_chunk.reasoning if final_chunk else None
+        return StreamChunk(delta=accumulated, is_complete=is_complete, reasoning=reasoning)
 
     @property
     def provider(self) -> APIProvider:
