@@ -101,6 +101,9 @@ class DailySummary:
         topics: 讨论话题列表
         message_count: 消息总数
         created_at: 创建时间戳
+        emotional_tone: 情感基调 (LLM驱动新增)
+        user_preferences: 用户偏好列表 (LLM驱动新增)
+        unfinished_topics: 未完成话题列表 (LLM驱动新增)
     """
 
     date: str
@@ -109,6 +112,9 @@ class DailySummary:
     topics: list[str]
     message_count: int
     created_at: float
+    emotional_tone: Optional[str] = None  # LLM驱动新增
+    user_preferences: list[str] = field(default_factory=list)  # LLM驱动新增
+    unfinished_topics: list[str] = field(default_factory=list)  # LLM驱动新增
 
     def to_dict(self) -> dict:
         """转换为字典格式。"""
@@ -119,6 +125,9 @@ class DailySummary:
             "topics": self.topics,
             "message_count": self.message_count,
             "created_at": self.created_at,
+            "emotional_tone": self.emotional_tone,
+            "user_preferences": self.user_preferences,
+            "unfinished_topics": self.unfinished_topics,
         }
 
     @classmethod
@@ -131,6 +140,9 @@ class DailySummary:
             topics=data.get("topics", []),
             message_count=data.get("message_count", 0),
             created_at=data.get("created_at", 0.0),
+            emotional_tone=data.get("emotional_tone"),
+            user_preferences=data.get("user_preferences", []),
+            unfinished_topics=data.get("unfinished_topics", []),
         )
 
 
@@ -654,3 +666,342 @@ class MessageHistory:
         history.current_queue = MessageQueue.from_dict(queue_data)
 
         return history
+
+
+# ============================================================================
+# LLM驱动的记忆总结
+# ============================================================================
+
+from typing import Callable, Awaitable, Union
+
+
+# 默认的同步LLM调用类型
+LLMCallable = Callable[[str], str]
+
+
+def _default_summary_prompt(date: str, messages: list[Message]) -> str:
+    """构建用于生成摘要的默认Prompt。
+
+    Args:
+        date: 日期字符串
+        messages: 消息列表
+
+    Returns:
+        摘要Prompt
+    """
+    role_names = {
+        MessageRole.USER: "用户",
+        MessageRole.ASSISTANT: "助手",
+        MessageRole.SYSTEM: "系统",
+        MessageRole.TOOL: "工具",
+    }
+
+    formatted_messages = []
+    for msg in messages:
+        role_text = role_names.get(msg.role, msg.role.value)
+        content = msg.content[:300] + "..." if len(msg.content) > 300 else msg.content
+        formatted_messages.append(f"[{role_text}] {content}")
+
+    messages_text = "\n".join(formatted_messages)
+
+    return f"""你是一个对话摘要助手。请分析以下日期为 {date} 的对话，生成简洁但信息丰富的摘要。
+
+对话内容：
+{messages_text}
+
+请按以下JSON格式输出摘要（只输出JSON，不要有其他内容）：
+{{
+    "summary_text": "2-3句话的对话摘要，重点是重要事件、决定和用户偏好",
+    "important_messages": ["最重要的1-2条消息ID或简短描述"],
+    "topics": ["讨论的主要话题"],
+    "emotional_tone": "整体情感基调（积极/中性/消极/混合）",
+    "user_preferences": ["用户表达的任何偏好或决定"],
+    "unfinished_topics": ["未完成或需要后续跟进的话题"]
+}}
+
+注意：
+- summary_text 应该简洁但包含关键信息
+- topics 只列出最重要的2-3个话题
+- 如果没有重要的用户偏好，user_preferences 可以为空数组
+- 如果没有未完成的话题，unfinished_topics 可以为空数组"""
+
+
+class SummaryGenerator:
+    """LLM驱动的摘要生成器。
+
+    使用LLM生成高质量的对话摘要，替代规则驱动的方法。
+    支持自定义LLM调用器，保持向后兼容。
+    """
+
+    def __init__(
+        self,
+        llm_callable: Optional[LLMCallable] = None,
+        use_fallback: bool = True,
+    ):
+        """初始化摘要生成器。
+
+        Args:
+            llm_callable: LLM调用函数，签名为 (prompt: str) -> str
+                         如果为None，使用规则驱动的后备方法
+            use_fallback: 当LLM调用失败时是否使用规则后备
+        """
+        self.llm_callable = llm_callable
+        self.use_fallback = use_fallback
+
+    def generate_summary(
+        self,
+        date: str,
+        messages: list[Message],
+        config: Optional[dict] = None,
+    ) -> DailySummary:
+        """生成每日摘要。
+
+        Args:
+            date: 日期字符串
+            messages: 消息列表
+            config: 可选的配置字典
+
+        Returns:
+            DailySummary对象
+        """
+        if not messages:
+            return DailySummary(
+                date=date,
+                summary_text="今日无消息。",
+                important_messages=[],
+                topics=[],
+                message_count=0,
+                created_at=time.time(),
+            )
+
+        # 优先尝试LLM生成
+        if self.llm_callable is not None:
+            try:
+                return self._generate_with_llm(date, messages)
+            except Exception as e:
+                if self.use_fallback:
+                    return self._generate_with_rules(date, messages)
+                else:
+                    raise RuntimeError(f"LLM摘要生成失败: {e}")
+
+        # 使用规则后备方法
+        return self._generate_with_rules(date, messages)
+
+    def _generate_with_llm(self, date: str, messages: list[Message]) -> DailySummary:
+        """使用LLM生成摘要。
+
+        Args:
+            date: 日期字符串
+            messages: 消息列表
+
+        Returns:
+            DailySummary对象
+        """
+        prompt = _default_summary_prompt(date, messages)
+        response_text = self.llm_callable(prompt)
+
+        # 解析JSON响应
+        import json
+
+        try:
+            # 尝试提取JSON（可能在markdown代码块中）
+            json_str = response_text.strip()
+            if json_str.startswith("```json"):
+                json_str = json_str[7:]
+            if json_str.startswith("```"):
+                json_str = json_str[3:]
+            if json_str.endswith("```"):
+                json_str = json_str[:-3]
+            json_str = json_str.strip()
+
+            data = json.loads(json_str)
+
+            return DailySummary(
+                date=date,
+                summary_text=data.get("summary_text", "今日对话摘要。"),
+                important_messages=data.get("important_messages", []),
+                topics=data.get("topics", []),
+                message_count=len(messages),
+                created_at=time.time(),
+                emotional_tone=data.get("emotional_tone"),
+                user_preferences=data.get("user_preferences", []),
+                unfinished_topics=data.get("unfinished_topics", []),
+            )
+        except (json.JSONDecodeError, KeyError) as e:
+            # JSON解析失败，尝试规则后备
+            raise RuntimeError(f"JSON解析失败: {e}, 原始响应: {response_text[:200]}")
+
+    def _generate_with_rules(self, date: str, messages: list[Message]) -> DailySummary:
+        """使用规则方法生成摘要（后备方案）。
+
+        Args:
+            date: 日期字符串
+            messages: 消息列表
+
+        Returns:
+            DailySummary对象
+        """
+        # 复用DailyHistory的规则方法逻辑
+        daily = DailyHistory(date)
+        for msg in messages:
+            daily.messages.append(msg)
+        return daily.generate_summary(config=None)
+
+
+class AsyncSummaryGenerator:
+    """异步LLM驱动的摘要生成器。
+
+    支持异步LLM调用（如aiohttp或asyncio）。
+    """
+
+    def __init__(
+        self,
+        llm_callable: Callable[[str], Awaitable[str]],
+        use_fallback: bool = True,
+    ):
+        """初始化异步摘要生成器。
+
+        Args:
+            llm_callable: 异步LLM调用函数，签名为 async def (prompt: str) -> str
+            use_fallback: 当LLM调用失败时是否使用规则后备
+        """
+        self.llm_callable = llm_callable
+        self.use_fallback = use_fallback
+
+    async def generate_summary(
+        self,
+        date: str,
+        messages: list[Message],
+        config: Optional[dict] = None,
+    ) -> DailySummary:
+        """异步生成每日摘要。
+
+        Args:
+            date: 日期字符串
+            messages: 消息列表
+            config: 可选的配置字典
+
+        Returns:
+            DailySummary对象
+        """
+        if not messages:
+            return DailySummary(
+                date=date,
+                summary_text="今日无消息。",
+                important_messages=[],
+                topics=[],
+                message_count=0,
+                created_at=time.time(),
+            )
+
+        # 优先尝试LLM生成
+        try:
+            return await self._generate_with_llm(date, messages)
+        except Exception as e:
+            if self.use_fallback:
+                return self._generate_with_rules(date, messages)
+            else:
+                raise RuntimeError(f"LLM摘要生成失败: {e}")
+
+    async def _generate_with_llm(self, date: str, messages: list[Message]) -> DailySummary:
+        """异步使用LLM生成摘要。
+
+        Args:
+            date: 日期字符串
+            messages: 消息列表
+
+        Returns:
+            DailySummary对象
+        """
+        import json
+
+        prompt = _default_summary_prompt(date, messages)
+        response_text = await self.llm_callable(prompt)
+
+        try:
+            json_str = response_text.strip()
+            if json_str.startswith("```json"):
+                json_str = json_str[7:]
+            if json_str.startswith("```"):
+                json_str = json_str[3:]
+            if json_str.endswith("```"):
+                json_str = json_str[:-3]
+            json_str = json_str.strip()
+
+            data = json.loads(json_str)
+
+            return DailySummary(
+                date=date,
+                summary_text=data.get("summary_text", "今日对话摘要。"),
+                important_messages=data.get("important_messages", []),
+                topics=data.get("topics", []),
+                message_count=len(messages),
+                created_at=time.time(),
+                emotional_tone=data.get("emotional_tone"),
+                user_preferences=data.get("user_preferences", []),
+                unfinished_topics=data.get("unfinished_topics", []),
+            )
+        except (json.JSONDecodeError, KeyError) as e:
+            raise RuntimeError(f"JSON解析失败: {e}")
+
+    def _generate_with_rules(self, date: str, messages: list[Message]) -> DailySummary:
+        """使用规则方法生成摘要（后备方案）。
+
+        Args:
+            date: 日期字符串
+            messages: 消息列表
+
+        Returns:
+            DailySummary对象
+        """
+        daily = DailyHistory(date)
+        for msg in messages:
+            daily.messages.append(msg)
+        return daily.generate_summary(config=None)
+
+
+# 为DailySummary添加新字段后的扩展方法
+def generate_summary_with_llm(
+    daily: DailyHistory,
+    llm_callable: Optional[LLMCallable] = None,
+    config: Optional[dict] = None,
+) -> DailySummary:
+    """为DailyHistory生成LLM驱动的摘要。
+
+    这是一个便捷函数，将LLM驱动的摘要生成与DailyHistory关联。
+
+    Args:
+        daily: DailyHistory对象
+        llm_callable: LLM调用函数
+        config: 可选的配置字典
+
+    Returns:
+        DailySummary对象
+    """
+    generator = SummaryGenerator(llm_callable=llm_callable)
+    return generator.generate_summary(daily.date, daily.messages, config)
+
+
+def generate_daily_summaries_with_llm(
+    history: MessageHistory,
+    llm_callable: Optional[LLMCallable] = None,
+) -> dict[str, DailySummary]:
+    """为MessageHistory中的所有日期生成LLM驱动的摘要。
+
+    Args:
+        history: MessageHistory对象
+        llm_callable: LLM调用函数
+
+    Returns:
+        日期到摘要的映射字典
+    """
+    generator = SummaryGenerator(llm_callable=llm_callable)
+    results = {}
+
+    for date_str, daily in history.daily_histories.items():
+        if daily.messages:
+            summary = generator.generate_summary(date_str, daily.messages)
+            results[date_str] = summary
+            history.daily_summaries[date_str] = summary
+
+    return results

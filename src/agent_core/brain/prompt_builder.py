@@ -22,6 +22,7 @@ from typing import Optional
 from .persona import Persona
 from .history import MessageHistory, MessageRole
 from .config import AgentConfig
+from .speaking_style import SpeakingStyleEngine
 
 
 def format_message_for_context(message) -> str:
@@ -83,6 +84,7 @@ class PromptBuilder:
         persona: Persona,
         history: Optional[MessageHistory] = None,
         config: Optional[AgentConfig] = None,
+        style_engine: Optional[SpeakingStyleEngine] = None,
     ):
         """初始化Prompt构建器。
 
@@ -90,10 +92,12 @@ class PromptBuilder:
             persona: Persona对象
             history: 可选的MessageHistory对象
             config: 可选的AgentConfig对象
+            style_engine: 可选的说话风格引擎
         """
         self.persona = persona
         self.history = history
         self.config = config or AgentConfig()
+        self.style_engine = style_engine
 
     def build_identity_section(self) -> str:
         """构建身份/角色定义段落。
@@ -102,6 +106,26 @@ class PromptBuilder:
             身份描述文本
         """
         return self.persona.build_persona_text()
+
+    def build_style_section(self, emotion: Optional[str] = None) -> str:
+        """构建说话风格指导段落。
+
+        Args:
+            emotion: 可选的当前情绪，会影响风格调整
+
+        Returns:
+            风格指导文本
+        """
+        if not self.style_engine:
+            return ""
+
+        style_prompt = self.style_engine.build_style_prompt(emotion=emotion)
+        if not style_prompt:
+            return ""
+
+        parts = ["## 说话风格"]
+        parts.append(style_prompt)
+        return "\n".join(parts)
 
     def build_memory_section(self, limit: int = 5) -> str:
         """构建近期记忆段落。
@@ -221,10 +245,13 @@ class PromptBuilder:
 
         return "\n".join(parts)
 
-    def build_system_prompt(self) -> str:
+    def build_system_prompt(self, emotion: Optional[str] = None) -> str:
         """构建完整的系统Prompt。
 
         按顺序包含所有段落。
+
+        Args:
+            emotion: 可选的当前情绪，用于风格调整
 
         Returns:
             完整的系统Prompt文本
@@ -235,25 +262,31 @@ class PromptBuilder:
         sections.append(self.build_identity_section())
         sections.append("")
 
-        # 2. 近期记忆
+        # 2. 说话风格
+        style_section = self.build_style_section(emotion=emotion)
+        if style_section:
+            sections.append(style_section)
+            sections.append("")
+
+        # 3. 近期记忆
         memory_section = self.build_memory_section()
         if memory_section:
             sections.append(memory_section)
             sections.append("")
 
-        # 3. 历史摘要
+        # 4. 历史摘要
         summary_section = self.build_history_summary_section()
         if summary_section:
             sections.append(summary_section)
             sections.append("")
 
-        # 4. 队列消息
+        # 5. 队列消息
         queue_section = self.build_queue_section()
         if queue_section:
             sections.append(queue_section)
             sections.append("")
 
-        # 5. 运行时信息
+        # 6. 运行时信息
         sections.append(self.build_runtime_section())
         sections.append("")
 
@@ -264,6 +297,7 @@ class PromptBuilder:
         query: Optional[str] = None,
         include_queue: bool = True,
         max_queue_tokens: Optional[int] = None,
+        emotion: Optional[str] = None,
     ) -> str:
         """构建上下文Prompt。
 
@@ -271,6 +305,7 @@ class PromptBuilder:
             query: 可选的搜索关键词
             include_queue: 是否包含队列消息
             max_queue_tokens: 队列消息的最大Token数
+            emotion: 可选的当前情绪，用于风格调整
 
         Returns:
             上下文Prompt文本
@@ -280,6 +315,12 @@ class PromptBuilder:
         # 身份定义
         sections.append(self.build_identity_section())
         sections.append("")
+
+        # 说话风格
+        style_section = self.build_style_section(emotion=emotion)
+        if style_section:
+            sections.append(style_section)
+            sections.append("")
 
         # 搜索相关的记忆
         if query:
@@ -326,6 +367,8 @@ def build_full_conversation_prompt(
     history: MessageHistory,
     current_message: str,
     config: Optional[AgentConfig] = None,
+    style_engine: Optional[SpeakingStyleEngine] = None,
+    emotion: Optional[str] = None,
 ) -> str:
     """构建完整的对话Prompt。
 
@@ -336,17 +379,20 @@ def build_full_conversation_prompt(
         history: MessageHistory对象
         current_message: 当前用户消息
         config: 可选的AgentConfig对象
+        style_engine: 可选的说话风格引擎
+        emotion: 可选的当前情绪
 
     Returns:
         完整对话Prompt文本
     """
-    builder = PromptBuilder(persona, history, config)
+    builder = PromptBuilder(persona, history, config, style_engine)
 
     # 基础上下文
     context = builder.build_context_prompt(
         query=None,
         include_queue=True,
         max_queue_tokens=config.history.max_context_tokens // 4 if config else 1000,
+        emotion=emotion,
     )
 
     # 添加当前消息

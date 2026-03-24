@@ -7,6 +7,7 @@
 - config: 配置管理
 - persistence: JSON/Markdown文件持久化
 - prompt_builder: 分段式Prompt构建
+- speaking_style: 说话风格引擎
 """
 
 from .persona import Persona, PersonaProfile, MemoryEntry
@@ -19,6 +20,10 @@ from .history import (
     MessageRole,
     calculate_message_weight,
     estimate_tokens,
+    SummaryGenerator,
+    AsyncSummaryGenerator,
+    generate_summary_with_llm,
+    generate_daily_summaries_with_llm,
 )
 from .tags import ReplyTag, TagGenerator, TagCache
 from .config import AgentConfig, HistoryConfig, TagsConfig, StorageConfig, PersonaConfig
@@ -28,6 +33,15 @@ from .prompt_builder import (
     build_minimal_prompt,
     build_full_conversation_prompt,
     build_memory_flush_prompt,
+)
+from .speaking_style import (
+    SpeakingStyle,
+    SpeakingStyleEngine,
+    StyleModifier,
+    PRESET_STYLES,
+    EMOTION_MODIFIERS,
+    get_preset_style,
+    list_preset_styles,
 )
 
 __all__ = [
@@ -44,6 +58,11 @@ __all__ = [
     "MessageRole",
     "calculate_message_weight",
     "estimate_tokens",
+    # LLM摘要生成
+    "SummaryGenerator",
+    "AsyncSummaryGenerator",
+    "generate_summary_with_llm",
+    "generate_daily_summaries_with_llm",
     # 标签模块
     "ReplyTag",
     "TagGenerator",
@@ -65,4 +84,12 @@ __all__ = [
     "build_minimal_prompt",
     "build_full_conversation_prompt",
     "build_memory_flush_prompt",
+    # 说话风格引擎
+    "SpeakingStyle",
+    "SpeakingStyleEngine",
+    "StyleModifier",
+    "PRESET_STYLES",
+    "EMOTION_MODIFIERS",
+    "get_preset_style",
+    "list_preset_styles",
 ]
