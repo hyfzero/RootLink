@@ -7,7 +7,7 @@
 import json
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -256,7 +256,7 @@ class SessionStorage:
         today = datetime.now()
 
         for i in range(days):
-            date = (today - datetime.timedelta(days=i)).strftime("%Y-%m-%d")
+            date = (today - timedelta(days=i)).strftime("%Y-%m-%d")
 
             # 先尝试 current
             session_path = self._get_session_path(date, is_archive=False)

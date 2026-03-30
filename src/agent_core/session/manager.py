@@ -10,6 +10,7 @@ from typing import Optional, Any
 
 from ..api.client import ChatAgent
 from ..api.adapter import ModelConfig
+from ..api.message import Message as ApiMessage, MessageRole as ApiMessageRole
 from ..brain import (
     ReplyTag,
     TagGenerator,
@@ -344,9 +345,10 @@ class SessionManager:
         stream: bool
     ) -> dict:
         """调用 API（异步）"""
+        # 使用 api.message.Message 而不是 brain.Message
         messages = [
-            Message(id="system", role=MessageRole.SYSTEM, content=system_prompt, timestamp=0),
-            Message(id="context", role=MessageRole.USER, content=context, timestamp=0),
+            ApiMessage(role=ApiMessageRole.SYSTEM, content=system_prompt),
+            ApiMessage(role=ApiMessageRole.USER, content=context),
         ]
 
         response = self.chat_agent.chat(messages, stream=stream)
@@ -360,9 +362,10 @@ class SessionManager:
 
     def _call_api_sync(self, system_prompt: str, context: str) -> dict:
         """调用 API（同步）"""
+        # 使用 api.message.Message 而不是 brain.Message
         messages = [
-            Message(id="system", role=MessageRole.SYSTEM, content=system_prompt, timestamp=0),
-            Message(id="context", role=MessageRole.USER, content=context, timestamp=0),
+            ApiMessage(role=ApiMessageRole.SYSTEM, content=system_prompt),
+            ApiMessage(role=ApiMessageRole.USER, content=context),
         ]
 
         response = self.chat_agent.chat(messages, stream=False)

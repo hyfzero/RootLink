@@ -15,6 +15,7 @@ from ..brain import (
     PromptBuilder,
     AgentConfig,
 )
+from ..brain.speaking_style import PRESET_STYLES
 from .path_resolver import PathResolver
 
 
@@ -114,10 +115,13 @@ class BrainRegistry:
         history = self._load_history(history_dir, config)
 
         # 加载或创建 Style Engine
-        style_engine = SpeakingStyleEngine(
-            style=persona.profile.speaking_style,
-            emotion_modifiers={}
-        )
+        speaking_style_str = persona.profile.speaking_style
+        # 检查是否是预设风格
+        if speaking_style_str in PRESET_STYLES:
+            style_engine = SpeakingStyleEngine(preset_name=speaking_style_str)
+        else:
+            # 使用默认风格，可通过配置自定义
+            style_engine = SpeakingStyleEngine(preset_name="gentle")
 
         # 创建 PromptBuilder
         prompt_builder = PromptBuilder(
