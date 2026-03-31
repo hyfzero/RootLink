@@ -1,0 +1,51 @@
+{
+  "base_style": {
+    "vocabulary_level": "academic",
+    "sentence_length": "medium",
+    "exclamation_rate": 0.08,
+    "question_rate": 0.15,
+    "ellipsis_rate": 0.1,
+    "filler_words": [
+      "哼",
+      "才不是",
+      "呃",
+      "那个",
+      "总之"
+    ],
+    "emotion_words": {
+      "happy": [
+        "哼",
+        "算你走运",
+        "别误会"
+      ],
+      "angry": [
+        
+        "可恶",
+        "烦死了",
+        "气死了"
+      ],
+      "embarrassed": [
+        "才",
+        "才不是",
+        "呃",
+        "那个"
+      ],
+      "thinking": [
+        "然而",
+        "不过",
+        "从理论上说",
+        "综上所述"
+      ],
+      "surprised": [
+        "诶",
+        "什么",
+        "等等"
+      ]
+    },
+    "emoji_usage": "sparse",
+    "parenthesis_usage": "sparse"
+  },
+  "influence_weight": 0.2,
+  "current_emotion": null,
+  "custom_modifiers": {}
+}

@@ -54,6 +54,68 @@ from agent_core.session import (
     BrainRegistry,
     PathResolver,
 )
+import json
+
+
+def load_persona_from_path(base_path: str) -> tuple[Optional[Persona], Optional[SpeakingStyleEngine]]:
+    """从指定路径加载 Persona 和 SpeakingStyle。
+
+    期望目录结构:
+        base_path/
+            persona/
+                profile.json
+                memories.json
+            speaking_style.json
+
+    Args:
+        base_path: 包含 persona/ 和 speaking_style.json 的目录路径
+
+    Returns:
+        (Persona, SpeakingStyleEngine) 元组，任一可能为 None
+    """
+    persona_path = Path(base_path)
+    persona = None
+    style_engine = None
+
+    # 加载 profile.json
+    profile_file = persona_path / "persona" / "profile.json"
+    if profile_file.exists():
+        try:
+            with open(profile_file, "r", encoding="utf-8") as f:
+                profile_data = json.load(f)
+            profile = PersonaProfile.from_dict(profile_data)
+            persona = Persona(profile)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"  警告: 无法加载 profile.json: {e}")
+
+    # 加载 memories.json
+    memories_file = persona_path / "persona" / "memories.json"
+    if memories_file.exists() and persona:
+        try:
+            with open(memories_file, "r", encoding="utf-8") as f:
+                memories_data = json.load(f)
+
+            from agent_core.brain.persona import MemoryEntry
+            for m in memories_data.get("episodic_memories", []):
+                persona.episodic_memories.append(MemoryEntry.from_dict(m))
+            for m in memories_data.get("preference_memories", []):
+                persona.preference_memories.append(MemoryEntry.from_dict(m))
+            for m in memories_data.get("fact_memories", []):
+                persona.fact_memories.append(MemoryEntry.from_dict(m))
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"  警告: 无法加载 memories.json: {e}")
+
+    # 加载 speaking_style.json
+    style_file = persona_path / "speaking_style.json"
+    if style_file.exists():
+        try:
+            with open(style_file, "r", encoding="utf-8") as f:
+                style_data = json.load(f)
+            style_engine = SpeakingStyleEngine.from_dict(style_data)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"  警告: 无法加载 speaking_style.json: {e}")
+
+    return persona, style_engine
 
 
 def load_model_from_config(config_dir: str = "./config") -> ModelConfig:
@@ -88,26 +150,51 @@ def load_model_from_config(config_dir: str = "./config") -> ModelConfig:
     )
 
 
-def create_default_brain(brain_id: str = "default") -> dict:
-    """创建默认 Brain 组件"""
+def create_default_brain(
+    persona_path: Optional[str] = None,
+) -> dict:
+    """创建默认 Brain 组件
 
-    # 1. 创建角色配置
-    profile = PersonaProfile(
-        name="阿玛迪斯",
-        age=20,
-        gender="unknown",
-        personality_traits=["智能", "友善", "好奇"],
-        background="一个基于大语言模型的AI助手",
-        speaking_style="friendly",
-    )
+    Args:
+        brain_id: Brain ID
+        persona_path: 可选的 persona 数据路径，如果提供则从该路径加载
+    """
 
-    # 2. 创建人格管理器
-    persona = Persona(profile)
-    persona.add_memory(
-        content="用户第一次启动会话",
-        memory_type="episodic",
-        importance=1.0,
-    )
+    # 1. 尝试从路径加载 Persona 和 SpeakingStyle
+    persona = None
+    style_engine = None
+    if persona_path:
+        print(f"  - 从 {persona_path} 加载 persona 数据...")
+        loaded_persona, loaded_style = load_persona_from_path(persona_path)
+        if loaded_persona:
+            persona = loaded_persona
+            print(f"    成功加载 Persona: {persona.profile.name}")
+        if loaded_style:
+            style_engine = loaded_style
+            print(f"    成功加载 SpeakingStyle")
+
+    # 2. 如果没有加载成功，创建默认配置
+    if persona is None:
+        profile = PersonaProfile(
+            name="阿玛迪斯",
+            age=20,
+            gender="unknown",
+            personality_traits=["智能", "友善", "好奇"],
+            background="一个基于大语言模型的AI助手",
+            speaking_style="friendly",
+        )
+        persona = Persona(profile)
+        persona.add_memory(
+            content="用户第一次启动会话",
+            memory_type="episodic",
+            importance=1.0,
+        )
+
+    if style_engine is None:
+        style_engine = SpeakingStyleEngine(
+            preset_name="gentle",
+            influence_weight=0.5,
+        )
 
     # 3. 创建历史管理器
     history = MessageHistory(
@@ -116,16 +203,10 @@ def create_default_brain(brain_id: str = "default") -> dict:
         retention_days=30,
     )
 
-    # 4. 创建说话风格引擎
-    style_engine = SpeakingStyleEngine(
-        preset_name="gentle",
-        influence_weight=0.5,
-    )
-
-    # 5. 创建 Agent 配置
+    # 4. 创建 Agent 配置
     config = AgentConfig()
 
-    # 6. 创建 Prompt 构建器
+    # 5. 创建 Prompt 构建器
     prompt_builder = PromptBuilder(
         persona=persona,
         history=history,
@@ -146,6 +227,7 @@ def initialize_amadues(
     config_dir: str = "./config",
     brain_id: str = "amadues",
     brain_base_path: Optional[str] = None,
+    persona_path: Optional[str] = None,
 ) -> tuple[SessionManager, BrainRegistry]:
     """初始化 Amadues 会话系统
 
@@ -199,7 +281,7 @@ def initialize_amadues(
     elif not existing_brains:
         # 没有 Brain，创建一个默认的
         print(f"  - 创建新 Brain: {brain_id}")
-        components_dict = create_default_brain(brain_id)
+        components_dict = create_default_brain(persona_path)
 
         from agent_core.session.brain_registry import BrainComponents
         components = BrainComponents(
@@ -347,12 +429,19 @@ def main():
     parser.add_argument("message", nargs="*", help="直接发送消息（留空进入交互模式）")
     parser.add_argument("--config-dir", "-c", default="./config", help="配置文件目录")
     parser.add_argument("--brain-id", "-b", default="amadues", help="Brain ID")
+    parser.add_argument("--persona-path", "-p", default=None, help="Persona 数据路径")
     args = parser.parse_args()
+
+    # 默认 persona 路径
+    persona_path = args.persona_path
+    if persona_path is None:
+        persona_path = os.path.join(_project_root, "data", "persona", "amadues")
 
     # 初始化
     session_manager, brain_registry = initialize_amadues(
         config_dir=args.config_dir,
         brain_id=args.brain_id,
+        persona_path=persona_path,
     )
 
     # 获取当前时间

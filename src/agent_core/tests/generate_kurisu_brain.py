@@ -10,8 +10,9 @@ import os
 import sys
 
 # 添加 src 目录到路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.abspath(os.path.join(_script_dir, "..", "..", ".."))
+sys.path.insert(0, os.path.join(_project_root, "src"))
 from agent_core.brain import (
     Persona,
     PersonaProfile,
@@ -147,7 +148,7 @@ def create_kurisu_speaking_style() -> SpeakingStyle:
 
 def main():
     # 输出目录
-    output_dir = os.path.join(os.path.dirname(__file__), "..", "data", "persona")
+    output_dir = os.path.join(_project_root, "data", "persona", "amadues")
     os.makedirs(output_dir, exist_ok=True)
 
     # 使用 Brain 系统创建人格
@@ -157,7 +158,7 @@ def main():
     # 创建说话风格引擎（influence_weight = 0.3 降低口癖影响）
     style_engine = SpeakingStyleEngine(
         base_style=speaking_style,
-        influence_weight=0.3
+        influence_weight=0.2
     )
 
     # 使用 PersonaStorage 保存
