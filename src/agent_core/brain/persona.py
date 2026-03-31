@@ -108,7 +108,7 @@ class MemoryEntry:
 class Persona:
     """人格管理器。
 
-    管理角色的配置和记忆，支持情景记忆、偏好记忆和事实记忆的存储与检索。
+    管理角色的配置和记忆，支持情景记忆、偏好记忆、事实记忆、日终总结和月终总结的存储与检索。
     """
 
     def __init__(self, profile: PersonaProfile):
@@ -121,6 +121,8 @@ class Persona:
         self.episodic_memories: list[MemoryEntry] = []  # 情景记忆：重要经历
         self.preference_memories: list[MemoryEntry] = []  # 偏好记忆：用户喜好
         self.fact_memories: list[MemoryEntry] = []  # 事实记忆：已知事实
+        self.daily_summary_memories: list[MemoryEntry] = []  # 日终总结记忆
+        self.monthly_summary_memories: list[MemoryEntry] = []  # 月终总结记忆
         self._memory_counter = 0
 
     def add_memory(
@@ -134,7 +136,7 @@ class Persona:
 
         Args:
             content: 记忆内容
-            memory_type: 记忆类型 ("episodic"/"preference"/"fact")
+            memory_type: 记忆类型 ("episodic"/"preference"/"fact"/"daily_summary"/"monthly_summary")
             importance: 重要性 (0.0-2.0)
             context: 关联上下文
 
@@ -151,7 +153,11 @@ class Persona:
             context=context,
         )
 
-        if memory_type == "preference":
+        if memory_type == "daily_summary":
+            self.daily_summary_memories.append(memory)
+        elif memory_type == "monthly_summary":
+            self.monthly_summary_memories.append(memory)
+        elif memory_type == "preference":
             self.preference_memories.append(memory)
         elif memory_type == "fact":
             self.fact_memories.append(memory)
@@ -174,7 +180,11 @@ class Persona:
         Returns:
             记忆列表，按时间倒序
         """
-        if memory_type == "preference":
+        if memory_type == "daily_summary":
+            memories = sorted(self.daily_summary_memories, key=lambda m: m.timestamp, reverse=True)
+        elif memory_type == "monthly_summary":
+            memories = sorted(self.monthly_summary_memories, key=lambda m: m.timestamp, reverse=True)
+        elif memory_type == "preference":
             memories = sorted(self.preference_memories, key=lambda m: m.timestamp, reverse=True)
         elif memory_type == "fact":
             memories = sorted(self.fact_memories, key=lambda m: m.timestamp, reverse=True)
@@ -182,7 +192,8 @@ class Persona:
             memories = sorted(self.episodic_memories, key=lambda m: m.timestamp, reverse=True)
         else:
             all_memories = (
-                self.episodic_memories + self.preference_memories + self.fact_memories
+                self.episodic_memories + self.preference_memories + self.fact_memories +
+                self.daily_summary_memories + self.monthly_summary_memories
             )
             memories = sorted(all_memories, key=lambda m: m.timestamp, reverse=True)
 
@@ -202,7 +213,10 @@ class Persona:
         """
         query_lower = query.lower()
         results = []
-        all_memories = self.episodic_memories + self.preference_memories + self.fact_memories
+        all_memories = (
+            self.episodic_memories + self.preference_memories + self.fact_memories +
+            self.daily_summary_memories + self.monthly_summary_memories
+        )
 
         for memory in all_memories:
             if query_lower in memory.content.lower():
@@ -217,6 +231,8 @@ class Persona:
             "episodic_memories": [m.to_dict() for m in self.episodic_memories],
             "preference_memories": [m.to_dict() for m in self.preference_memories],
             "fact_memories": [m.to_dict() for m in self.fact_memories],
+            "daily_summary_memories": [m.to_dict() for m in self.daily_summary_memories],
+            "monthly_summary_memories": [m.to_dict() for m in self.monthly_summary_memories],
         }
 
     @classmethod
@@ -231,6 +247,10 @@ class Persona:
             persona.preference_memories.append(MemoryEntry.from_dict(m))
         for m in data.get("fact_memories", []):
             persona.fact_memories.append(MemoryEntry.from_dict(m))
+        for m in data.get("daily_summary_memories", []):
+            persona.daily_summary_memories.append(MemoryEntry.from_dict(m))
+        for m in data.get("monthly_summary_memories", []):
+            persona.monthly_summary_memories.append(MemoryEntry.from_dict(m))
 
         return persona
 

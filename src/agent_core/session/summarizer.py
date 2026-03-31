@@ -118,7 +118,7 @@ class DailySummarizer:
 
 请按以下JSON格式输出摘要（只输出JSON，不要有其他内容）：
 {{
-    "summary_text": "2-3句话的对话摘要，重点是重要事件、决定和用户偏好",
+    "summary_text": "2-3句话的对话摘要，重点是重要事件和日常闲聊",
     "important_messages": ["最重要的1-2条消息ID或简短描述"],
     "topics": ["讨论的主要话题"],
     "emotional_tone": "整体情感基调（积极/中性/消极/混合）",

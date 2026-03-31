@@ -34,6 +34,9 @@ _script_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.abspath(os.path.join(_script_dir, "..", "..", ".."))
 sys.path.insert(0, os.path.join(_project_root, "src"))
 
+# 数据存储基地址
+DATA_BASE = r"D:\Godot\amadues\data"
+
 from agent_core.brain import (
     Persona,
     PersonaProfile,
@@ -263,9 +266,9 @@ def initialize_amadues(
 
     # 3. 创建 BrainRegistry
     print("\n[3/4] 初始化 Brain...")
-    # 默认使用 src/agent_core/data 目录
+    # 默认使用 data/amadues/brain 目录
     if brain_base_path is None:
-        brain_base_path = os.path.join(_project_root, "src", "agent_core", "data")
+        brain_base_path = os.path.join(DATA_BASEa)
     brain_registry = BrainRegistry(Path(brain_base_path))
 
     # 加载已有 Brain
@@ -360,26 +363,35 @@ def daily_memory_update(session_manager: SessionManager, last_date: list) -> Non
     components = session_manager.brain_registry.current()
     persona = components.persona
 
-    # 添加日期相关的情景记忆
-    persona.add_memory(
-        content=f"用户在 {current_date} {time_info['time']} 使用了 Amadues 系统",
-        memory_type="episodic",
-        importance=1.0,
-        context="系统使用",
+    # 检查是否已存在今天的系统使用记忆（避免重复添加）
+    existing_usage = any(
+        m.context == "系统使用" and m.content.startswith(f"用户在 {current_date}")
+        for m in persona.get_recent_memories()
     )
-
-    # 获取近期的对话历史
-    recent_sessions = session_manager.get_conversation_history(days=7)
-    if recent_sessions:
-        total_messages = sum(s.message_count for s in recent_sessions)
+    if not existing_usage:
         persona.add_memory(
-            content=f"用户在过去7天产生了 {total_messages} 条对话消息",
-            memory_type="fact",
-            importance=1.5,
-            context="使用统计",
+            content=f"用户在 {current_date} {time_info['time']} 使用了 Amadues 系统",
+            memory_type="episodic",
+            importance=1.0,
+            context="系统使用",
         )
 
-    print(f"  - 已添加日期记忆")
+    # 检查是否已存在今日的日终摘要记忆
+    existing_daily_summary = any(
+        m.context == f"日终摘要-{current_date}"
+        for m in persona.get_recent_memories(memory_type="daily_summary")
+    )
+
+    # 如果还没有日终摘要且今日有足够消息，生成摘要
+    if not existing_daily_summary:
+        today_session = session_manager.storage.get_session_by_date(current_date)
+        if today_session and today_session.message_count >= 4:
+            try:
+                session_manager._generate_end_of_day_summary_sync(today_session)
+                print(f"  - 今日日终摘要已生成")
+            except Exception as e:
+                print(f"  - 生成日终摘要失败: {e}")
+
     print(f"  - 当前记忆总数: {len(persona.get_recent_memories())}")
 
 
@@ -465,19 +477,20 @@ def main():
                         help="手动生成指定月份的月度总结（格式: YYYY-MM，不指定则为上月）")
     args = parser.parse_args()
 
-    # 统一使用 data/{brain_id}/ 路径结构
+    # 默认 persona 路径和 brain_base_path 统一使用 DATA_BASE 目录
     if args.persona_path is None:
-        brain_base = os.path.join(_project_root, "data")
-        persona_path = os.path.join(brain_base, args.brain_id)
+        persona_path = os.path.join(DATA_BASE, args.brain_id)
     else:
         persona_path = args.persona_path
-        brain_base = os.path.dirname(persona_path)
+
+    # brain_base_path 与 persona_path 保持一致
+    brain_base_path = os.path.dirname(persona_path)  # data/brain
 
     # 初始化
     session_manager, brain_registry = initialize_amadues(
         config_dir=args.config_dir,
         brain_id=args.brain_id,
-        brain_base_path=brain_base,
+        brain_base_path=brain_base_path,
         persona_path=persona_path,
     )
 

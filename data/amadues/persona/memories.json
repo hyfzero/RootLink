@@ -33,20 +33,20 @@
       "context": "测试"
     },
     {
-      "id": "mem_1_1774975038",
-      "content": "重要事件: 时间机器理论的讨论",
-      "timestamp": 1774975038.258817,
+      "id": "mem_1_1774976393",
+      "content": "用户在 2026-04-01 00:59:53 使用了 Amadues 系统",
+      "timestamp": 1774976393.060381,
       "memory_type": "episodic",
       "importance": 1.0,
-      "context": "日终摘要-2026-04-01"
+      "context": "系统使用"
     },
     {
-      "id": "mem_2_1774975038",
-      "content": "重要事件: 对冈部伦太郎（凤凰院凶真）的提及",
-      "timestamp": 1774975038.259538,
+      "id": "mem_1_1774976628",
+      "content": "用户在 2026-04-01 01:03:48 使用了 Amadues 系统",
+      "timestamp": 1774976628.5086,
       "memory_type": "episodic",
       "importance": 1.0,
-      "context": "日终摘要-2026-04-01"
+      "context": "系统使用"
     }
   ],
   "preference_memories": [
@@ -99,7 +99,34 @@
       "memory_type": "fact",
       "importance": 1.5,
       "context": "学术背景"
+    },
+    {
+      "id": "mem_2_1774976393",
+      "content": "用户在过去7天产生了 95 条对话消息",
+      "timestamp": 1774976393.061643,
+      "memory_type": "fact",
+      "importance": 1.5,
+      "context": "使用统计"
+    },
+    {
+      "id": "mem_2_1774976628",
+      "content": "用户在过去7天产生了 95 条对话消息",
+      "timestamp": 1774976628.509872,
+      "memory_type": "fact",
+      "importance": 1.5,
+      "context": "使用统计"
     }
   ],
-  "updated_at": 1774975038.2596226
+  "daily_summary_memories": [
+    {
+      "id": "mem_3_1774976411",
+      "content": "【2026-04-01】日终摘要: 用户在深夜与牧濑红莉栖交谈，先表达困意后询问时间机器的理论知识，助手进行了详细的物理学解释并建议用户去睡觉。对话中还提到并纠正了冈部伦太郎的名字，整体气氛轻松但带有助手特有的傲娇关心。\n话题: 时间机器理论（广义相对论、虫洞）, 冈部伦太郎, 熬夜与睡眠建议\n情感: 混合（傲娇式关心+学术讨论）\n重要: 时间机器理论的讨论, 对冈部伦太郎（凤凰院凶真）的提及",
+      "timestamp": 1774976411.795794,
+      "memory_type": "daily_summary",
+      "importance": 0.5,
+      "context": "日终摘要-2026-04-01"
+    }
+  ],
+  "monthly_summary_memories": [],
+  "updated_at": 1774977179.532457
 }

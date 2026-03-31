@@ -228,37 +228,90 @@ class MemoryUpdater:
         )
         self.save()
 
+    def add_daily_summary_memory(
+        self,
+        content: str,
+        importance: float = 0.5,
+        context: Optional[str] = None
+    ) -> None:
+        """添加日终摘要记忆。
+
+        Args:
+            content: 记忆内容
+            importance: 重要性 (0.0-2.0)
+            context: 关联上下文
+        """
+        self.persona.add_memory(
+            content=content,
+            memory_type="daily_summary",
+            importance=importance,
+            context=context,
+        )
+        self.save()
+
+    def add_monthly_summary_memory(
+        self,
+        content: str,
+        importance: float = 1.5,
+        context: Optional[str] = None
+    ) -> None:
+        """添加月终摘要记忆。
+
+        Args:
+            content: 记忆内容
+            importance: 重要性 (0.0-2.0)
+            context: 关联上下文
+        """
+        self.persona.add_memory(
+            content=content,
+            memory_type="monthly_summary",
+            importance=importance,
+            context=context,
+        )
+        self.save()
+
     def update_from_summary(self, summary_data: dict) -> None:
         """从日终摘要更新记忆。
 
         Args:
-            summary_data: 摘要数据，包含 user_preferences、unfinished_topics 等
+            summary_data: 摘要数据
         """
         date_str = summary_data.get("date", "")
 
-        # 更新用户偏好 - 较低 importance
-        for pref in summary_data.get("user_preferences", []):
-            self.add_preference_memory(
-                content=f"用户偏好: {pref}",
-                importance=0.5,  # 较低 importance
-                context=f"日终摘要-{date_str}"
-            )
+        # 检查是否已存在该日期的日终摘要记忆（避免重复添加）
+        existing = any(
+            m.context == f"日终摘要-{date_str}"
+            for m in self.persona.daily_summary_memories
+        )
+        if existing:
+            return
 
-        # 更新未完成话题
-        for topic in summary_data.get("unfinished_topics", []):
-            self.add_episodic_memory(
-                content=f"未完成话题: {topic}",
-                importance=0.8,
-                context=f"日终摘要-{date_str}"
-            )
+        # 构建日终摘要内容 - 作为单独的 daily_summary 记忆类型
+        summary_text = summary_data.get("summary_text", "")
+        topics = summary_data.get("topics", [])
+        emotional_tone = summary_data.get("emotional_tone", "")
+        user_prefs = summary_data.get("user_preferences", [])
+        unfinished = summary_data.get("unfinished_topics", [])
+        important = summary_data.get("important_messages", [])
 
-        # 更新关键事件（如果有）
-        for event in summary_data.get("important_messages", []):
-            self.add_episodic_memory(
-                content=f"重要事件: {event}",
-                importance=1.0,
-                context=f"日终摘要-{date_str}"
-            )
+        # 将完整摘要保存为一条 daily_summary 记忆
+        content_parts = [f"【{date_str}】日终摘要: {summary_text}"]
+        if topics:
+            content_parts.append(f"话题: {', '.join(topics)}")
+        if emotional_tone:
+            content_parts.append(f"情感: {emotional_tone}")
+        if user_prefs:
+            content_parts.append(f"偏好: {', '.join(user_prefs)}")
+        if unfinished:
+            content_parts.append(f"未完成: {', '.join(unfinished)}")
+        if important:
+            content_parts.append(f"重要: {', '.join(important)}")
+
+        self.add_daily_summary_memory(
+            content="\n".join(content_parts),
+            importance=0.6,
+            context=f"日终摘要-{date_str}"
+        )
 
     def update_from_monthly_summary(self, monthly_data: dict) -> None:
         """从月度总结更新记忆。
@@ -270,37 +323,42 @@ class MemoryUpdater:
         """
         year_month = monthly_data.get("year_month", "")
 
-        # 更新主要事件 - 高 importance
-        for event in monthly_data.get("major_events", []):
-            self.add_episodic_memory(
-                content=f"【{year_month}】重要事件: {event}",
-                importance=1.8,
-                context=f"月度总结-{year_month}"
-            )
+        # 检查是否已存在该月份的月度总结记忆（避免重复添加）
+        existing = any(
+            m.context == f"月度总结-{year_month}"
+            for m in self.persona.monthly_summary_memories
+        )
+        if existing:
+            return
 
-        # 更新长期偏好 - 高 importance
-        for pref in monthly_data.get("user_long_term_preferences", []):
-            self.add_preference_memory(
-                content=f"用户长期偏好: {pref}",
-                importance=1.8,
-                context=f"月度总结-{year_month}"
-            )
+        # 构建月度总结内容 - 作为单独的 monthly_summary 记忆类型
+        summary_text = monthly_data.get("summary_text", "")
+        major_events = monthly_data.get("major_events", [])
+        monthly_topics = monthly_data.get("monthly_topics", [])
+        overall_tone = monthly_data.get("overall_emotional_tone", "")
+        long_term_prefs = monthly_data.get("user_long_term_preferences", [])
+        unfinished = monthly_data.get("unfinished_monthly_topics", [])
+        growth = monthly_data.get("growth_or_change", [])
 
-        # 更新月度话题
-        for topic in monthly_data.get("monthly_topics", []):
-            self.add_episodic_memory(
-                content=f"【{year_month}】主要话题: {topic}",
-                importance=1.5,
-                context=f"月度总结-{year_month}"
-            )
+        content_parts = [f"【{year_month}】月度总结: {summary_text}"]
+        if major_events:
+            content_parts.append(f"主要事件: {', '.join(major_events)}")
+        if monthly_topics:
+            content_parts.append(f"主要话题: {', '.join(monthly_topics)}")
+        if overall_tone:
+            content_parts.append(f"整体情感: {overall_tone}")
+        if long_term_prefs:
+            content_parts.append(f"长期偏好: {', '.join(long_term_prefs)}")
+        if unfinished:
+            content_parts.append(f"未完成: {', '.join(unfinished)}")
+        if growth:
+            content_parts.append(f"成长变化: {', '.join(growth)}")
 
-        # 更新成长或变化
-        for change in monthly_data.get("growth_or_change", []):
-            self.add_episodic_memory(
-                content=f"【{year_month}】用户变化: {change}",
-                importance=1.5,
-                context=f"月度总结-{year_month}"
-            )
+        self.add_monthly_summary_memory(
+            content="\n".join(content_parts),
+            importance=1.5,
+            context=f"月度总结-{year_month}"
+        )
 
     def save(self) -> None:
         """保存记忆到磁盘"""
@@ -311,6 +369,8 @@ class MemoryUpdater:
             "episodic_memories": [m.to_dict() for m in self.persona.episodic_memories],
             "preference_memories": [m.to_dict() for m in self.persona.preference_memories],
             "fact_memories": [m.to_dict() for m in self.persona.fact_memories],
+            "daily_summary_memories": [m.to_dict() for m in self.persona.daily_summary_memories],
+            "monthly_summary_memories": [m.to_dict() for m in self.persona.monthly_summary_memories],
             "updated_at": time.time(),
         }
 
@@ -336,4 +396,10 @@ class MemoryUpdater:
         ]
         self.persona.fact_memories = [
             MemoryEntry.from_dict(m) for m in data.get("fact_memories", [])
+        ]
+        self.persona.daily_summary_memories = [
+            MemoryEntry.from_dict(m) for m in data.get("daily_summary_memories", [])
+        ]
+        self.persona.monthly_summary_memories = [
+            MemoryEntry.from_dict(m) for m in data.get("monthly_summary_memories", [])
         ]
