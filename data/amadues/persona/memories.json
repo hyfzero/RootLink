@@ -23,6 +23,30 @@
       "memory_type": "episodic",
       "importance": 2.0,
       "context": "友情"
+    },
+    {
+      "id": "mem_1_1774974934",
+      "content": "测试记忆",
+      "timestamp": 1774974934.157268,
+      "memory_type": "episodic",
+      "importance": 1.0,
+      "context": "测试"
+    },
+    {
+      "id": "mem_1_1774975038",
+      "content": "重要事件: 时间机器理论的讨论",
+      "timestamp": 1774975038.258817,
+      "memory_type": "episodic",
+      "importance": 1.0,
+      "context": "日终摘要-2026-04-01"
+    },
+    {
+      "id": "mem_2_1774975038",
+      "content": "重要事件: 对冈部伦太郎（凤凰院凶真）的提及",
+      "timestamp": 1774975038.259538,
+      "memory_type": "episodic",
+      "importance": 1.0,
+      "context": "日终摘要-2026-04-01"
     }
   ],
   "preference_memories": [
@@ -76,5 +100,6 @@
       "importance": 1.5,
       "context": "学术背景"
     }
-  ]
+  ],
+  "updated_at": 1774975038.2596226
 }

@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..api.client import ChatAgent
 from ..api.adapter import ModelConfig
-from ..brain.history import Message, MessageRole
+from ..api.message import Message as ApiMessage, MessageRole as ApiMessageRole
 
 
 class DailySummarizer:
@@ -39,7 +39,7 @@ class DailySummarizer:
     async def generate_summary(
         self,
         date: str,                          # YYYY-MM-DD
-        messages: list[Message],
+        messages: list[ApiMessage],
         persona_context: str = ""           # 用于摘要的人格上下文
     ) -> str:
         """调用 LLM 生成当日摘要。
@@ -79,7 +79,7 @@ class DailySummarizer:
     def _build_summary_prompt(
         self,
         date: str,
-        messages: list[Message],
+        messages: list[ApiMessage],
         persona_context: str
     ) -> str:
         """构建摘要 Prompt。
@@ -93,10 +93,10 @@ class DailySummarizer:
             摘要 Prompt
         """
         role_names = {
-            MessageRole.USER: "用户",
-            MessageRole.ASSISTANT: "助手",
-            MessageRole.SYSTEM: "系统",
-            MessageRole.TOOL: "工具",
+            ApiMessageRole.USER: "用户",
+            ApiMessageRole.ASSISTANT: "助手",
+            ApiMessageRole.SYSTEM: "系统",
+            ApiMessageRole.TOOL: "工具",
         }
 
         formatted_messages = []
@@ -141,11 +141,9 @@ class DailySummarizer:
         Returns:
             LLM 响应文本
         """
-        messages = [Message(
-            id="summary_prompt",
-            role=MessageRole.USER,
+        messages = [ApiMessage(
+            role=ApiMessageRole.USER,
             content=prompt,
-            timestamp=0,
         )]
 
         response = self.chat_agent.chat(messages, stream=False)
@@ -219,6 +217,177 @@ class DailySummarizer:
             return f"# 摘要\n{response_text}\n\n<!-- 解析失败，原始内容 -->\n"
 
 
+class MonthlySummarizer:
+    """月度总结生成器。
+
+    月份切换时调用 LLM 生成当月对话汇总。
+    """
+
+    def __init__(
+        self,
+        chat_agent: ChatAgent,
+        output_dir: Path,
+        model_config: Optional[ModelConfig] = None
+    ):
+        """初始化。
+
+        Args:
+            chat_agent: ChatAgent 实例
+            output_dir: 摘要输出目录
+            model_config: 模型配置
+        """
+        self.chat_agent = chat_agent
+        self.output_dir = output_dir
+        self.model_config = model_config
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    async def generate_summary(
+        self,
+        year_month: str,  # YYYY-MM
+        daily_summaries: list[dict],  # 每日摘要列表
+        persona_context: str = ""
+    ) -> dict:
+        """调用 LLM 生成月度总结。
+
+        Args:
+            year_month: 年月 (YYYY-MM)
+            daily_summaries: 每日摘要数据列表
+            persona_context: 人格上下文
+
+        Returns:
+            包含 summary_text 和其他字段的字典
+        """
+        prompt = self._build_summary_prompt(year_month, daily_summaries, persona_context)
+        response = await self._call_llm(prompt)
+
+        summary_data = self._parse_summary_response(response, year_month)
+
+        # 保存 JSON
+        json_path = self.output_dir / f"{year_month}.monthly.json"
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(summary_data, f, ensure_ascii=False, indent=2)
+
+        # 保存 Markdown
+        md_path = self.output_dir / f"{year_month}.monthly.md"
+        md_content = self._format_markdown(summary_data)
+        md_path.write_text(md_content, encoding="utf-8")
+
+        return summary_data
+
+    def _build_summary_prompt(
+        self,
+        year_month: str,
+        daily_summaries: list[dict],
+        persona_context: str
+    ) -> str:
+        """构建月度总结 Prompt。"""
+        # 汇总每日摘要
+        summary_lines = []
+        for day_summary in daily_summaries:
+            date = day_summary.get("date", "")
+            summary_text = day_summary.get("summary_text", "")
+            topics = day_summary.get("topics", [])
+            emotional_tone = day_summary.get("emotional_tone", "")
+            user_prefs = day_summary.get("user_preferences", [])
+
+            line = f"- {date}: {summary_text}"
+            if topics:
+                line += f" (话题: {', '.join(topics[:2])})"
+            if user_prefs:
+                line += f" [偏好: {', '.join(user_prefs[:2])}]"
+            summary_lines.append(line)
+
+        summaries_text = "\n".join(summary_lines)
+        persona_section = f"\n\n人格背景:\n{persona_context}" if persona_context else ""
+
+        return f"""你是一个对话总结助手。请分析以下 {year_month} 月的每日对话，生成该月的整体总结。
+
+人格背景:{persona_section}
+
+月内每日摘要：
+{summaries_text}
+
+请按以下JSON格式输出月度总结（只输出JSON，不要有其他内容）：
+{{
+    "year_month": "{year_month}",
+    "summary_text": "2-3句话的月度总结，重点是主要事件、用户整体状态和长期偏好",
+    "major_events": ["本月最重要的1-3个事件"],
+    "monthly_topics": ["本月讨论的主要话题"],
+    "overall_emotional_tone": "本月整体情感基调（积极/中性/消极/混合）",
+    "user_long_term_preferences": ["用户本月表现出的长期偏好或习惯"],
+    "unfinished_monthly_topics": ["本月未完成的话题"],
+    "growth_or_change": ["用户可能表现出的成长或变化"]
+}}
+
+注意：
+- summary_text 应该简洁但包含关键信息
+- major_events 只列出最重要的1-3个事件
+- user_long_term_preferences 是本月体现出的相对稳定的偏好
+- 如果没有重要的长期偏好，user_long_term_preferences 可以为空数组"""
+
+    async def _call_llm(self, prompt: str) -> str:
+        """调用 LLM。"""
+        messages = [ApiMessage(
+            role=ApiMessageRole.USER,
+            content=prompt,
+        )]
+        response = self.chat_agent.chat(messages, stream=False)
+        if hasattr(response, 'content'):
+            return response.content
+        return str(response)
+
+    def _parse_summary_response(self, response_text: str, year_month: str) -> dict:
+        """解析 LLM 响应。"""
+        try:
+            json_str = response_text.strip()
+            if json_str.startswith("```json"):
+                json_str = json_str[7:]
+            if json_str.startswith("```"):
+                json_str = json_str[3:]
+            if json_str.endswith("```"):
+                json_str = json_str[:-3]
+            json_str = json_str.strip()
+            data = json.loads(json_str)
+            data["year_month"] = year_month
+            return data
+        except json.JSONDecodeError:
+            return {
+                "year_month": year_month,
+                "summary_text": response_text[:500],
+                "major_events": [],
+                "monthly_topics": [],
+                "overall_emotional_tone": "未知",
+                "user_long_term_preferences": [],
+                "unfinished_monthly_topics": [],
+                "growth_or_change": [],
+            }
+
+    def _format_markdown(self, data: dict) -> str:
+        """格式化为 Markdown。"""
+        parts = [f"# {data.get('year_month', '')} 月度总结\n"]
+        if summary := data.get("summary_text"):
+            parts.append(f"## 总结\n{summary}\n")
+        if events := data.get("major_events"):
+            parts.append("## 主要事件\n")
+            for e in events:
+                parts.append(f"- {e}")
+            parts.append("")
+        if topics := data.get("monthly_topics"):
+            parts.append("## 主要话题\n")
+            for t in topics:
+                parts.append(f"- {t}")
+            parts.append("")
+        if tone := data.get("overall_emotional_tone"):
+            parts.append(f"## 整体情感\n{tone}\n")
+        if prefs := data.get("user_long_term_preferences"):
+            parts.append("## 用户长期偏好\n")
+            for p in prefs:
+                parts.append(f"- {p}")
+            parts.append("")
+        return "\n".join(parts)
+
+
 class SyncDailySummarizer:
     """同步版本的日终摘要生成器。"""
 
@@ -234,7 +403,7 @@ class SyncDailySummarizer:
     def generate_summary(
         self,
         date: str,
-        messages: list[Message],
+        messages: list[ApiMessage],
         persona_context: str = ""
     ) -> str:
         """同步生成摘要。
@@ -259,15 +428,15 @@ class SyncDailySummarizer:
     def _build_summary_prompt(
         self,
         date: str,
-        messages: list[Message],
+        messages: list[ApiMessage],
         persona_context: str
     ) -> str:
         """构建摘要 Prompt"""
         role_names = {
-            MessageRole.USER: "用户",
-            MessageRole.ASSISTANT: "助手",
-            MessageRole.SYSTEM: "系统",
-            MessageRole.TOOL: "工具",
+            ApiMessageRole.USER: "用户",
+            ApiMessageRole.ASSISTANT: "助手",
+            ApiMessageRole.SYSTEM: "系统",
+            ApiMessageRole.TOOL: "工具",
         }
 
         formatted_messages = []

@@ -3,6 +3,7 @@
 协调所有组件，提供统一的会话管理接口。
 """
 
+import json
 import time
 from datetime import datetime
 from pathlib import Path
@@ -24,7 +25,7 @@ from .path_resolver import PathResolver
 from .storage import SessionStorage, DaySession
 from .prompt_builder import SessionPromptBuilder
 from .reply_tagger import ReplyTagger, MemoryUpdater
-from .summarizer import DailySummarizer
+from .summarizer import DailySummarizer, MonthlySummarizer
 
 
 class SessionManager:
@@ -68,9 +69,11 @@ class SessionManager:
 
         # 日期跟踪
         self._current_date: Optional[str] = None
+        self._current_month: Optional[str] = None
 
         # 摘要器（延迟初始化）
         self._summarizer: Optional[DailySummarizer] = None
+        self._monthly_summarizer: Optional["MonthlySummarizer"] = None
 
     @property
     def storage(self) -> SessionStorage:
@@ -96,6 +99,17 @@ class SessionManager:
         return self._summarizer
 
     @property
+    def monthly_summarizer(self) -> MonthlySummarizer:
+        """获取月度总结器实例（延迟初始化）"""
+        if self._monthly_summarizer is None:
+            self._monthly_summarizer = MonthlySummarizer(
+                chat_agent=self.chat_agent,
+                output_dir=PathResolver.get_brain_dir(self._current_brain_id) / "history" / "summaries",
+                model_config=self.config.model_config,
+            )
+        return self._monthly_summarizer
+
+    @property
     def prompt_builder(self) -> SessionPromptBuilder:
         """获取当前 Brain 的 PromptBuilder"""
         components = self.brain_registry.current()
@@ -110,7 +124,10 @@ class SessionManager:
     def memory_updater(self) -> MemoryUpdater:
         """获取记忆更新器"""
         components = self.brain_registry.current()
-        return MemoryUpdater(components.persona)
+        # 使用 BrainRegistry 的 base_path 来确保路径一致
+        brain_dir = self.brain_registry._base_path / self._current_brain_id
+        storage_path = brain_dir / "persona" / "memories.json"
+        return MemoryUpdater(components.persona, storage_path=storage_path)
 
     # === 对话流程 ===
 
@@ -226,15 +243,20 @@ class SessionManager:
     def _check_and_handle_day_change_sync(self) -> None:
         """检查并处理日期切换（同步版本）"""
         today = datetime.now().strftime("%Y-%m-%d")
+        current_month = datetime.now().strftime("%Y-%m")
 
         if self._current_date is not None and self._current_date != today:
-            # 日期切换：归档
+            # 日期切换：归档并生成日终摘要
             old_session = self.storage.archive_if_new_day()
             if old_session and old_session.message_count >= self.config.min_messages_for_summary:
-                # 同步模式下只归档，不生成摘要
-                pass
+                self._generate_end_of_day_summary_sync(old_session)
+
+        # 检查月份切换
+        if self._current_month is not None and self._current_month != current_month:
+            self._handle_month_change(self._current_month)
 
         self._current_date = today
+        self._current_month = current_month
         self.storage.get_or_create_today()
 
     async def _generate_end_of_day_summary(self, session: DaySession) -> None:
@@ -261,6 +283,75 @@ class SessionManager:
         except Exception as e:
             print(f"Warning: Failed to generate summary: {e}")
 
+    def _generate_end_of_day_summary_sync(self, session: DaySession) -> None:
+        """生成日终摘要（同步版本）"""
+        if session.summary_generated:
+            return
+
+        if session.message_count < self.config.min_messages_for_summary:
+            return
+
+        try:
+            persona_context = self.prompt_builder.build_persona_context()
+            messages = session.get_messages()
+
+            # 同步调用 LLM 生成摘要
+            prompt = self.summarizer._build_summary_prompt(
+                date=session.date,
+                messages=messages,
+                persona_context=persona_context,
+            )
+            response_text = self._call_llm_sync_for_summary(prompt)
+
+            # 解析 LLM 返回的 JSON 获取结构化数据
+            json_data = self._parse_summary_json(response_text)
+
+            # 生成 Markdown 格式的摘要
+            summary_text = self.summarizer._parse_summary_response(response_text)
+
+            # 保存为 Markdown
+            output_path = self.summarizer.output_dir / f"{session.date}.summary.md"
+            output_path.write_text(summary_text, encoding="utf-8")
+
+            # 保存完整的 JSON（包含结构化字段）
+            json_path = self.summarizer.output_dir.parent / "daily" / f"{session.date}.summary.json"
+            json_path.parent.mkdir(parents=True, exist_ok=True)
+            summary_data = {
+                "date": session.date,
+                "summary_text": json_data.get("summary_text", ""),
+                "important_messages": json_data.get("important_messages", []),
+                "topics": json_data.get("topics", []),
+                "emotional_tone": json_data.get("emotional_tone", ""),
+                "user_preferences": json_data.get("user_preferences", []),
+                "unfinished_topics": json_data.get("unfinished_topics", []),
+                "message_count": len(messages),
+            }
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(summary_data, f, ensure_ascii=False, indent=2)
+
+            session.summary_generated = True
+
+            # 从摘要更新记忆（较低 importance）
+            self._update_memories_from_summary(session.date)
+
+        except Exception as e:
+            print(f"Warning: Failed to generate summary (sync): {e}")
+
+    def _parse_summary_json(self, response_text: str) -> dict:
+        """解析 LLM 返回的 JSON 响应。"""
+        try:
+            json_str = response_text.strip()
+            if json_str.startswith("```json"):
+                json_str = json_str[7:]
+            if json_str.startswith("```"):
+                json_str = json_str[3:]
+            if json_str.endswith("```"):
+                json_str = json_str[:-3]
+            json_str = json_str.strip()
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            return {}
+
     def _update_memories_from_summary(self, date: str) -> None:
         """从摘要更新记忆。
 
@@ -268,15 +359,153 @@ class SessionManager:
             date: 摘要日期
         """
         try:
-            summary_path = PathResolver.get_brain_dir(self._current_brain_id) / "history" / "daily" / f"{date}.summary.json"
+            # 使用 BrainRegistry 的 base_path 确保路径一致
+            brain_dir = self.brain_registry._base_path / self._current_brain_id
+            summary_path = brain_dir / "history" / "daily" / f"{date}.summary.json"
             if summary_path.exists():
-                import json
                 with open(summary_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
                 self.memory_updater.update_from_summary(data)
         except Exception as e:
             print(f"Warning: Failed to update memories: {e}")
+
+    def _handle_month_change(self, old_month: str) -> None:
+        """处理月份切换。
+
+        Args:
+            old_month: 上个月份 (YYYY-MM)
+        """
+        print(f"\n月份切换: {old_month} -> {datetime.now().strftime('%Y-%m')}")
+
+        # 获取上个月的所有每日摘要
+        daily_summaries = []
+        summary_dir = PathResolver.get_brain_dir(self._current_brain_id) / "history" / "daily"
+
+        if summary_dir.exists():
+            for summary_file in summary_dir.glob("*.summary.json"):
+                # 检查日期是否属于上个月
+                date_str = summary_file.stem.replace(".summary", "")
+                if date_str.startswith(old_month):
+                    try:
+                        with open(summary_file, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            daily_summaries.append(data)
+                    except Exception:
+                        pass
+
+        if daily_summaries:
+            # 生成月度总结
+            persona_context = self.prompt_builder.build_persona_context()
+            monthly_data = self._generate_end_of_month_summary_sync(
+                year_month=old_month,
+                daily_summaries=daily_summaries,
+                persona_context=persona_context,
+            )
+            # 高优先级更新记忆
+            self._update_memories_from_monthly_summary(monthly_data)
+            # 清空当月数据
+            self._clear_monthly_data(old_month)
+            print(f"  - 月度总结已生成并更新记忆")
+        else:
+            print(f"  - 无每日摘要数据，跳过月度总结")
+
+    async def _generate_end_of_month_summary(
+        self,
+        year_month: str,
+        daily_summaries: list[dict],
+        persona_context: str
+    ) -> dict:
+        """生成月度总结（异步）"""
+        monthly_data = await self.monthly_summarizer.generate_summary(
+            year_month=year_month,
+            daily_summaries=daily_summaries,
+            persona_context=persona_context,
+        )
+        return monthly_data
+
+    def _generate_end_of_month_summary_sync(
+        self,
+        year_month: str,
+        daily_summaries: list[dict],
+        persona_context: str
+    ) -> dict:
+        """生成月度总结（同步版本，使用同步调用）"""
+        prompt = self.monthly_summarizer._build_summary_prompt(
+            year_month, daily_summaries, persona_context
+        )
+        response_text = self._call_llm_sync_for_summary(prompt)
+        monthly_data = self.monthly_summarizer._parse_summary_response(response_text, year_month)
+
+        # 保存文件
+        summary_dir = PathResolver.get_brain_dir(self._current_brain_id) / "history" / "summaries"
+        summary_dir.mkdir(parents=True, exist_ok=True)
+
+        json_path = summary_dir / f"{year_month}.monthly.json"
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(monthly_data, f, ensure_ascii=False, indent=2)
+
+        md_path = summary_dir / f"{year_month}.monthly.md"
+        md_content = self.monthly_summarizer._format_markdown(monthly_data)
+        md_path.write_text(md_content, encoding="utf-8")
+
+        return monthly_data
+
+    def _call_llm_sync_for_summary(self, prompt: str) -> str:
+        """同步调用 LLM 获取摘要。"""
+        from ..api.message import Message as ApiMessage, MessageRole as ApiMessageRole
+        messages = [
+            ApiMessage(role=ApiMessageRole.USER, content=prompt),
+        ]
+        response = self.chat_agent.chat(messages, stream=False)
+        if hasattr(response, 'content'):
+            return response.content
+        return str(response)
+
+    def _update_memories_from_monthly_summary(self, monthly_data: dict) -> None:
+        """从月度总结更新记忆。
+
+        Args:
+            monthly_data: 月度总结数据
+        """
+        try:
+            self.memory_updater.update_from_monthly_summary(monthly_data)
+            self.memory_updater.save()
+        except Exception as e:
+            print(f"Warning: Failed to update memories from monthly summary: {e}")
+
+    def _clear_monthly_data(self, year_month: str) -> None:
+        """清空指定月份的历史数据。
+
+        Args:
+            year_month: 要清空的月份 (YYYY-MM)
+        """
+        try:
+            # 删除每日消息文件
+            daily_dir = PathResolver.get_brain_dir(self._current_brain_id) / "history" / "daily"
+            if daily_dir.exists():
+                for f in daily_dir.glob("*.json"):
+                    date_str = f.stem
+                    if date_str.startswith(year_month):
+                        f.unlink()
+
+                for f in daily_dir.glob("*.summary.json"):
+                    date_str = f.stem.replace(".summary", "")
+                    if date_str.startswith(year_month):
+                        f.unlink()
+
+            # 清理 MessageHistory 中的当月数据
+            if hasattr(self.storage, '_history') and self.storage._history:
+                for date_key in list(self.storage._history.daily_histories.keys()):
+                    if date_key.startswith(year_month):
+                        del self.storage._history.daily_histories[date_key]
+                for date_key in list(self.storage._history.daily_summaries.keys()):
+                    if date_key.startswith(year_month):
+                        del self.storage._history.daily_summaries[date_key]
+
+            print(f"  - 已清空 {year_month} 的历史数据")
+        except Exception as e:
+            print(f"Warning: Failed to clear monthly data: {e}")
 
     # === Brain 切换 ===
 
@@ -408,7 +637,6 @@ class SessionManager:
                 lines.append(f"\n## {role}\n{content}\n")
             return "\n".join(lines)
         else:
-            import json
             return json.dumps(session.to_dict(), ensure_ascii=False, indent=2)
 
     # === 便捷方法 ===

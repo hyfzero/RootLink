@@ -234,28 +234,72 @@ class MemoryUpdater:
         Args:
             summary_data: 摘要数据，包含 user_preferences、unfinished_topics 等
         """
-        # 更新用户偏好
+        date_str = summary_data.get("date", "")
+
+        # 更新用户偏好 - 较低 importance
         for pref in summary_data.get("user_preferences", []):
             self.add_preference_memory(
                 content=f"用户偏好: {pref}",
-                importance=1.5,
-                context="日终摘要"
+                importance=0.5,  # 较低 importance
+                context=f"日终摘要-{date_str}"
             )
 
         # 更新未完成话题
         for topic in summary_data.get("unfinished_topics", []):
             self.add_episodic_memory(
                 content=f"未完成话题: {topic}",
-                importance=1.0,
-                context="日终摘要"
+                importance=0.8,
+                context=f"日终摘要-{date_str}"
             )
 
         # 更新关键事件（如果有）
         for event in summary_data.get("important_messages", []):
             self.add_episodic_memory(
                 content=f"重要事件: {event}",
+                importance=1.0,
+                context=f"日终摘要-{date_str}"
+            )
+
+    def update_from_monthly_summary(self, monthly_data: dict) -> None:
+        """从月度总结更新记忆。
+
+        月度总结以较高 importance 加入。
+
+        Args:
+            monthly_data: 月度总结数据
+        """
+        year_month = monthly_data.get("year_month", "")
+
+        # 更新主要事件 - 高 importance
+        for event in monthly_data.get("major_events", []):
+            self.add_episodic_memory(
+                content=f"【{year_month}】重要事件: {event}",
+                importance=1.8,
+                context=f"月度总结-{year_month}"
+            )
+
+        # 更新长期偏好 - 高 importance
+        for pref in monthly_data.get("user_long_term_preferences", []):
+            self.add_preference_memory(
+                content=f"用户长期偏好: {pref}",
+                importance=1.8,
+                context=f"月度总结-{year_month}"
+            )
+
+        # 更新月度话题
+        for topic in monthly_data.get("monthly_topics", []):
+            self.add_episodic_memory(
+                content=f"【{year_month}】主要话题: {topic}",
                 importance=1.5,
-                context="日终摘要"
+                context=f"月度总结-{year_month}"
+            )
+
+        # 更新成长或变化
+        for change in monthly_data.get("growth_or_change", []):
+            self.add_episodic_memory(
+                content=f"【{year_month}】用户变化: {change}",
+                importance=1.5,
+                context=f"月度总结-{year_month}"
             )
 
     def save(self) -> None:

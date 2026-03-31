@@ -86,8 +86,8 @@ class PathResolver:
 
     @classmethod
     def get_session_dir(cls, brain_id: str = "default") -> Path:
-        """Session 数据目录: {data_dir}/session/{brain_id}/"""
-        return cls.get_data_dir() / "session" / brain_id
+        """Session 数据目录: {data_dir}/{brain_id}/session/"""
+        return cls.get_data_dir() / brain_id / "session"
 
     @classmethod
     def get_tags_dir(cls) -> Path:

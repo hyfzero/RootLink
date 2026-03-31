@@ -331,13 +331,30 @@ def get_current_time_info() -> dict:
     }
 
 
-def daily_memory_update(session_manager: SessionManager) -> None:
+def daily_memory_update(session_manager: SessionManager, last_date: list) -> None:
     """每日记忆更新
 
-    在日期切换时调用，更新 Brain 中的记忆
+    在日期切换时调用，更新 Brain 中的记忆，并生成日终摘要
     """
     time_info = get_current_time_info()
-    print(f"\n每日记忆更新 - {time_info['date']}")
+    current_date = time_info['date']
+
+    # 检查日期是否切换
+    if last_date[0] and last_date[0] != current_date:
+        print(f"\n日期切换检测: {last_date[0]} -> {current_date}")
+        # 日期切换，尝试生成上一天的日终摘要
+        try:
+            old_session = session_manager.storage.get_session_by_date(last_date[0])
+            if old_session and old_session.message_count >= 4:
+                # 使用同步版本的日终摘要生成
+                session_manager._generate_end_of_day_summary_sync(old_session)
+                print(f"  - 日终摘要已生成")
+        except Exception as e:
+            print(f"  - 生成日终摘要失败: {e}")
+
+    last_date[0] = current_date
+
+    print(f"\n每日记忆更新 - {current_date}")
 
     # 获取当前 Brain 组件
     components = session_manager.brain_registry.current()
@@ -345,7 +362,7 @@ def daily_memory_update(session_manager: SessionManager) -> None:
 
     # 添加日期相关的情景记忆
     persona.add_memory(
-        content=f"用户在 {time_info['date']} {time_info['time']} 使用了 Amadues 系统",
+        content=f"用户在 {current_date} {time_info['time']} 使用了 Amadues 系统",
         memory_type="episodic",
         importance=1.0,
         context="系统使用",
@@ -409,6 +426,18 @@ def interactive_mode(session_manager: SessionManager) -> None:
                 print("再见!")
                 break
 
+            if user_input.lower() in ["summary", "日终摘要"]:
+                # 手动触发日终摘要生成
+                today = datetime.now().strftime("%Y-%m-%d")
+                session = session_manager.storage.get_session_by_date(today)
+                if session and session.message_count >= 4:
+                    print(f"正在为 {today} 生成日终摘要...")
+                    session_manager._generate_end_of_day_summary_sync(session)
+                    print(f"日终摘要已生成，更新了 memory.json")
+                else:
+                    print(f"今日消息数不足或无 session: {session.message_count if session else 0}")
+                continue
+
             if not user_input:
                 continue
 
@@ -430,17 +459,25 @@ def main():
     parser.add_argument("--config-dir", "-c", default="./config", help="配置文件目录")
     parser.add_argument("--brain-id", "-b", default="amadues", help="Brain ID")
     parser.add_argument("--persona-path", "-p", default=None, help="Persona 数据路径")
+    parser.add_argument("--generate-summary", "-s", metavar="DATE",
+                        help="手动生成指定日期的日终摘要（格式: YYYY-MM-DD，不指定则为今日）")
+    parser.add_argument("--generate-monthly", "-m", metavar="YEAR-MONTH",
+                        help="手动生成指定月份的月度总结（格式: YYYY-MM，不指定则为上月）")
     args = parser.parse_args()
 
-    # 默认 persona 路径
-    persona_path = args.persona_path
-    if persona_path is None:
-        persona_path = os.path.join(_project_root, "data", "persona", "amadues")
+    # 统一使用 data/{brain_id}/ 路径结构
+    if args.persona_path is None:
+        brain_base = os.path.join(_project_root, "data")
+        persona_path = os.path.join(brain_base, args.brain_id)
+    else:
+        persona_path = args.persona_path
+        brain_base = os.path.dirname(persona_path)
 
     # 初始化
     session_manager, brain_registry = initialize_amadues(
         config_dir=args.config_dir,
         brain_id=args.brain_id,
+        brain_base_path=brain_base,
         persona_path=persona_path,
     )
 
@@ -451,14 +488,52 @@ def main():
     print(f"  时间: {time_info['time']}")
     print(f"  星期: {time_info['weekday_cn']}")
 
-    # 每日记忆更新
-    daily_memory_update(session_manager)
+    # 每日记忆更新（使用列表追踪上次的日期）
+    last_date = [time_info['date']]
+    daily_memory_update(session_manager, last_date)
 
     if args.message:
         # 命令行指定的消息
         for msg in args.message:
             send_message_example(session_manager, msg)
             print()
+    elif args.generate_summary is not None:
+        # 手动生成指定日期的日终摘要
+        target_date = args.generate_summary if args.generate_summary else time_info['date']
+        print(f"\n手动生成日终摘要: {target_date}")
+        session = session_manager.storage.get_session_by_date(target_date)
+        if session and session.message_count >= 4:
+            session_manager._generate_end_of_day_summary_sync(session)
+            print(f"日终摘要已生成并更新 memory.json")
+        else:
+            print(f"消息数不足或无 session: {session.message_count if session else 0}")
+    elif args.generate_monthly is not None:
+        # 手动生成指定月份的月度总结
+        target_month = args.generate_monthly
+        print(f"\n手动生成月度总结: {target_month}")
+        # 获取该月所有每日摘要
+        daily_summaries = []
+        from agent_core.session.path_resolver import PathResolver
+        brain_id = args.brain_id
+        summary_dir = PathResolver.get_brain_dir(brain_id) / "history" / "daily"
+        if summary_dir.exists():
+            for f in summary_dir.glob("*.summary.json"):
+                date_str = f.stem.replace(".summary", "")
+                if date_str.startswith(target_month):
+                    import json
+                    with open(f, "r", encoding="utf-8") as fp:
+                        daily_summaries.append(json.load(fp))
+        if daily_summaries:
+            persona_context = session_manager.prompt_builder.build_persona_context()
+            monthly_data = session_manager._generate_end_of_month_summary_sync(
+                year_month=target_month,
+                daily_summaries=daily_summaries,
+                persona_context=persona_context,
+            )
+            session_manager._update_memories_from_monthly_summary(monthly_data)
+            print(f"月度总结已生成并更新 memory.json")
+        else:
+            print(f"无该月的每日摘要数据")
     else:
         # 交互模式
         interactive_mode(session_manager)
