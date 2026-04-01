@@ -419,40 +419,32 @@ class SessionPromptBuilder:
 └─────────────────────────────────────────────────────────┘
 ```
 
-**回复标签生成**: 直接复用 `brain.tags.TagGenerator`
+**回复标签生成**: 支持硬编码和 LLM 两种模式，通过 `use_llm_tagger` 切换
 
 ```python
 class ReplyTagger:
     """回复标签生成器（委托给 Brain Tags）"""
 
-    def __init__(self, tag_generator: TagGenerator):
+    def __init__(
+        self,
+        tag_generator: Optional[TagGenerator] = None,
+        storage_path: Optional[Path] = None,
+        chat_agent: Optional[ChatAgent] = None,
+        use_llm: bool = False,
+    ):
+        if tag_generator is None:
+            if use_llm and chat_agent:
+                tag_generator = UnifiedTagGenerator(chat_agent=chat_agent, mode="llm")
+            else:
+                tag_generator = TagGenerator()
         self.tag_generator = tag_generator
+```
 
-    def generate_tag(
-        self,
-        message_id: str,
-        response_text: str,
-        emotion_hint: Optional[str] = None
-    ) -> ReplyTag:
-        """
-        生成单条回复的标签
-        """
-        return self.tag_generator.generate_tag(
-            text=response_text,
-            emotion_hint=emotion_hint,
-            message_id=message_id
-        )
+**动态切换**: 通过 `SessionManager.use_llm_tagger` 属性可在运行时切换模式
 
-    def generate_and_save(
-        self,
-        message_id: str,
-        response_text: str,
-        storage_path: Path
-    ) -> ReplyTag:
-        """生成标签并保存到 storage"""
-        tag = self.generate_tag(message_id, response_text)
-        self._save_tag(tag, storage_path)
-        return tag
+```python
+session_manager.use_llm_tagger = True   # 切到 LLM
+session_manager.use_llm_tagger = False  # 切回硬编码
 ```
 
 **更新流程**:
@@ -540,15 +532,40 @@ class SessionManager:
         path_resolver: PathResolver,
         brain_registry: BrainRegistry,        # 多 Brain 注册表
         chat_agent: ChatAgent,
-        tag_generator: TagGenerator,
-        use_msgpack: bool = False
+        tag_generator: Optional[TagGenerator] = None,
+        use_msgpack: bool = False,
+        use_llm_tagger: bool = False,
     ):
         self.config = config
         self.brain_registry = brain_registry
+        self.chat_agent = chat_agent
+        self.use_msgpack = use_msgpack
+        self._use_llm_tagger = use_llm_tagger
         self.storage = SessionStorage(config, path_resolver, use_msgpack)
         self.summarizer = DailySummarizer(chat_agent, path_resolver.get_brain_dir() / "history" / "summaries", config.model_config)
-        self.tagger = ReplyTagger(tag_generator)
+        self.tagger = ReplyTagger(
+            tag_generator,
+            chat_agent=chat_agent if use_llm_tagger else None,
+            use_llm=use_llm_tagger,
+        )
         self._current_date: Optional[str] = None
+
+    @property
+    def use_llm_tagger(self) -> bool:
+        """是否使用 LLM 生成标签。"""
+        return self._use_llm_tagger
+
+    @use_llm_tagger.setter
+    def use_llm_tagger(self, value: bool) -> None:
+        """动态切换标签生成模式。"""
+        if self._use_llm_tagger == value:
+            return
+        self._use_llm_tagger = value
+        self.tagger = ReplyTagger(
+            tag_generator=None,
+            chat_agent=self.chat_agent if value else None,
+            use_llm=value,
+        )
 
     @property
     def prompt_builder(self) -> SessionPromptBuilder:

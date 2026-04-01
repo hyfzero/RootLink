@@ -45,7 +45,7 @@
     "emoji_usage": "sparse",
     "parenthesis_usage": "sparse"
   },
-  "influence_weight": 0.2,
+  "influence_weight": 0.1,
   "current_emotion": null,
   "custom_modifiers": {}
 }

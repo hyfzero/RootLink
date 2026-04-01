@@ -480,7 +480,7 @@ def to_dict(self) -> dict
 
 ## 4. tags.py - 回复标签模块
 
-为每条回复生成标签，供 UI 层显示角色立绘表情、动作等。支持多语言（中英文）关键词检测。
+为每条回复生成标签，供 UI 层显示角色立绘表情、动作等。支持硬编码关键词检测和 LLM 解析两种模式。
 
 ### 4.1 ReplyTag
 
@@ -509,11 +509,17 @@ def to_dict(self) -> dict
 | intensity | float | 1.0 | 表情强度 (0.0-2.0) |
 | timestamp | float | 当前时间 | 时间戳 |
 
+**情感类型**：happy, sad, angry, surprised, thinking, scared, embarrassed, confused, neutral（中英文关键词统一映射）
+
+**动作类型**：wave, nod, shake_head, clap, pat, facepalm, shrug
+
+**叠加层类型**：blush, sweat_drop, tears, sparkle, anger_mark, question_mark
+
 ---
 
 ### 4.2 TagGenerator
 
-回复标签生成器。根据消息内容自动生成情感、表情、动作等标签。
+回复标签生成器（硬编码模式）。根据消息内容自动生成情感、表情、动作等标签。
 
 ```python
 def __init__(
@@ -527,26 +533,20 @@ def detect_emotion(text: str) -> tuple[str, float]
 ```
 从文本内容检测情感。返回 `(情感类型, 置信度)`。使用多语言关键词匹配，遍历 EMOTION_KEYWORDS 字典计算得分，取最高分。
 
-**情感类型**：happy, sad, angry, surprised, thinking, scared, embarrassed, confused, neutral（中文版本带 `_zh` 后缀）
-
 ```python
 def detect_expression(emotion: str) -> str
 ```
-根据情感获取对应表情。先检查英文映射，再检查中文映射。
+根据情感获取对应表情。查 EMOTION_TO_EXPRESSION 映射表。
 
 ```python
 def detect_action(text: str) -> Optional[str]
 ```
 从文本检测动作。遍历 ACTION_KEYWORDS 返回匹配的动作类型。
 
-**动作类型**：wave, nod, shake_head, clap, pat, facepalm, shrug
-
 ```python
 def detect_overlays(text: str, emotion: str) -> list[str]
 ```
 检测特效叠加层。
-
-**叠加层类型**：blush, sweat_drop, tears, sparkle, anger_mark, question_mark
 
 ```python
 def calculate_intensity(text: str, emotion: str) -> float
@@ -572,7 +572,60 @@ def generate_tag(
 
 ---
 
-### 4.3 TagCache
+### 4.3 LLMTagGenerator
+
+基于 LLM 的回复标签生成器。使用 LLM 分析消息内容，参考日终摘要使用同一个模型。
+
+```python
+def __init__(
+    chat_agent: ChatAgent,
+    default_emotion: str = "neutral",
+    default_expression: str = "neutral",
+)
+```
+
+```python
+def generate_tag(
+    message_id: str,
+    content: str,
+    context: Optional[str] = None,
+) -> ReplyTag
+```
+使用 LLM 生成完整的回复标签。
+
+---
+
+### 4.4 UnifiedTagGenerator
+
+统一的标签生成器，支持切换硬编码和 LLM 模式。
+
+```python
+def __init__(
+    chat_agent: Optional[ChatAgent] = None,
+    mode: str = "keyword",  # "keyword" 或 "llm"
+    default_emotion: str = "neutral",
+    default_expression: str = "neutral",
+)
+```
+
+```python
+def generate_tag(
+    message_id: str,
+    content: str,
+    context: Optional[str] = None,
+) -> ReplyTag
+```
+根据 mode 设置自动选择硬编码或 LLM 模式生成标签。
+
+```python
+@property
+def supports_llm(self) -> bool
+```
+是否支持 LLM 模式。
+
+---
+
+### 4.5 TagCache
 
 回复标签缓存。存储最近使用过的标签，支持按 ID 查询和 LRU 淘汰。
 

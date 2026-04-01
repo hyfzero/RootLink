@@ -6,29 +6,46 @@
 import json
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from ..brain import ReplyTag, TagGenerator, Persona
+from ..brain.tags import UnifiedTagGenerator
 from .path_resolver import PathResolver
+
+if TYPE_CHECKING:
+    from ..api.client import ChatAgent
 
 
 class ReplyTagger:
     """回复标签生成器与记忆更新器。
 
     委托给 Brain Tags 模块生成标签，同时处理记忆更新。
+    支持硬编码和 LLM 两种标签生成模式。
     """
 
     def __init__(
         self,
-        tag_generator: TagGenerator,
-        storage_path: Optional[Path] = None
+        tag_generator: Optional[TagGenerator] = None,
+        storage_path: Optional[Path] = None,
+        chat_agent: Optional["ChatAgent"] = None,
+        use_llm: bool = False,
     ):
         """初始化。
 
         Args:
-            tag_generator: TagGenerator 实例
+            tag_generator: TagGenerator 实例（可选，不指定则根据 use_llm 创建）
             storage_path: 标签存储路径，不指定则使用默认
+            chat_agent: ChatAgent 实例（LLM 模式需要）
+            use_llm: 是否使用 LLM 生成标签
         """
+        if tag_generator is None:
+            if use_llm and chat_agent:
+                tag_generator = UnifiedTagGenerator(
+                    chat_agent=chat_agent,
+                    mode="llm",
+                )
+            else:
+                tag_generator = TagGenerator()
         self.tag_generator = tag_generator
         self._storage_path = storage_path or PathResolver.get_tags_dir()
         self._storage_path.mkdir(parents=True, exist_ok=True)

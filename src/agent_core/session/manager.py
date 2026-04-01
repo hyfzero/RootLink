@@ -40,7 +40,8 @@ class SessionManager:
         brain_registry: BrainRegistry,
         chat_agent: ChatAgent,
         tag_generator: Optional[TagGenerator] = None,
-        use_msgpack: bool = False
+        use_msgpack: bool = False,
+        use_llm_tagger: bool = False,
     ):
         """初始化 Session 管理器。
 
@@ -50,6 +51,7 @@ class SessionManager:
             chat_agent: ChatAgent 实例
             tag_generator: TagGenerator 实例，不指定则创建默认
             use_msgpack: 是否使用 MessagePack 格式
+            use_llm_tagger: 是否使用 LLM 生成标签（替代硬编码）
         """
         self.config = config
         self.brain_registry = brain_registry
@@ -57,9 +59,14 @@ class SessionManager:
         self.use_msgpack = use_msgpack
 
         # 标签生成器
+        self._use_llm_tagger = use_llm_tagger
         if tag_generator is None:
             tag_generator = TagGenerator()
-        self.tagger = ReplyTagger(tag_generator)
+        self.tagger = ReplyTagger(
+            tag_generator,
+            chat_agent=chat_agent if use_llm_tagger else None,
+            use_llm=use_llm_tagger,
+        )
 
         # 当前 Brain ID
         self._current_brain_id = brain_registry.current_brain_id()
@@ -97,6 +104,27 @@ class SessionManager:
                 model_config=self.config.model_config,
             )
         return self._summarizer
+
+    @property
+    def use_llm_tagger(self) -> bool:
+        """是否使用 LLM 生成标签。"""
+        return self._use_llm_tagger
+
+    @use_llm_tagger.setter
+    def use_llm_tagger(self, value: bool) -> None:
+        """动态切换标签生成模式。
+
+        Args:
+            value: True 使用 LLM 模式，False 使用硬编码模式
+        """
+        if self._use_llm_tagger == value:
+            return
+        self._use_llm_tagger = value
+        self.tagger = ReplyTagger(
+            tag_generator=None,
+            chat_agent=self.chat_agent if value else None,
+            use_llm=value,
+        )
 
     @property
     def monthly_summarizer(self) -> MonthlySummarizer:

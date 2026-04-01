@@ -505,19 +505,23 @@ def generate_summary(
 
 ### 6.1 ReplyTagger
 
-回复标签生成器与记忆更新器。委托给 Brain Tags 模块生成标签，同时处理记忆更新。
+回复标签生成器与记忆更新器。委托给 Brain Tags 模块生成标签，同时处理记忆更新。支持硬编码和 LLM 两种标签生成模式。
 
 ```python
 def __init__(
-    tag_generator: TagGenerator,
-    storage_path: Optional[Path] = None
+    tag_generator: Optional[TagGenerator] = None,
+    storage_path: Optional[Path] = None,
+    chat_agent: Optional[ChatAgent] = None,
+    use_llm: bool = False,
 )
 ```
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| tag_generator | TagGenerator | TagGenerator 实例 |
+| tag_generator | TagGenerator | TagGenerator 实例（可选，不指定则根据 use_llm 创建） |
 | storage_path | Path | 标签存储路径，默认为 `{tags_dir}/reply_tags.json` |
+| chat_agent | ChatAgent | ChatAgent 实例（LLM 模式需要） |
+| use_llm | bool | 是否使用 LLM 生成标签 |
 
 ```python
 def _load_tags(self) -> None

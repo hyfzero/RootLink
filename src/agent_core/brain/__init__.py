@@ -25,7 +25,7 @@ from .history import (
     generate_summary_with_llm,
     generate_daily_summaries_with_llm,
 )
-from .tags import ReplyTag, TagGenerator, TagCache
+from .tags import ReplyTag, TagGenerator, TagCache, LLMTagGenerator, UnifiedTagGenerator
 from .config import AgentConfig, HistoryConfig, TagsConfig, StorageConfig, PersonaConfig
 from .persistence import AgentStorage, PersonaStorage, HistoryStorage, TagsStorage, ConfigStorage
 from .prompt_builder import (
@@ -67,6 +67,8 @@ __all__ = [
     "ReplyTag",
     "TagGenerator",
     "TagCache",
+    "LLMTagGenerator",
+    "UnifiedTagGenerator",
     # 配置模块
     "AgentConfig",
     "HistoryConfig",

@@ -317,6 +317,7 @@ def initialize_amadues(
         chat_agent=chat_agent,
         tag_generator=TagGenerator(),
     )
+    session_manager.use_llm_tagger =True
     print(f"  - SessionManager 创建成功")
 
     return session_manager, brain_registry
