@@ -1,0 +1,171 @@
+"""Session Manager 模块 - Prompt 构建封装。
+
+封装 Brain 模块的 PromptBuilder，提供更简洁的接口。
+"""
+
+from typing import Optional
+
+from ..brain import (
+    Persona,
+    MessageHistory,
+    SpeakingStyleEngine,
+    PromptBuilder,
+    AgentConfig,
+    Message,
+    MessageRole,
+)
+
+
+class SessionPromptBuilder:
+    """Session 级别的 Prompt 构建器。
+
+    封装 Brain 模块的 PromptBuilder，简化调用。
+    """
+
+    def __init__(
+        self,
+        persona: Persona,
+        history: MessageHistory,
+        style_engine: SpeakingStyleEngine,
+        config: AgentConfig,
+    ):
+        """初始化。
+
+        Args:
+            persona: Persona 实例
+            history: MessageHistory 实例
+            style_engine: SpeakingStyleEngine 实例
+            config: AgentConfig 配置
+        """
+        self._inner = PromptBuilder(
+            persona=persona,
+            history=history,
+            style_engine=style_engine,
+            config=config,
+        )
+        # 保存引用用于动态切换
+        self._persona = persona
+        self._history = history
+        self._style_engine = style_engine
+        self._config = config
+
+    def build_system_prompt(self, emotion: Optional[str] = None) -> str:
+        """构建系统 Prompt。
+
+        Args:
+            emotion: 当前情绪状态
+
+        Returns:
+            系统提示字符串
+        """
+        return self._inner.build_system_prompt(emotion)
+
+    def build_conversation_context(
+        self,
+        current_message: str,
+        include_history: bool = True,
+        max_history_tokens: int = 2000
+    ) -> str:
+        """构建对话上下文（用于 API 调用）。
+
+        Args:
+            current_message: 当前用户消息
+            include_history: 是否包含历史消息
+            max_history_tokens: 最大历史 Token 数
+
+        Returns:
+            上下文提示字符串
+        """
+        messages = []
+        if include_history:
+            history_messages = self._history.get_context_messages(max_tokens=max_history_tokens)
+            for msg in history_messages:
+                role = "user" if msg.role == MessageRole.USER else "assistant"
+                messages.append({"role": role, "content": msg.content})
+
+        # 添加当前消息
+        messages.append({"role": "user", "content": current_message})
+
+        # 构建上下文
+        context_parts = []
+        if include_history and history_messages:
+            context_parts.append(self._inner.build_history_summary_section(days=3))
+            context_parts.append(self._inner.build_queue_section(max_tokens=max_history_tokens // 2))
+
+        context_parts.append(f"用户最新消息: {current_message}")
+
+        return "\n\n".join(context_parts)
+
+    def build_full_prompt(
+        self,
+        current_message: str,
+        emotion: Optional[str] = None,
+        include_history: bool = True
+    ) -> tuple[str, list[Message]]:
+        """构建完整 Prompt 和消息列表。
+
+        Args:
+            current_message: 当前用户消息
+            emotion: 当前情绪状态
+            include_history: 是否包含历史
+
+        Returns:
+            (system_prompt, messages_for_api) 元组
+        """
+        system_prompt = self.build_system_prompt(emotion)
+
+        messages = []
+        if include_history:
+            history_messages = self._history.get_context_messages()
+            for msg in history_messages:
+                messages.append(Message(
+                    role=msg.role,
+                    content=msg.content,
+                    id=msg.id,
+                    timestamp=msg.timestamp,
+                ))
+
+        # 添加当前消息
+        messages.append(Message(
+            role=MessageRole.USER,
+            content=current_message,
+            id=f"user_{id(current_message)}",
+            timestamp=0,
+        ))
+
+        return system_prompt, messages
+
+    def build_history_summary_for_context(self, days: int = 3) -> str:
+        """构建历史摘要上下文。
+
+        Args:
+            days: 包含最近几天的摘要
+
+        Returns:
+            历史摘要字符串
+        """
+        return self._inner.build_history_summary_section(days=days)
+
+    def build_persona_context(self) -> str:
+        """构建人格上下文（用于摘要生成）。
+
+        Returns:
+            人格描述字符串
+        """
+        return self._persona.build_persona_text()
+
+    def build_memory_context(self, limit: int = 10) -> str:
+        """构建记忆上下文。
+
+        Args:
+            limit: 最近的记忆条数
+
+        Returns:
+            记忆描述字符串
+        """
+        memories = self._persona.get_recent_memories(limit=limit)
+        if not memories:
+            return ""
+
+        memory_texts = [m.content for m in memories]
+        return "相关记忆:\n- " + "\n- ".join(memory_texts)

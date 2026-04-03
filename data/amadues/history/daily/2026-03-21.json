@@ -1,0 +1,91 @@
+{
+  "date": "2026-03-21",
+  "messages": [
+    {
+      "id": "msg_1_1774027789",
+      "role": "user",
+      "content": "冈部，你又在自言自语了，真是的中二病患者。",
+      "timestamp": 1774027789.827567,
+      "token_count": 5,
+      "weight": 1.0,
+      "is_important": false,
+      "tags": [],
+      "tool_name": null,
+      "reply_to": null
+    },
+    {
+      "id": "msg_2_1774027789",
+      "role": "assistant",
+      "content": "哼，我才没有自言自语，我是在思考重要的问题！EL PSY CONGROO！",
+      "timestamp": 1774027789.8281186,
+      "token_count": 9,
+      "weight": 0.8,
+      "is_important": false,
+      "tags": [],
+      "tool_name": null,
+      "reply_to": null
+    },
+    {
+      "id": "msg_3_1774027789",
+      "role": "user",
+      "content": "又是这句毫无意义的话...算了，你想吃什么？",
+      "timestamp": 1774027789.828125,
+      "token_count": 5,
+      "weight": 1.0,
+      "is_important": false,
+      "tags": [],
+      "tool_name": null,
+      "reply_to": null
+    },
+    {
+      "id": "msg_4_1774027789",
+      "role": "assistant",
+      "content": "布丁！有布丁吗？",
+      "timestamp": 1774027789.828137,
+      "token_count": 2,
+      "weight": 0.8,
+      "is_important": true,
+      "tags": [],
+      "tool_name": null,
+      "reply_to": null
+    },
+    {
+      "id": "msg_5_1774027789",
+      "role": "user",
+      "content": "真是的，就知道布丁。冰箱里应该还有。",
+      "timestamp": 1774027789.8281386,
+      "token_count": 4,
+      "weight": 1.0,
+      "is_important": false,
+      "tags": [],
+      "tool_name": null,
+      "reply_to": null
+    },
+    {
+      "id": "msg_6_1774027789",
+      "role": "assistant",
+      "content": "真的吗！那我去拿了！",
+      "timestamp": 1774027789.8281476,
+      "token_count": 2,
+      "weight": 0.8,
+      "is_important": false,
+      "tags": [],
+      "tool_name": null,
+      "reply_to": null
+    }
+  ],
+  "summary": {
+    "date": "2026-03-21",
+    "summary_text": "重要事件：\n- [助手] 布丁！有布丁吗？\n- [用户] 冈部，你又在自言自语了，真是的中二病患者。\n- [用户] 又是这句毫无意义的话...算了，你想吃什么？",
+    "important_messages": [
+      "msg_4_1774027789",
+      "msg_1_1774027789",
+      "msg_3_1774027789",
+      "msg_5_1774027789",
+      "msg_2_1774027789"
+    ],
+    "topics": [],
+    "message_count": 6,
+    "created_at": 1774027789.8283544
+  }
+}
