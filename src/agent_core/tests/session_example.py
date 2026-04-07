@@ -526,6 +526,7 @@ def main():
                 persona_context=persona_context,
             )
             session_manager._update_memories_from_monthly_summary(monthly_data)
+            session_manager._clear_monthly_data(target_month)
             print(f"月度总结已生成并更新 memory.json")
         else:
             print(f"无该月的每日摘要数据")

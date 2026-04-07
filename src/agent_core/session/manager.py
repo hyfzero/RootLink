@@ -519,35 +519,55 @@ class SessionManager:
             print(f"Warning: Failed to update memories from monthly summary: {e}")
 
     def _clear_monthly_data(self, year_month: str) -> None:
-        """清空指定月份的历史数据。
+        """清空指定月份的记忆数据。
+
+        注意：只清空 daily_summary_memories（参与 prompt 构建），
+        本地 JSON/MD 文件保留以备后用（如需要重建记忆）。
 
         Args:
             year_month: 要清空的月份 (YYYY-MM)
         """
         try:
-            # 删除每日消息文件
-            daily_dir = PathResolver.get_brain_dir(self._current_brain_id) / "history" / "daily"
-            if daily_dir.exists():
-                for f in daily_dir.glob("*.json"):
-                    date_str = f.stem
-                    if date_str.startswith(year_month):
-                        f.unlink()
+            # 清空 Persona.daily_summary_memories 中该月份的记忆
+            # （这些才是参与 prompt 构建的数据）
+            persona = self.memory_updater.persona
+            original_count = len(persona.daily_summary_memories)
+            persona.daily_summary_memories = [
+                m for m in persona.daily_summary_memories
+                if not m.context.startswith(f"日终摘要-{year_month}")
+            ]
+            cleared_count = original_count - len(persona.daily_summary_memories)
 
-                for f in daily_dir.glob("*.summary.json"):
-                    date_str = f.stem.replace(".summary", "")
-                    if date_str.startswith(year_month):
-                        f.unlink()
+            # 保存更新后的记忆到文件
+            self.memory_updater.save()
 
-            # 清理 MessageHistory 中的当月数据
-            if hasattr(self.storage, '_history') and self.storage._history:
-                for date_key in list(self.storage._history.daily_histories.keys()):
-                    if date_key.startswith(year_month):
-                        del self.storage._history.daily_histories[date_key]
-                for date_key in list(self.storage._history.daily_summaries.keys()):
-                    if date_key.startswith(year_month):
-                        del self.storage._history.daily_summaries[date_key]
+            print(f"  - 已清空 {year_month} 的日终记忆 ({cleared_count} 条)，本地文件保留")
 
-            print(f"  - 已清空 {year_month} 的历史数据")
+            # === 以下为保留代码，暂不使用 ===
+            # 如需彻底删除本地文件，可启用以下代码：
+            #
+            # # 删除每日消息文件
+            # daily_dir = PathResolver.get_brain_dir(self._current_brain_id) / "history" / "daily"
+            # if daily_dir.exists():
+            #     for f in daily_dir.glob("*.json"):
+            #         date_str = f.stem
+            #         if date_str.startswith(year_month):
+            #             f.unlink()
+            #
+            #     for f in daily_dir.glob("*.summary.json"):
+            #         date_str = f.stem.replace(".summary", "")
+            #         if date_str.startswith(year_month):
+            #             f.unlink()
+            #
+            # # 清理 MessageHistory 中的当月数据
+            # if hasattr(self.storage, '_history') and self.storage._history:
+            #     for date_key in list(self.storage._history.daily_histories.keys()):
+            #         if date_key.startswith(year_month):
+            #             del self.storage._history.daily_histories[date_key]
+            #     for date_key in list(self.storage._history.daily_summaries.keys()):
+            #         if date_key.startswith(year_month):
+            #             del self.storage._history.daily_summaries[date_key]
+
         except Exception as e:
             print(f"Warning: Failed to clear monthly data: {e}")
 
