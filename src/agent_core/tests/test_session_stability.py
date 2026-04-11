@@ -14,7 +14,11 @@ from pathlib import Path
 # Add src/ to import path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from agent_core.api import APIProvider, ChatAgent
+from agent_core.api.adapter import ModelConfig
+from agent_core.api.adapters.minimax import MiniMaxAdapter
 from agent_core.api.message import Message as ApiMessage, MessageRole as ApiMessageRole
+from agent_core.api.types import ChatCompletionRequest, ChatCompletionResponse
 from agent_core.brain import (
     AgentConfig,
     MessageHistory,
@@ -25,7 +29,14 @@ from agent_core.brain import (
     TagGenerator,
     estimate_tokens,
 )
-from agent_core.session import BrainRegistry, DailySummarizer, SessionConfig, SessionManager
+from agent_core.brain.history import estimate_tokens_with_source
+from agent_core.session import (
+    BrainRegistry,
+    DailySummarizer,
+    SessionConfig,
+    SessionManager,
+    SessionStorage,
+)
 from agent_core.session.reply_tagger import MemoryUpdater
 
 
@@ -176,6 +187,144 @@ class SessionStabilityTests(unittest.TestCase):
         bullet_lines = [line for line in memory_section.splitlines() if line.startswith("- [")]
         self.assertEqual(len(bullet_lines), 2)
         self.assertNotIn("episodic low", memory_section)
+
+    def test_token_estimator_modes(self) -> None:
+        chinese = "你好，这是一次中文估算测试。"
+        english = "This is a short english token estimation test."
+
+        legacy_chinese = estimate_tokens(chinese, estimator="legacy_char_div4")
+        hybrid_chinese = estimate_tokens(chinese, estimator="hybrid_v1")
+        self.assertGreaterEqual(hybrid_chinese, legacy_chinese)
+
+        legacy_english = estimate_tokens(english, estimator="legacy_char_div4")
+        hybrid_english = estimate_tokens(english, estimator="hybrid_v1")
+        self.assertGreater(hybrid_english, 0)
+        self.assertLessEqual(hybrid_english, legacy_english * 2)
+
+        self.assertEqual(
+            legacy_english,
+            max(1, len(english) // 4),
+        )
+
+    def test_token_estimate_reports_source(self) -> None:
+        model_config = ModelConfig(
+            name="gpt-4o",
+            provider=APIProvider.OPENAI,
+            tokenizer_mode="heuristic",
+            tokenizer_fallback="legacy_char_div4",
+        )
+        result = estimate_tokens_with_source(
+            "hello world",
+            estimator="hybrid_v1",
+            model_config=model_config,
+        )
+        self.assertEqual(result.source, "heuristic_fallback")
+        self.assertEqual(result.tokens, max(1, len("hello world") // 4))
+
+    def test_minimax_adapter_usage_normalization(self) -> None:
+        adapter = MiniMaxAdapter()
+        response = adapter.parse_response(
+            {
+                "id": "resp-1",
+                "model": "MiniMax-M2.5",
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "input_tokens": 12,
+                    "output_tokens": 5,
+                },
+            }
+        )
+        self.assertEqual(response.usage.prompt_tokens, 12)
+        self.assertEqual(response.usage.completion_tokens, 5)
+        self.assertEqual(response.usage.total_tokens, 17)
+        self.assertEqual(response.token_source, "provider_usage")
+
+    def test_chat_agent_fills_usage_when_provider_missing(self) -> None:
+        agent = ChatAgent(
+            ModelConfig(
+                name="MiniMax-M2.5",
+                provider=APIProvider.MINIMAX,
+                tokenizer_mode="heuristic",
+                tokenizer_fallback="hybrid_v1",
+            )
+        )
+        request = ChatCompletionRequest(
+            model="MiniMax-M2.5",
+            messages=[ApiMessage(role=ApiMessageRole.USER, content="hello")],
+        )
+        response = ChatCompletionResponse.from_dict(
+            {
+                "id": "resp-no-usage",
+                "model": "MiniMax-M2.5",
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": "world"},
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+        )
+
+        aligned = agent._align_token_usage(request, response)
+        self.assertGreater(aligned.usage.total_tokens, 0)
+        self.assertEqual(aligned.token_source, "heuristic_fallback")
+
+    def test_token_estimator_is_persisted_in_agent_config(self) -> None:
+        config = AgentConfig(history={"token_estimator": "legacy_char_div4"})
+        data = config.to_dict()
+        self.assertEqual(data["history"]["token_estimator"], "legacy_char_div4")
+
+        loaded = AgentConfig.from_dict(data)
+        self.assertEqual(loaded.history.token_estimator, "legacy_char_div4")
+
+    def test_history_and_session_storage_share_estimator_behavior(self) -> None:
+        content = "这是同一条消息 mixed with english 123."
+
+        history = MessageHistory(token_estimator="legacy_char_div4")
+        history_msg = history.add_message(content, role=MessageRole.USER)
+
+        storage = SessionStorage(
+            config=SessionConfig(),
+            brain_id="testbrain",
+            token_estimator="legacy_char_div4",
+        )
+        session = storage.add_message("user", content)
+        session_msg = session.messages[-1]
+
+        self.assertEqual(history_msg.token_count, session_msg["token_count"])
+
+    def test_history_and_storage_share_model_tokenizer_strategy(self) -> None:
+        content = "model strategy check 123"
+        model_config = ModelConfig(
+            name="gpt-4o",
+            provider=APIProvider.OPENAI,
+            tokenizer_mode="heuristic",
+            tokenizer_fallback="legacy_char_div4",
+        )
+
+        history = MessageHistory(
+            token_estimator="hybrid_v1",
+            tokenizer_mode=model_config.tokenizer_mode,
+            model_config=model_config,
+        )
+        history_msg = history.add_message(content, role=MessageRole.USER)
+
+        storage = SessionStorage(
+            config=SessionConfig(),
+            brain_id="testbrain-model",
+            token_estimator="hybrid_v1",
+            tokenizer_mode=model_config.tokenizer_mode,
+            model_config=model_config,
+        )
+        session = storage.add_message("user", content)
+        session_msg = session.messages[-1]
+
+        self.assertEqual(history_msg.token_count, session_msg["token_count"])
 
     def test_prompt_budget_is_configurable(self) -> None:
         persona = Persona(

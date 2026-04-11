@@ -6,10 +6,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 if TYPE_CHECKING:
     from .message import Message, ToolDefinition
+
+TokenSource = Literal["provider_usage", "provider_tokenizer", "heuristic_fallback", "unknown"]
 
 
 @dataclass
@@ -65,6 +67,7 @@ class UsageInfo:
     completion_tokens: int = 0
     total_tokens: int = 0
     reasoning_tokens: int = 0  # MiniMax M2.5
+    source: TokenSource = "unknown"
 
     def to_dict(self) -> dict:
         result = {
@@ -74,6 +77,8 @@ class UsageInfo:
         }
         if self.reasoning_tokens > 0:
             result["reasoning_tokens"] = self.reasoning_tokens
+        if self.source != "unknown":
+            result["source"] = self.source
         return result
 
 
@@ -86,6 +91,7 @@ class ChatCompletionResponse:
     choices: list[ChatCompletionChoice]
     usage: UsageInfo
     reasoning: Optional[str] = None  # MiniMax M2.5 thinking
+    token_source: TokenSource = "unknown"
 
     @property
     def content(self) -> str:
@@ -111,6 +117,12 @@ class ChatCompletionResponse:
     def from_dict(cls, data: dict) -> "ChatCompletionResponse":
         from .message import Message, MessageContent, ToolCall
 
+        def _as_int(value: Any) -> int:
+            try:
+                return int(value or 0)
+            except (TypeError, ValueError):
+                return 0
+
         choices = []
         for i, choice_data in enumerate(data.get("choices", [])):
             message_data = choice_data.get("message", {})
@@ -120,12 +132,20 @@ class ChatCompletionResponse:
 
         usage_data = data.get("usage", {})
         reasoning = data.get("reasoning") or data.get("thinking") or data.get("reasoning_details")
+        source = usage_data.get("source")
+        if not source:
+            has_usage = any(
+                _as_int(usage_data.get(k, 0)) > 0
+                for k in ("prompt_tokens", "completion_tokens", "total_tokens", "reasoning_tokens")
+            )
+            source = "provider_usage" if has_usage else data.get("token_source", "unknown")
 
         usage = UsageInfo(
-            prompt_tokens=usage_data.get("prompt_tokens", 0),
-            completion_tokens=usage_data.get("completion_tokens", 0),
-            total_tokens=usage_data.get("total_tokens", 0),
-            reasoning_tokens=usage_data.get("reasoning_tokens", 0),
+            prompt_tokens=_as_int(usage_data.get("prompt_tokens", 0)),
+            completion_tokens=_as_int(usage_data.get("completion_tokens", 0)),
+            total_tokens=_as_int(usage_data.get("total_tokens", 0)),
+            reasoning_tokens=_as_int(usage_data.get("reasoning_tokens", 0)),
+            source=source,
         )
 
         return cls(
@@ -134,6 +154,7 @@ class ChatCompletionResponse:
             choices=choices,
             usage=usage,
             reasoning=reasoning,
+            token_source=data.get("token_source", source),
         )
 
 

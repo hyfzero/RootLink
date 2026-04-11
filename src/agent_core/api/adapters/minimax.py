@@ -32,7 +32,42 @@ class MiniMaxAdapter(BaseAdapter):
         return data
 
     def parse_response(self, response_data: dict) -> ChatCompletionResponse:
-        return ChatCompletionResponse.from_dict(response_data)
+        usage_data = response_data.get("usage", {}) or {}
+
+        prompt_tokens = (
+            usage_data.get("prompt_tokens")
+            or usage_data.get("input_tokens")
+            or usage_data.get("prompt_token_count")
+            or 0
+        )
+        completion_tokens = (
+            usage_data.get("completion_tokens")
+            or usage_data.get("output_tokens")
+            or usage_data.get("completion_token_count")
+            or 0
+        )
+        reasoning_tokens = (
+            usage_data.get("reasoning_tokens")
+            or usage_data.get("thinking_tokens")
+            or 0
+        )
+        total_tokens = (
+            usage_data.get("total_tokens")
+            or usage_data.get("total_token_count")
+            or (prompt_tokens + completion_tokens + reasoning_tokens)
+        )
+
+        normalized = dict(response_data)
+        normalized["usage"] = {
+            "prompt_tokens": int(prompt_tokens),
+            "completion_tokens": int(completion_tokens),
+            "total_tokens": int(total_tokens),
+            "reasoning_tokens": int(reasoning_tokens),
+        }
+        if total_tokens > 0:
+            normalized["usage"]["source"] = "provider_usage"
+
+        return ChatCompletionResponse.from_dict(normalized)
 
     def parse_stream_chunk(self, chunk_data: dict) -> StreamChunk:
         delta = ""

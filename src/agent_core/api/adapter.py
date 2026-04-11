@@ -42,6 +42,8 @@ class ModelConfig:
     supports_streaming: bool = True
     supports_thinking: bool = False  # MiniMax M2.5 等支持
 
+    tokenizer_mode: str = "auto"  # auto / provider / heuristic
+    tokenizer_fallback: str = "hybrid_v1"  # hybrid_v1 / legacy_char_div4
     @property
     def resolved_api_key(self) -> str:
         if self.api_key:

@@ -47,6 +47,8 @@ def load_model_from_config(config_dir: str = "./config") -> ModelConfig:
         temperature=0.7,
         supports_thinking=True,
         supports_function_calling=True,
+        tokenizer_mode=model_info.tokenizer_mode if model_info else "auto",
+        tokenizer_fallback=model_info.tokenizer_fallback if model_info else "hybrid_v1",
     )
 
 

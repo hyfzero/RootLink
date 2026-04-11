@@ -47,6 +47,9 @@ class ModelInfo:
     max_tokens: int = 8192  # 最大输出 token 数
     cost: ModelCost = field(default_factory=ModelCost)
 
+    tokenizer_mode: str = "auto"
+    tokenizer_fallback: str = "hybrid_v1"
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -55,6 +58,8 @@ class ModelInfo:
             "input_types": self.input_types,
             "context_window": self.context_window,
             "max_tokens": self.max_tokens,
+            "tokenizer_mode": self.tokenizer_mode,
+            "tokenizer_fallback": self.tokenizer_fallback,
             "cost": asdict(self.cost),
         }
 
@@ -74,6 +79,8 @@ class ModelInfo:
             input_types=data.get("input_types", ["text"]),
             context_window=data.get("context_window", 128000),
             max_tokens=data.get("max_tokens", 8192),
+            tokenizer_mode=data.get("tokenizer_mode", "auto"),
+            tokenizer_fallback=data.get("tokenizer_fallback", "hybrid_v1"),
             cost=cost,
         )
 

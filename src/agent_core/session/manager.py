@@ -95,11 +95,19 @@ class SessionManager:
     def storage(self) -> SessionStorage:
         """获取存储实例（延迟初始化）"""
         if self._storage is None:
+            components = self.brain_registry.current()
+            history_cfg = getattr(components.config, "history", None)
+            token_estimator = getattr(history_cfg, "token_estimator", "hybrid_v1")
+            runtime_model_config = getattr(self.chat_agent, "config", None) or self.config.model_config
+            tokenizer_mode = getattr(runtime_model_config, "tokenizer_mode", "auto")
             self._storage = SessionStorage(
                 config=self.config,
                 resolver=PathResolver(),
                 brain_id=self._current_brain_id,
                 use_msgpack=self.use_msgpack,
+                token_estimator=token_estimator,
+                tokenizer_mode=tokenizer_mode,
+                model_config=runtime_model_config,
             )
         return self._storage
 
@@ -129,11 +137,14 @@ class SessionManager:
     def prompt_builder(self) -> SessionPromptBuilder:
         """获取当前 Brain 的 PromptBuilder"""
         components = self.brain_registry.current()
+        runtime_model_config = getattr(self.chat_agent, "config", None) or self.config.model_config
+        components.history.set_model_config(runtime_model_config)
         return SessionPromptBuilder(
             persona=components.persona,
             history=components.history,
             style_engine=components.style_engine,
             config=components.config,
+            model_config=runtime_model_config,
         )
 
     # ==================== UI层标签解析模式控制 ====================
@@ -204,6 +215,7 @@ class SessionManager:
         await self._check_and_handle_day_change()
 
         # 2. 保存用户消息
+        self._sync_tokenizer_runtime()
         self.storage.add_message("user", user_message)
         self._sync_history_message("user", user_message)
         self._sync_relationship_state("user", user_message)
@@ -249,6 +261,7 @@ class SessionManager:
         """
         # 日期切换检查（同步版本）
         self._check_and_handle_day_change_sync()
+        self._sync_tokenizer_runtime()
 
         # 保存用户消息
         self.storage.add_message("user", user_message)
@@ -640,6 +653,22 @@ class SessionManager:
     def _generate_message_id(self) -> str:
         """生成消息 ID"""
         return f"msg_{int(time.time() * 1000)}"
+
+    def _sync_tokenizer_runtime(self) -> None:
+        """Sync runtime model tokenizer strategy into history/storage chain."""
+        try:
+            components = self.brain_registry.current()
+            runtime_model_config = getattr(self.chat_agent, "config", None) or self.config.model_config
+            components.history.set_model_config(runtime_model_config)
+            components.history.set_tokenizer_mode(getattr(runtime_model_config, "tokenizer_mode", "auto"))
+            if self._storage is not None:
+                self._storage.set_runtime_token_strategy(
+                    token_estimator=components.history.token_estimator,
+                    tokenizer_mode=getattr(runtime_model_config, "tokenizer_mode", "auto"),
+                    model_config=runtime_model_config,
+                )
+        except Exception as e:
+            print(f"Warning: Failed to sync tokenizer runtime: {e}")
 
     def _sync_history_message(self, role: str, content: str) -> None:
         """将消息同步写入 MessageHistory，失败时不影响主流程。"""

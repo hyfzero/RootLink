@@ -97,6 +97,7 @@ class AnthropicAdapter(BaseAdapter):
             prompt_tokens=usage_data.get("input_tokens", 0),
             completion_tokens=usage_data.get("output_tokens", 0),
             total_tokens=usage_data.get("total_tokens", 0),
+            source="provider_usage",
         )
 
         return ChatCompletionResponse(

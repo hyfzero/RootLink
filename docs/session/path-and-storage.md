@@ -84,5 +84,16 @@ messages = storage.get_today_messages()
 ## 注意事项
 
 - `DaySession.messages` 内部保存 dict，`get_messages()` 才转换成 Brain 的 `Message`。
+- `SessionStorage` 的 token 估算策略与当前 Brain 的 `history.token_estimator` 对齐，`compact` 判定会随之变化。
 - `use_msgpack=True` 会使用 `.msgpack` 扩展名。
 - 环境变量路径优先于项目默认 `data`/`config`。
+
+## Token Strategy Alignment
+
+`SessionStorage` now aligns with runtime model tokenizer strategy:
+
+- Uses the same resolver chain as `MessageHistory`/`PromptBuilder`.
+- Supports runtime `tokenizer_mode` + `tokenizer_fallback` from `ModelConfig`.
+- `DaySession` persists `tokenizer_mode/model_provider/model_name` for observability.
+
+This keeps `add_message` token counting and compact thresholds consistent with prompt budgeting.

@@ -77,12 +77,15 @@ result = manager.send_message_sync("晚上好")
 python src/agent_core/tests/test_session_stability.py
 ```
 
-## Config Examples (Memory + Prompt + Relationship)
+## Config Examples (History + Memory + Prompt + Relationship)
 
-`data/{brain_id}/config.json` can now control memory injection and prompt section budgets.
+`data/{brain_id}/config.json` can now control token estimator strategy, memory injection, and prompt section budgets.
 
 ```json
 {
+  "history": {
+    "token_estimator": "hybrid_v1"
+  },
   "memory_injection": {
     "enabled": true,
     "total_limit": 8,
@@ -151,3 +154,49 @@ python src/agent_core/tests/test_session_stability.py
   }
 }
 ```
+
+`history.token_estimator` defaults to `hybrid_v1`; set `legacy_char_div4` to rollback to previous behavior.
+
+## Model Tokenizer Config
+
+Runtime tokenizer behavior is controlled by `ModelConfig` (API/model layer), not by changing session call signatures:
+
+```python
+from agent_core.api.adapter import ModelConfig, APIProvider
+
+cfg = ModelConfig(
+    name="gpt-4o",
+    provider=APIProvider.OPENAI,
+    tokenizer_mode="auto",            # auto | provider | heuristic
+    tokenizer_fallback="hybrid_v1",   # hybrid_v1 | legacy_char_div4
+)
+```
+
+Behavior:
+
+- OpenAI: if `tiktoken` is available -> provider tokenizer counting.
+- Otherwise -> fallback heuristic counting.
+- MiniMax: request protocol unchanged; usage fields are normalized when returned, else fallback counting.
+
+## Add New Model Checklist (with DeepSeek example)
+
+When adding a new model/provider, follow this order:
+
+1. Register model metadata in `src/agent_core/models/models.py` (`ModelInfo`).
+2. Set tokenizer defaults for that model (`tokenizer_mode/tokenizer_fallback`).
+3. If provider has tokenizer support, add counter routing; if not, fallback to heuristic.
+4. Map provider usage fields in adapter parse logic.
+5. Run consistency tests (`PromptBuilder` / `MessageHistory` / `SessionStorage`).
+
+DeepSeek example (fallback-first):
+
+```python
+deepseek_cfg = ModelConfig(
+    name="deepseek-chat",
+    provider=APIProvider.OPENROUTER,  # or your dedicated provider enum when added
+    tokenizer_mode="auto",
+    tokenizer_fallback="hybrid_v1",
+)
+```
+
+If a dedicated DeepSeek tokenizer is added later, only extend tokenizer routing + adapter usage mapping. Budget/compact/business logic stays unchanged.

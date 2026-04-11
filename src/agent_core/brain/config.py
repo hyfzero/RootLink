@@ -18,6 +18,7 @@ class HistoryConfig:
     retention_days: int = 30  # 历史消息保留天数
     summary_trigger_messages: int = 50  # 触发生成摘要的消息数量
     token_reserved: int = 1000  # 为系统提示等保留的Token数量
+    token_estimator: str = "hybrid_v1"  # token估算策略: hybrid_v1 / legacy_char_div4
 
 
 @dataclass
@@ -57,7 +58,7 @@ class MemoryInjectionConfig:
     """记忆注入策略配置。"""
 
     enabled: bool = True
-    total_limit: int = 8
+    total_limit: int = 15
     per_type_limit: dict[str, int] = field(default_factory=lambda: {
         "fact": 3,
         "preference": 3,
@@ -276,6 +277,7 @@ class AgentConfig:
                 "retention_days": self.history.retention_days,
                 "summary_trigger_messages": self.history.summary_trigger_messages,
                 "token_reserved": self.history.token_reserved,
+                "token_estimator": self.history.token_estimator,
             },
             "tags": {
                 "auto_generate": self.tags.auto_generate,

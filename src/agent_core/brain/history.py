@@ -8,13 +8,22 @@
 灵感来源：OpenClaw的session管理和compaction机制。
 """
 
-import math
 import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
+
+from .tokenizer import (
+    TokenCountResult,
+    TokenEstimator,
+    TokenizerMode,
+    build_tokenizer_resolver,
+    estimate_tokens as _estimate_tokens,
+    normalize_token_estimator as _normalize_token_estimator,
+    normalize_tokenizer_mode as _normalize_tokenizer_mode,
+)
 
 
 class MessageRole(Enum):
@@ -170,7 +179,19 @@ IMPORTANT_PATTERNS = [
 ]
 
 
-def estimate_tokens(text: str) -> int:
+
+
+def normalize_token_estimator(estimator: Optional[str]) -> TokenEstimator:
+    """Normalize estimator name and fallback to default for unknown values."""
+    return _normalize_token_estimator(estimator)
+
+
+def normalize_tokenizer_mode(mode: Optional[str]) -> TokenizerMode:
+    """Normalize tokenizer mode and fallback to auto for unknown values."""
+    return _normalize_tokenizer_mode(mode)
+
+
+def estimate_tokens(text: str, estimator: TokenEstimator = "hybrid_v1") -> int:
     """估算文本的Token数量。
 
     使用字符数除以4作为粗略估计（适用于英文）。
@@ -183,13 +204,23 @@ def estimate_tokens(text: str) -> int:
     Returns:
         估计的Token数量
     """
-    if not text:
-        return 0
-    # Unicode-aware: 使用字符数而非字节数
-    char_count = len(text)
-    # 粗略估计：中文约1-2 token/字符，英文约1/4
-    # 简化处理：总字符数 / 4
-    return max(1, char_count // 4)
+    return _estimate_tokens(text, estimator=estimator)
+
+
+def estimate_tokens_with_source(
+    text: str,
+    *,
+    estimator: TokenEstimator = "hybrid_v1",
+    model_config: Optional[object] = None,
+    tokenizer_mode: Optional[str] = None,
+) -> TokenCountResult:
+    """Estimate token count and include token source."""
+    resolver = build_tokenizer_resolver(
+        token_estimator=estimator,
+        model_config=model_config,
+        tokenizer_mode=tokenizer_mode,
+    )
+    return resolver.count_text(text)
 
 
 def calculate_message_weight(
@@ -449,6 +480,9 @@ class MessageHistory:
         max_context_tokens: int = 4000,
         token_reserved: int = 1000,
         retention_days: int = 30,
+        token_estimator: TokenEstimator = "hybrid_v1",
+        tokenizer_mode: TokenizerMode = "auto",
+        model_config: Optional[object] = None,
     ):
         """初始化历史管理器。
 
@@ -460,6 +494,11 @@ class MessageHistory:
         self.max_context_tokens = max_context_tokens
         self.token_reserved = token_reserved
         self.retention_days = retention_days
+        self.token_estimator = normalize_token_estimator(token_estimator)
+        if model_config is not None and tokenizer_mode == "auto":
+            tokenizer_mode = getattr(model_config, "tokenizer_mode", tokenizer_mode)
+        self.tokenizer_mode = normalize_tokenizer_mode(tokenizer_mode)
+        self.model_config = model_config
 
         self.daily_histories: dict[str, DailyHistory] = {}  # 日期 -> 当日历史
         self.daily_summaries: dict[str, DailySummary] = {}  # 日期 -> 每日摘要
@@ -467,6 +506,8 @@ class MessageHistory:
 
         self._today: Optional[str] = None
         self._msg_counter = 0
+        self._resolver_cache = None
+        self._resolver_cache_key: Optional[tuple[Any, ...]] = None
 
     @property
     def today_str(self) -> str:
@@ -474,6 +515,43 @@ class MessageHistory:
         if self._today is None:
             self._today = datetime.now().strftime("%Y-%m-%d")
         return self._today
+
+    def set_model_config(self, model_config: Optional[object]) -> None:
+        """Bind runtime model config for tokenizer routing."""
+        self.model_config = model_config
+        self._resolver_cache = None
+        self._resolver_cache_key = None
+
+    def set_tokenizer_mode(self, mode: Optional[str]) -> None:
+        """Update tokenizer routing mode."""
+        self.tokenizer_mode = normalize_tokenizer_mode(mode)
+        self._resolver_cache = None
+        self._resolver_cache_key = None
+
+    def _tokenizer_resolver(self):
+        model_provider = getattr(self.model_config, "provider", None)
+        model_name = getattr(self.model_config, "name", None)
+        model_mode = getattr(self.model_config, "tokenizer_mode", None)
+        model_fallback = getattr(self.model_config, "tokenizer_fallback", None)
+        cache_key = (
+            self.token_estimator,
+            self.tokenizer_mode,
+            str(model_provider) if model_provider is not None else None,
+            model_name,
+            model_mode,
+            model_fallback,
+        )
+        if self._resolver_cache is None or self._resolver_cache_key != cache_key:
+            self._resolver_cache = build_tokenizer_resolver(
+                token_estimator=self.token_estimator,
+                model_config=self.model_config,
+                tokenizer_mode=self.tokenizer_mode,
+            )
+            self._resolver_cache_key = cache_key
+        return self._resolver_cache
+
+    def _count_text(self, text: str) -> TokenCountResult:
+        return self._tokenizer_resolver().count_text(text)
 
     def _get_or_create_daily(self, date: Optional[str] = None) -> DailyHistory:
         """获取或创建当日历史记录。"""
@@ -516,7 +594,7 @@ class MessageHistory:
             role=role,
             content=content,
             timestamp=ts,
-            token_count=estimate_tokens(content),
+            token_count=self._count_text(content).tokens,
             weight=ROLE_BASE_WEIGHTS.get(role, 0.5),
             is_important=is_important,
             tags=tags or [],
@@ -562,7 +640,7 @@ class MessageHistory:
         summary_tokens = 0
         for date_str in dates:
             summary = self.daily_summaries[date_str]
-            tokens = estimate_tokens(summary.summary_text)
+            tokens = self._count_text(summary.summary_text).tokens
             if summary_tokens + tokens <= budget // 4:
                 summary_tokens += tokens
 
@@ -574,7 +652,7 @@ class MessageHistory:
 
         # 按预算添加消息
         for msg in queue_msgs:
-            tokens = msg.token_count or estimate_tokens(msg.content)
+            tokens = msg.token_count or self._count_text(msg.content).tokens
             if tokens <= budget:
                 result.append(msg)
                 budget -= tokens
@@ -643,6 +721,8 @@ class MessageHistory:
                 "max_context_tokens": self.max_context_tokens,
                 "token_reserved": self.token_reserved,
                 "retention_days": self.retention_days,
+                "token_estimator": self.token_estimator,
+                "tokenizer_mode": self.tokenizer_mode,
             },
         }
 
@@ -654,6 +734,8 @@ class MessageHistory:
             max_context_tokens=config.get("max_context_tokens", 4000),
             token_reserved=config.get("token_reserved", 1000),
             retention_days=config.get("retention_days", 30),
+            token_estimator=normalize_token_estimator(config.get("token_estimator", "hybrid_v1")),
+            tokenizer_mode=normalize_tokenizer_mode(config.get("tokenizer_mode", "auto")),
         )
 
         for date_str, daily_data in data.get("daily_histories", {}).items():
@@ -672,7 +754,7 @@ class MessageHistory:
 # LLM驱动的记忆总结
 # ============================================================================
 
-from typing import Callable, Awaitable, Union
+from typing import Awaitable, Callable
 
 
 # 默认的同步LLM调用类型

@@ -12,6 +12,7 @@ from typing import Any, Callable, Optional
 
 import requests
 
+from ..brain.tokenizer import build_tokenizer_resolver
 from .adapter import APIProvider, AdapterRegistry, BaseAdapter, ModelConfig
 from .adapters import (
     AnthropicAdapter,
@@ -121,7 +122,39 @@ class ChatAgent:
         response_data = response.json()
         logger.debug(f"Response: {json.dumps(response_data, ensure_ascii=False)[:500]}")
 
-        return self.adapter.parse_response(response_data)
+        parsed = self.adapter.parse_response(response_data)
+        return self._align_token_usage(request, parsed)
+
+    def _align_token_usage(
+        self,
+        request: ChatCompletionRequest,
+        response: ChatCompletionResponse,
+    ) -> ChatCompletionResponse:
+        usage = response.usage
+        if usage.total_tokens > 0:
+            if usage.source == "unknown":
+                usage.source = "provider_usage"
+            response.token_source = usage.source
+            return response
+
+        resolver = build_tokenizer_resolver(
+            token_estimator=self.config.tokenizer_fallback,
+            model_config=self.config,
+            tokenizer_mode=self.config.tokenizer_mode,
+        )
+        prompt_count = resolver.count_messages(request.messages)
+        completion_count = resolver.count_text(response.content)
+
+        usage.prompt_tokens = prompt_count.tokens
+        usage.completion_tokens = completion_count.tokens
+        usage.total_tokens = prompt_count.tokens + completion_count.tokens
+        usage.source = (
+            "provider_tokenizer"
+            if (prompt_count.source == "provider_tokenizer" and completion_count.source == "provider_tokenizer")
+            else "heuristic_fallback"
+        )
+        response.token_source = usage.source
+        return response
 
     def _stream(self, request: ChatCompletionRequest) -> StreamChunk:
         """发送流式请求。"""

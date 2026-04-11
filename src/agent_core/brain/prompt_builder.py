@@ -20,7 +20,12 @@ from datetime import datetime
 from typing import Any, Optional
 
 from .persona import Persona
-from .history import MessageHistory, MessageRole, estimate_tokens
+from .history import (
+    MessageHistory,
+    MessageRole,
+    build_tokenizer_resolver,
+    normalize_token_estimator,
+)
 from .config import AgentConfig
 from .speaking_style import SpeakingStyleEngine
 
@@ -85,6 +90,7 @@ class PromptBuilder:
         history: Optional[MessageHistory] = None,
         config: Optional[AgentConfig] = None,
         style_engine: Optional[SpeakingStyleEngine] = None,
+        model_config: Optional[object] = None,
     ):
         """初始化Prompt构建器。
 
@@ -98,6 +104,15 @@ class PromptBuilder:
         self.history = history
         self.config = config or AgentConfig()
         self.style_engine = style_engine
+        self.model_config = model_config
+        self._resolver_cache = None
+        self._resolver_cache_key = None
+
+    def set_model_config(self, model_config: Optional[object]) -> None:
+        """Bind runtime model config for tokenizer routing."""
+        self.model_config = model_config
+        self._resolver_cache = None
+        self._resolver_cache_key = None
 
     def _memory_policy_to_dict(self, limit: Optional[int] = None) -> dict[str, Any]:
         """将 memory_injection 配置转换为字典策略。"""
@@ -160,6 +175,34 @@ class PromptBuilder:
             "states": states,
         }
 
+    def _token_estimator(self) -> str:
+        """Get token estimator strategy from config with safe fallback."""
+        history_cfg = getattr(self.config, "history", None)
+        estimator = getattr(history_cfg, "token_estimator", "hybrid_v1")
+        return normalize_token_estimator(estimator)
+
+    def _estimate_tokens(self, text: str) -> int:
+        """Estimate tokens with the same strategy used by history/storage."""
+        estimator = self._token_estimator()
+        model_provider = getattr(self.model_config, "provider", None)
+        model_name = getattr(self.model_config, "name", None)
+        model_mode = getattr(self.model_config, "tokenizer_mode", None)
+        model_fallback = getattr(self.model_config, "tokenizer_fallback", None)
+        cache_key = (
+            estimator,
+            str(model_provider) if model_provider is not None else None,
+            model_name,
+            model_mode,
+            model_fallback,
+        )
+        if self._resolver_cache is None or self._resolver_cache_key != cache_key:
+            self._resolver_cache = build_tokenizer_resolver(
+                token_estimator=estimator,
+                model_config=self.model_config,
+            )
+            self._resolver_cache_key = cache_key
+        return self._resolver_cache.count_text(text).tokens
+
     def _truncate_text_by_tokens(self, text: str, max_tokens: Optional[int]) -> str:
         """按近似 token 预算裁剪文本。"""
         if not text:
@@ -168,17 +211,28 @@ class PromptBuilder:
             return text
         if max_tokens <= 0:
             return ""
-        if estimate_tokens(text) <= max_tokens:
+        if self._estimate_tokens(text) <= max_tokens:
             return text
 
-        char_budget = max_tokens * 4
-        if char_budget <= 0:
+        low, high = 0, len(text)
+        while low < high:
+            mid = (low + high + 1) // 2
+            candidate = text[:mid].rstrip()
+            if self._estimate_tokens(candidate) <= max_tokens:
+                low = mid
+            else:
+                high = mid - 1
+
+        if low <= 0:
             return ""
 
-        clipped = text[:char_budget].rstrip()
-        if len(clipped) < len(text):
-            clipped = clipped.rstrip(".")
-            clipped = f"{clipped}..."
+        clipped = text[:low].rstrip()
+        if low < len(text):
+            suffix = "..."
+            while clipped and self._estimate_tokens(f"{clipped}{suffix}") > max_tokens:
+                clipped = clipped[:-1].rstrip()
+            if clipped and self._estimate_tokens(suffix) <= max_tokens:
+                clipped = f"{clipped}{suffix}"
         return clipped
 
     def _compose_sections(self, sections: list[tuple[str, str]]) -> str:
@@ -210,7 +264,7 @@ class PromptBuilder:
             remaining = total_limit - used_tokens
             if remaining <= 0:
                 break
-            text_tokens = estimate_tokens(text)
+            text_tokens = self._estimate_tokens(text)
             if text_tokens <= remaining:
                 final_sections.append(text)
                 used_tokens += text_tokens
@@ -219,11 +273,11 @@ class PromptBuilder:
             clipped = self._truncate_text_by_tokens(text, remaining)
             if clipped:
                 final_sections.append(clipped)
-                used_tokens += estimate_tokens(clipped)
+                used_tokens += self._estimate_tokens(clipped)
             break
 
         composed = "\n\n".join(final_sections)
-        if estimate_tokens(composed) > total_limit:
+        if self._estimate_tokens(composed) > total_limit:
             composed = self._truncate_text_by_tokens(composed, total_limit)
         return composed
 

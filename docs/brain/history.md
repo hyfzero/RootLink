@@ -68,6 +68,39 @@ summary = SummaryGenerator(llm_callable=llm).generate_summary(
 
 ## 注意事项
 
-- `estimate_tokens()` 是粗略估算，不等于 Provider 真实 token 计数。
+- `estimate_tokens(text, estimator)` 支持两种策略：`hybrid_v1`（默认）和 `legacy_char_div4`（回退）。
+- 可在 `data/{brain_id}/config.json` 中通过 `history.token_estimator` 切换估算策略。
+- 估算值仍是近似值，不等于 Provider 真实 token 计数。
 - `MessageHistory.add_message()` 会对用户消息做重要性关键词检测。
 - LLM 摘要失败时，`SummaryGenerator(use_fallback=True)` 会退回规则摘要。
+
+## Model-level Tokenizer Routing
+
+`MessageHistory` now supports model-aware tokenizer routing:
+
+- `tokenizer_mode=auto`: try provider tokenizer first, fallback to heuristic.
+- `tokenizer_mode=provider`: force provider tokenizer; if unavailable, warn and fallback.
+- `tokenizer_mode=heuristic`: always use heuristic estimator.
+
+Runtime input comes from `ModelConfig`:
+
+```python
+from agent_core.api.adapter import ModelConfig, APIProvider
+from agent_core.brain import MessageHistory
+
+model_cfg = ModelConfig(
+    name="gpt-4o",
+    provider=APIProvider.OPENAI,
+    tokenizer_mode="auto",
+    tokenizer_fallback="hybrid_v1",
+)
+
+history = MessageHistory(
+    token_estimator="hybrid_v1",
+    tokenizer_mode=model_cfg.tokenizer_mode,
+    model_config=model_cfg,
+)
+```
+
+For OpenAI, if optional `tiktoken` is installed, counting uses provider tokenizer (`provider_tokenizer`).
+If unavailable, it falls back to heuristic (`heuristic_fallback`).

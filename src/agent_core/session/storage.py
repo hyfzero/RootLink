@@ -11,7 +11,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from ..brain.history import Message, MessageRole, estimate_tokens
+from ..brain.history import (
+    Message,
+    MessageRole,
+    build_tokenizer_resolver,
+    normalize_token_estimator,
+    normalize_tokenizer_mode,
+)
 from .config import SessionConfig
 from .path_resolver import PathResolver
 
@@ -25,11 +31,62 @@ class DaySession:
     message_count: int = 0
     total_tokens_estimate: int = 0
     summary_generated: bool = False
+    token_estimator: str = "hybrid_v1"
+    tokenizer_mode: str = "auto"
+    model_provider: Optional[str] = None
+    model_name: Optional[str] = None
+    _resolver_cache: object = field(default=None, init=False, repr=False)
+    _resolver_cache_key: Optional[tuple] = field(default=None, init=False, repr=False)
+
+    def set_token_strategy(
+        self,
+        estimator: str,
+        tokenizer_mode: str = "auto",
+        model_provider: Optional[str] = None,
+        model_name: Optional[str] = None,
+    ) -> None:
+        """Set tokenizer strategy for this day session."""
+        self.token_estimator = normalize_token_estimator(estimator)
+        self.tokenizer_mode = normalize_tokenizer_mode(tokenizer_mode)
+        self.model_provider = model_provider
+        self.model_name = model_name
+        self._resolver_cache = None
+        self._resolver_cache_key = None
+
+    def _tokenizer_resolver(self):
+        cache_key = (
+            self.token_estimator,
+            self.tokenizer_mode,
+            self.model_provider,
+            self.model_name,
+        )
+        if self._resolver_cache is not None and self._resolver_cache_key == cache_key:
+            return self._resolver_cache
+
+        model_stub = None
+        if self.model_provider:
+            model_stub = type(
+                "_RuntimeModelStub",
+                (),
+                {
+                    "provider": self.model_provider,
+                    "name": self.model_name,
+                    "tokenizer_mode": self.tokenizer_mode,
+                    "tokenizer_fallback": self.token_estimator,
+                },
+            )()
+        self._resolver_cache = build_tokenizer_resolver(
+            token_estimator=self.token_estimator,
+            model_config=model_stub,
+            tokenizer_mode=self.tokenizer_mode,
+        )
+        self._resolver_cache_key = cache_key
+        return self._resolver_cache
 
     def add_message(self, role: str, content: str) -> None:
         """添加消息，带 Token 估算"""
         self.message_count += 1
-        token_count = estimate_tokens(content)
+        token_count = self._tokenizer_resolver().count_text(content).tokens
         self.total_tokens_estimate += token_count
 
         self.messages.append({
@@ -50,7 +107,12 @@ class DaySession:
         if len(self.messages) > keep_last_n:
             self.messages = self.messages[-keep_last_n:]
             # 重新计算 token
-            self.total_tokens_estimate = sum(m.get("token_count", 0) for m in self.messages)
+            self.total_tokens_estimate = sum(
+                m.get("token_count")
+                if m.get("token_count") is not None
+                else self._tokenizer_resolver().count_text(m.get("content", "")).tokens
+                for m in self.messages
+            )
 
     def get_messages(self) -> list[Message]:
         """获取消息列表（转换为 Message 对象）"""
@@ -70,6 +132,10 @@ class DaySession:
             "message_count": self.message_count,
             "total_tokens_estimate": self.total_tokens_estimate,
             "summary_generated": self.summary_generated,
+            "token_estimator": self.token_estimator,
+            "tokenizer_mode": self.tokenizer_mode,
+            "model_provider": self.model_provider,
+            "model_name": self.model_name,
         }
 
     @classmethod
@@ -80,6 +146,10 @@ class DaySession:
         session.message_count = data.get("message_count", 0)
         session.total_tokens_estimate = data.get("total_tokens_estimate", 0)
         session.summary_generated = data.get("summary_generated", False)
+        session.token_estimator = normalize_token_estimator(data.get("token_estimator", "hybrid_v1"))
+        session.tokenizer_mode = normalize_tokenizer_mode(data.get("tokenizer_mode", "auto"))
+        session.model_provider = data.get("model_provider")
+        session.model_name = data.get("model_name")
         return session
 
 
@@ -91,7 +161,10 @@ class SessionStorage:
         config: SessionConfig,
         resolver: Optional[PathResolver] = None,
         brain_id: str = "default",
-        use_msgpack: bool = False
+        use_msgpack: bool = False,
+        token_estimator: str = "hybrid_v1",
+        tokenizer_mode: str = "auto",
+        model_config: Optional[object] = None,
     ):
         """初始化会话存储管理器。
 
@@ -105,6 +178,11 @@ class SessionStorage:
         self.resolver = resolver or PathResolver()
         self._brain_id = brain_id
         self._use_msgpack = use_msgpack
+        self._token_estimator = normalize_token_estimator(token_estimator)
+        self._model_config = model_config
+        if model_config is not None and tokenizer_mode == "auto":
+            tokenizer_mode = getattr(model_config, "tokenizer_mode", tokenizer_mode)
+        self._tokenizer_mode = normalize_tokenizer_mode(tokenizer_mode)
         self._today_session: Optional[DaySession] = None
         self._current_date: Optional[str] = None
 
@@ -152,6 +230,30 @@ class SessionStorage:
 
     # === 核心操作 ===
 
+    def _runtime_model_provider(self) -> Optional[str]:
+        if self._model_config is None:
+            return None
+        provider = getattr(self._model_config, "provider", None)
+        if provider is None:
+            return None
+        return str(provider)
+
+    def _runtime_model_name(self) -> Optional[str]:
+        if self._model_config is None:
+            return None
+        model_name = getattr(self._model_config, "name", None)
+        if model_name is None:
+            return None
+        return str(model_name)
+
+    def _apply_runtime_token_strategy(self, session: DaySession) -> None:
+        session.set_token_strategy(
+            estimator=self._token_estimator,
+            tokenizer_mode=self._tokenizer_mode,
+            model_provider=self._runtime_model_provider(),
+            model_name=self._runtime_model_name(),
+        )
+
     def get_or_create_today(self) -> DaySession:
         """获取或创建当日 Session"""
         today = datetime.now().strftime("%Y-%m-%d")
@@ -163,7 +265,15 @@ class SessionStorage:
                 data = self._load(session_path)
                 self._today_session = DaySession.from_dict(data)
             else:
-                self._today_session = DaySession(date=today)
+                self._today_session = DaySession(
+                    date=today,
+                    token_estimator=self._token_estimator,
+                    tokenizer_mode=self._tokenizer_mode,
+                    model_provider=self._runtime_model_provider(),
+                    model_name=self._runtime_model_name(),
+                )
+
+            self._apply_runtime_token_strategy(self._today_session)
 
             self._current_date = today
 
@@ -207,7 +317,13 @@ class SessionStorage:
             old_session = self._today_session
 
             # 重置当日 Session
-            self._today_session = DaySession(date=today)
+            self._today_session = DaySession(
+                date=today,
+                token_estimator=self._token_estimator,
+                tokenizer_mode=self._tokenizer_mode,
+                model_provider=self._runtime_model_provider(),
+                model_name=self._runtime_model_name(),
+            )
             self._current_date = today
 
             return old_session
@@ -262,13 +378,17 @@ class SessionStorage:
             session_path = self._get_session_path(date, is_archive=False)
             if session_path.exists():
                 data = self._load(session_path)
-                sessions.append(DaySession.from_dict(data))
+                loaded = DaySession.from_dict(data)
+                self._apply_runtime_token_strategy(loaded)
+                sessions.append(loaded)
             else:
                 # 再尝试 archive
                 session_path = self._get_session_path(date, is_archive=True)
                 if session_path.exists():
                     data = self._load(session_path)
-                    sessions.append(DaySession.from_dict(data))
+                    loaded = DaySession.from_dict(data)
+                    self._apply_runtime_token_strategy(loaded)
+                    sessions.append(loaded)
 
         return sessions
 
@@ -278,21 +398,53 @@ class SessionStorage:
         session_path = self._get_session_path(date, is_archive=False)
         if session_path.exists():
             data = self._load(session_path)
-            return DaySession.from_dict(data)
+            loaded = DaySession.from_dict(data)
+            self._apply_runtime_token_strategy(loaded)
+            return loaded
 
         # 再尝试 archive
         session_path = self._get_session_path(date, is_archive=True)
         if session_path.exists():
             data = self._load(session_path)
-            return DaySession.from_dict(data)
+            loaded = DaySession.from_dict(data)
+            self._apply_runtime_token_strategy(loaded)
+            return loaded
 
         return None
 
     # === 当前 Brain ID ===
 
-    def switch_brain(self, brain_id: str) -> None:
+    def set_runtime_token_strategy(
+        self,
+        token_estimator: Optional[str] = None,
+        tokenizer_mode: Optional[str] = None,
+        model_config: Optional[object] = None,
+    ) -> None:
+        """Update runtime tokenizer strategy without resetting current day session."""
+        if token_estimator is not None:
+            self._token_estimator = normalize_token_estimator(token_estimator)
+        if tokenizer_mode is not None:
+            self._tokenizer_mode = normalize_tokenizer_mode(tokenizer_mode)
+        if model_config is not None:
+            self._model_config = model_config
+        if self._today_session is not None:
+            self._apply_runtime_token_strategy(self._today_session)
+
+    def switch_brain(
+        self,
+        brain_id: str,
+        token_estimator: Optional[str] = None,
+        tokenizer_mode: Optional[str] = None,
+        model_config: Optional[object] = None,
+    ) -> None:
         """切换 Brain ID（改变存储路径）"""
         self._brain_id = brain_id
+        if token_estimator is not None:
+            self._token_estimator = normalize_token_estimator(token_estimator)
+        if tokenizer_mode is not None:
+            self._tokenizer_mode = normalize_tokenizer_mode(tokenizer_mode)
+        if model_config is not None:
+            self._model_config = model_config
         self._today_session = None
         self._current_date = None
         self._ensure_directories()

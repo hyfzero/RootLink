@@ -20,6 +20,8 @@ from .history import (
     MessageRole,
     calculate_message_weight,
     estimate_tokens,
+    estimate_tokens_with_source,
+    normalize_tokenizer_mode,
     SummaryGenerator,
     AsyncSummaryGenerator,
     generate_summary_with_llm,
@@ -68,6 +70,8 @@ __all__ = [
     "MessageRole",
     "calculate_message_weight",
     "estimate_tokens",
+    "estimate_tokens_with_source",
+    "normalize_tokenizer_mode",
     # LLM摘要生成
     "SummaryGenerator",
     "AsyncSummaryGenerator",

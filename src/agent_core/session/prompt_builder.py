@@ -28,6 +28,7 @@ class SessionPromptBuilder:
         history: MessageHistory,
         style_engine: SpeakingStyleEngine,
         config: AgentConfig,
+        model_config: Optional[object] = None,
     ):
         """初始化。
 
@@ -42,12 +43,19 @@ class SessionPromptBuilder:
             history=history,
             style_engine=style_engine,
             config=config,
+            model_config=model_config,
         )
         # 保存引用用于动态切换
         self._persona = persona
         self._history = history
         self._style_engine = style_engine
         self._config = config
+        self._model_config = model_config
+
+    def set_model_config(self, model_config: Optional[object]) -> None:
+        """Bind runtime model config for tokenizer routing."""
+        self._model_config = model_config
+        self._inner.set_model_config(model_config)
 
     def build_system_prompt(self, emotion: Optional[str] = None) -> str:
         """构建系统 Prompt。

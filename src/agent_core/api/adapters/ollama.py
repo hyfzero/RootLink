@@ -57,5 +57,6 @@ class OllamaAdapter(BaseAdapter):
                 prompt_tokens=usage_data.get("prompt_eval_count", 0),
                 completion_tokens=usage_data.get("eval_count", 0),
                 total_tokens=usage_data.get("prompt_eval_count", 0) + usage_data.get("eval_count", 0),
+                source="provider_usage",
             ),
         )

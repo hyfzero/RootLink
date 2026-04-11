@@ -185,12 +185,15 @@ class BrainRegistry:
             import json
             with open(history_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            return MessageHistory.from_dict(data)
+            history = MessageHistory.from_dict(data)
+            history.token_estimator = config.history.token_estimator
+            return history
 
         return MessageHistory(
             max_context_tokens=config.history.max_context_tokens,
             token_reserved=config.history.token_reserved,
             retention_days=config.history.retention_days,
+            token_estimator=config.history.token_estimator,
         )
 
     def register(self, brain_id: str, components: BrainComponents) -> None:
