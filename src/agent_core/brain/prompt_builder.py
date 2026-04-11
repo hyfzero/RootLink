@@ -17,10 +17,10 @@
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from .persona import Persona
-from .history import MessageHistory, MessageRole
+from .history import MessageHistory, MessageRole, estimate_tokens
 from .config import AgentConfig
 from .speaking_style import SpeakingStyleEngine
 
@@ -99,6 +99,134 @@ class PromptBuilder:
         self.config = config or AgentConfig()
         self.style_engine = style_engine
 
+    def _memory_policy_to_dict(self, limit: Optional[int] = None) -> dict[str, Any]:
+        """将 memory_injection 配置转换为字典策略。"""
+        policy_cfg = getattr(self.config, "memory_injection", None)
+        if policy_cfg is None:
+            return {"enabled": False}
+
+        total_limit = int(getattr(policy_cfg, "total_limit", limit or 8))
+        if limit is not None and limit > 0:
+            total_limit = min(total_limit, limit)
+
+        return {
+            "enabled": bool(getattr(policy_cfg, "enabled", True)),
+            "total_limit": total_limit,
+            "per_type_limit": dict(getattr(policy_cfg, "per_type_limit", {}) or {}),
+            "type_weight": dict(getattr(policy_cfg, "type_weight", {}) or {}),
+            "recency_half_life_days": float(getattr(policy_cfg, "recency_half_life_days", 14.0)),
+            "min_importance": float(getattr(policy_cfg, "min_importance", 0.0)),
+            "dedupe": bool(getattr(policy_cfg, "dedupe", True)),
+            "sticky_contexts": list(getattr(policy_cfg, "sticky_contexts", []) or []),
+            "query_boost": bool(getattr(policy_cfg, "query_boost", True)),
+        }
+
+    def _prompt_budget_to_dict(self) -> dict[str, Any]:
+        """将 prompt_budget 配置转换为可执行预算。"""
+        budget_cfg = getattr(self.config, "prompt_budget", None)
+        if budget_cfg is None:
+            return {"enabled": False}
+
+        return {
+            "enabled": bool(getattr(budget_cfg, "enabled", False)),
+            "total_tokens": int(getattr(budget_cfg, "total_tokens", 0)),
+            "section_tokens": dict(getattr(budget_cfg, "section_tokens", {}) or {}),
+        }
+
+    def _relationship_policy_to_dict(self) -> dict[str, Any]:
+        """将 relationship_state_machine 配置转换为策略字典。"""
+        relation_cfg = getattr(self.config, "relationship_state_machine", None)
+        if relation_cfg is None:
+            return {"enabled": False}
+
+        raw_states = list(getattr(relation_cfg, "states", []) or [])
+        states: list[dict[str, Any]] = []
+        for state in raw_states:
+            if hasattr(state, "to_dict"):
+                states.append(state.to_dict())
+            elif isinstance(state, dict):
+                states.append(state)
+
+        return {
+            "enabled": bool(getattr(relation_cfg, "enabled", False)),
+            "default_state": str(getattr(relation_cfg, "default_state", "neutral")),
+            "initial_score": float(getattr(relation_cfg, "initial_score", 0.0)),
+            "min_score": float(getattr(relation_cfg, "min_score", -100.0)),
+            "max_score": float(getattr(relation_cfg, "max_score", 100.0)),
+            "decay_per_turn": float(getattr(relation_cfg, "decay_per_turn", 0.0)),
+            "role_weight": dict(getattr(relation_cfg, "role_weight", {}) or {}),
+            "signal_weights": dict(getattr(relation_cfg, "signal_weights", {}) or {}),
+            "signal_keywords": dict(getattr(relation_cfg, "signal_keywords", {}) or {}),
+            "states": states,
+        }
+
+    def _truncate_text_by_tokens(self, text: str, max_tokens: Optional[int]) -> str:
+        """按近似 token 预算裁剪文本。"""
+        if not text:
+            return ""
+        if max_tokens is None:
+            return text
+        if max_tokens <= 0:
+            return ""
+        if estimate_tokens(text) <= max_tokens:
+            return text
+
+        char_budget = max_tokens * 4
+        if char_budget <= 0:
+            return ""
+
+        clipped = text[:char_budget].rstrip()
+        if len(clipped) < len(text):
+            clipped = clipped.rstrip(".")
+            clipped = f"{clipped}..."
+        return clipped
+
+    def _compose_sections(self, sections: list[tuple[str, str]]) -> str:
+        """按配置拼接并执行分段预算与总预算。"""
+        filtered = [(name, text) for name, text in sections if text]
+        if not filtered:
+            return ""
+
+        budget = self._prompt_budget_to_dict()
+        if not budget.get("enabled", False):
+            return "\n\n".join(text for _, text in filtered)
+
+        section_limits: dict[str, int] = budget.get("section_tokens", {}) or {}
+        section_trimmed: list[tuple[str, str]] = []
+        for name, text in filtered:
+            limit = section_limits.get(name)
+            if isinstance(limit, (int, float)):
+                text = self._truncate_text_by_tokens(text, int(limit))
+            if text:
+                section_trimmed.append((name, text))
+
+        total_limit = int(budget.get("total_tokens", 0))
+        if total_limit <= 0:
+            return "\n\n".join(text for _, text in section_trimmed)
+
+        final_sections: list[str] = []
+        used_tokens = 0
+        for _, text in section_trimmed:
+            remaining = total_limit - used_tokens
+            if remaining <= 0:
+                break
+            text_tokens = estimate_tokens(text)
+            if text_tokens <= remaining:
+                final_sections.append(text)
+                used_tokens += text_tokens
+                continue
+
+            clipped = self._truncate_text_by_tokens(text, remaining)
+            if clipped:
+                final_sections.append(clipped)
+                used_tokens += estimate_tokens(clipped)
+            break
+
+        composed = "\n\n".join(final_sections)
+        if estimate_tokens(composed) > total_limit:
+            composed = self._truncate_text_by_tokens(composed, total_limit)
+        return composed
+
     def build_identity_section(self) -> str:
         """构建身份/角色定义段落。
 
@@ -136,7 +264,11 @@ class PromptBuilder:
         Returns:
             记忆描述文本
         """
-        memories = self.persona.get_recent_memories(limit=limit)
+        policy = self._memory_policy_to_dict(limit=limit)
+        if policy.get("enabled", False):
+            memories = self.persona.get_memories_for_injection(policy=policy)
+        else:
+            memories = self.persona.get_recent_memories(limit=limit)
         if not memories:
             return ""
 
@@ -144,6 +276,27 @@ class PromptBuilder:
         for mem in memories:
             timestamp = datetime.fromtimestamp(mem.timestamp).strftime("%Y-%m-%d")
             parts.append(f"- [{timestamp}] {mem.content}")
+
+        return "\n".join(parts)
+
+    def build_relationship_section(self) -> str:
+        """构建关系状态段落。"""
+        policy = self._relationship_policy_to_dict()
+        if not policy.get("enabled", False):
+            return ""
+
+        snapshot = self.persona.get_relationship_snapshot(policy=policy)
+        state = snapshot.get("state", "neutral")
+        score = float(snapshot.get("score", 0.0))
+        hint = snapshot.get("prompt_hint", "")
+
+        parts = [
+            "## 关系状态",
+            f"当前阶段：{state}",
+            f"关系分值：{score:.2f}",
+        ]
+        if hint:
+            parts.append(f"互动指引：{hint}")
 
         return "\n".join(parts)
 
@@ -157,7 +310,20 @@ class PromptBuilder:
         Returns:
             记忆描述文本
         """
-        memories = self.persona.search_memories(query, limit=limit)
+        policy = self._memory_policy_to_dict(limit=limit)
+        if policy.get("enabled", False):
+            memories = self.persona.get_memories_for_injection(policy=policy, query=query)
+            query_lower = query.lower()
+            matched = [
+                m for m in memories
+                if query_lower in f"{m.content}\n{m.context or ''}".lower()
+            ]
+            if matched:
+                memories = matched
+            elif query:
+                memories = self.persona.search_memories(query, limit=limit)
+        else:
+            memories = self.persona.search_memories(query, limit=limit)
         if not memories:
             return ""
 
@@ -256,41 +422,16 @@ class PromptBuilder:
         Returns:
             完整的系统Prompt文本
         """
-        sections = []
-
-        # 1. 身份定义
-        sections.append(self.build_identity_section())
-        sections.append("")
-
-        # 2. 说话风格
-        style_section = self.build_style_section(emotion=emotion)
-        if style_section:
-            sections.append(style_section)
-            sections.append("")
-
-        # 3. 近期记忆
-        memory_section = self.build_memory_section()
-        if memory_section:
-            sections.append(memory_section)
-            sections.append("")
-
-        # 4. 历史摘要
-        summary_section = self.build_history_summary_section()
-        if summary_section:
-            sections.append(summary_section)
-            sections.append("")
-
-        # 5. 队列消息
-        queue_section = self.build_queue_section()
-        if queue_section:
-            sections.append(queue_section)
-            sections.append("")
-
-        # 6. 运行时信息
-        sections.append(self.build_runtime_section())
-        sections.append("")
-
-        return "\n".join(sections)
+        sections: list[tuple[str, str]] = [
+            ("identity", self.build_identity_section()),
+            ("style", self.build_style_section(emotion=emotion)),
+            ("relationship", self.build_relationship_section()),
+            ("memory", self.build_memory_section()),
+            ("history_summary", self.build_history_summary_section()),
+            ("queue", self.build_queue_section()),
+            ("runtime", self.build_runtime_section()),
+        ]
+        return self._compose_sections(sections)
 
     def build_context_prompt(
         self,
@@ -310,42 +451,23 @@ class PromptBuilder:
         Returns:
             上下文Prompt文本
         """
-        sections = []
+        sections: list[tuple[str, str]] = [
+            ("identity", self.build_identity_section()),
+            ("style", self.build_style_section(emotion=emotion)),
+            ("relationship", self.build_relationship_section()),
+        ]
 
-        # 身份定义
-        sections.append(self.build_identity_section())
-        sections.append("")
-
-        # 说话风格
-        style_section = self.build_style_section(emotion=emotion)
-        if style_section:
-            sections.append(style_section)
-            sections.append("")
-
-        # 搜索相关的记忆
         if query:
-            search_section = self.build_search_memory_section(query)
-            if search_section:
-                sections.append(search_section)
-                sections.append("")
+            sections.append(("memory", self.build_search_memory_section(query)))
 
-        # 历史摘要
-        summary_section = self.build_history_summary_section()
-        if summary_section:
-            sections.append(summary_section)
-            sections.append("")
+        sections.append(("history_summary", self.build_history_summary_section()))
 
-        # 队列消息
         if include_queue:
-            queue_section = self.build_queue_section(max_tokens=max_queue_tokens)
-            if queue_section:
-                sections.append(queue_section)
-                sections.append("")
+            sections.append(("queue", self.build_queue_section(max_tokens=max_queue_tokens)))
 
-        # 运行时信息
-        sections.append(self.build_runtime_section())
+        sections.append(("runtime", self.build_runtime_section()))
 
-        return "\n".join(sections)
+        return self._compose_sections(sections)
 
 
 def build_minimal_prompt(persona: Persona, message: str) -> str:

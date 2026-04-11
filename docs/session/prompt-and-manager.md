@@ -36,12 +36,13 @@
 send_message(user_message)
   -> _check_and_handle_day_change()
   -> storage.add_message("user", user_message)
+  -> add_message_to_history("user", user_message)   # 失败仅告警，不中断主流程
   -> prompt_builder.build_system_prompt()
   -> prompt_builder.build_conversation_context()
   -> _call_api()
   -> ReplyTagger.generate_and_save()
   -> storage.add_message("assistant", response)
-  -> add_message_to_history()
+  -> add_message_to_history("assistant", response)  # 失败仅告警，不中断主流程
   -> return dict
 ```
 
@@ -81,4 +82,13 @@ json_text = manager.export_session("2026-04-11", format="json")
 
 - `set_emotion_mode("llm")` 会配置 `TagGenerator` 使用 LLM callable。
 - `switch_brain()` 会让 SessionStorage 切到新 `brain_id` 并清空相关延迟初始化缓存。
-- `_check_and_handle_day_change_sync()` 不生成摘要；需要摘要时使用异步流程。
+- `build_conversation_context()` 当前只注入“用户最新消息”，历史摘要和队列消息由 system prompt 统一承载，避免重复占用 token。
+- `send_message()` 与 `send_message_sync()` 都会调用 `ReplyTagger.generate_and_save()`，确保 `reply_tags.json` 每轮稳定落盘。
+- 消息写入 `MessageHistory` 是“尽力而为”：异常只会告警，不会阻塞主聊天流程。
+
+## 配置化策略
+
+- 记忆注入策略：`AgentConfig.memory_injection`（按类型配额、权重、时间衰减、重要度阈值、去重、sticky context、query boost）。
+- Prompt 分段预算：`AgentConfig.prompt_budget`（`section_tokens` + `total_tokens`）。
+- 关系状态机：`AgentConfig.relationship_state_machine`（信号词/权重/衰减/状态区间/prompt_hint）。
+- 默认行为兼容：关闭预算时，PromptBuilder 保持原有拼接；开启预算时按 `identity -> style -> relationship -> memory -> history_summary -> queue -> runtime` 顺序裁剪。

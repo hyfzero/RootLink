@@ -55,6 +55,7 @@ class DailySummarizer:
         prompt = self._build_summary_prompt(date, messages, persona_context)
 
         response = await self._call_llm(prompt)
+        summary_json = self._parse_summary_json(response)
 
         summary_text = self._parse_summary_response(response)
 
@@ -68,7 +69,12 @@ class DailySummarizer:
 
         summary_data = {
             "date": date,
-            "summary_text": summary_text,
+            "summary_text": self._as_string(summary_json.get("summary_text")),
+            "important_messages": self._as_str_list(summary_json.get("important_messages")),
+            "topics": self._as_str_list(summary_json.get("topics")),
+            "emotional_tone": self._as_string(summary_json.get("emotional_tone")),
+            "user_preferences": self._as_str_list(summary_json.get("user_preferences")),
+            "unfinished_topics": self._as_str_list(summary_json.get("unfinished_topics")),
             "message_count": len(messages),
         }
         with open(json_path, "w", encoding="utf-8") as f:
@@ -154,6 +160,39 @@ class DailySummarizer:
             return response.delta
         else:
             return str(response)
+
+    def _parse_summary_json(self, response_text: str) -> dict:
+        """解析 LLM 的 JSON 响应，失败返回空字典。"""
+        try:
+            json_str = response_text.strip()
+            if json_str.startswith("```json"):
+                json_str = json_str[7:]
+            if json_str.startswith("```"):
+                json_str = json_str[3:]
+            if json_str.endswith("```"):
+                json_str = json_str[:-3]
+            json_str = json_str.strip()
+            data = json.loads(json_str)
+            return data if isinstance(data, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+
+    def _as_string(self, value: object) -> str:
+        """将任意值转换为字符串，None 转为空字符串。"""
+        if value is None:
+            return ""
+        return value if isinstance(value, str) else str(value)
+
+    def _as_str_list(self, value: object) -> list[str]:
+        """将任意值标准化为字符串列表。"""
+        if not isinstance(value, list):
+            return []
+        normalized: list[str] = []
+        for item in value:
+            text = self._as_string(item).strip()
+            if text:
+                normalized.append(text)
+        return normalized
 
     def _parse_summary_response(self, response_text: str) -> str:
         """解析 LLM 响应，提取摘要内容。

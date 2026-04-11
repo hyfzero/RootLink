@@ -205,6 +205,8 @@ class SessionManager:
 
         # 2. 保存用户消息
         self.storage.add_message("user", user_message)
+        self._sync_history_message("user", user_message)
+        self._sync_relationship_state("user", user_message)
 
         # 3. 构建 Prompt
         system_prompt = self.prompt_builder.build_system_prompt(emotion)
@@ -215,14 +217,17 @@ class SessionManager:
 
         # 5. 生成回复标签
         message_id = self._generate_message_id()
-        reply_tag = self.tagger.generate_tag(message_id, response.get("content", ""))
+        assistant_content = response.get("content", "")
+        reply_tag = self.tagger.generate_and_save(message_id, assistant_content)
 
         # 6. 保存助手消息
-        self.storage.add_message("assistant", response.get("content", ""))
+        self.storage.add_message("assistant", assistant_content)
+        self._sync_history_message("assistant", assistant_content)
+        self._sync_relationship_state("assistant", assistant_content)
 
         # 7. 返回
         return {
-            "content": response.get("content", ""),
+            "content": assistant_content,
             "tag": reply_tag,
             "message_id": message_id,
             "brain_id": self._current_brain_id,
@@ -247,6 +252,8 @@ class SessionManager:
 
         # 保存用户消息
         self.storage.add_message("user", user_message)
+        self._sync_history_message("user", user_message)
+        self._sync_relationship_state("user", user_message)
 
         # 构建 Prompt
         system_prompt = self.prompt_builder.build_system_prompt(emotion)
@@ -257,13 +264,16 @@ class SessionManager:
 
         # 生成回复标签
         message_id = self._generate_message_id()
-        reply_tag = self.tagger.generate_tag(message_id, response.get("content", ""))
+        assistant_content = response.get("content", "")
+        reply_tag = self.tagger.generate_and_save(message_id, assistant_content)
 
         # 保存助手消息
-        self.storage.add_message("assistant", response.get("content", ""))
+        self.storage.add_message("assistant", assistant_content)
+        self._sync_history_message("assistant", assistant_content)
+        self._sync_relationship_state("assistant", assistant_content)
 
         return {
-            "content": response.get("content", ""),
+            "content": assistant_content,
             "tag": reply_tag,
             "message_id": message_id,
             "brain_id": self._current_brain_id,
@@ -630,6 +640,63 @@ class SessionManager:
     def _generate_message_id(self) -> str:
         """生成消息 ID"""
         return f"msg_{int(time.time() * 1000)}"
+
+    def _sync_history_message(self, role: str, content: str) -> None:
+        """将消息同步写入 MessageHistory，失败时不影响主流程。"""
+        try:
+            self.add_message_to_history(role=role, content=content)
+        except Exception as e:
+            print(f"Warning: Failed to sync message to history ({role}): {e}")
+
+    def _relationship_policy_dict(self) -> dict[str, Any]:
+        """读取关系状态机配置并转换为字典策略。"""
+        components = self.brain_registry.current()
+        relation_cfg = getattr(components.config, "relationship_state_machine", None)
+        if relation_cfg is None:
+            return {"enabled": False}
+
+        raw_states = list(getattr(relation_cfg, "states", []) or [])
+        states: list[dict[str, Any]] = []
+        for state in raw_states:
+            if hasattr(state, "to_dict"):
+                states.append(state.to_dict())
+            elif isinstance(state, dict):
+                states.append(state)
+
+        return {
+            "enabled": bool(getattr(relation_cfg, "enabled", False)),
+            "default_state": str(getattr(relation_cfg, "default_state", "neutral")),
+            "initial_score": float(getattr(relation_cfg, "initial_score", 0.0)),
+            "min_score": float(getattr(relation_cfg, "min_score", -100.0)),
+            "max_score": float(getattr(relation_cfg, "max_score", 100.0)),
+            "decay_per_turn": float(getattr(relation_cfg, "decay_per_turn", 0.0)),
+            "role_weight": dict(getattr(relation_cfg, "role_weight", {}) or {}),
+            "signal_weights": dict(getattr(relation_cfg, "signal_weights", {}) or {}),
+            "signal_keywords": dict(getattr(relation_cfg, "signal_keywords", {}) or {}),
+            "states": states,
+        }
+
+    def _save_persona_profile(self) -> None:
+        """持久化当前 Brain 的 profile.json（关系状态等动态字段）。"""
+        components = self.brain_registry.current()
+        profile_path = self.brain_registry._base_path / self._current_brain_id / "persona" / "profile.json"
+        profile_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(profile_path, "w", encoding="utf-8") as f:
+            json.dump(components.persona.profile.to_dict(), f, ensure_ascii=False, indent=2)
+
+    def _sync_relationship_state(self, role: str, content: str) -> None:
+        """同步更新关系状态机，失败时不影响主流程。"""
+        try:
+            components = self.brain_registry.current()
+            policy = self._relationship_policy_dict()
+            components.persona.update_relationship_state(
+                content=content,
+                role=role,
+                policy=policy,
+            )
+            self._save_persona_profile()
+        except Exception as e:
+            print(f"Warning: Failed to sync relationship state ({role}): {e}")
 
     async def _call_api(
         self,

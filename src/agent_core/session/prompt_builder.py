@@ -76,25 +76,9 @@ class SessionPromptBuilder:
         Returns:
             上下文提示字符串
         """
-        messages = []
-        if include_history:
-            history_messages = self._history.get_context_messages(max_tokens=max_history_tokens)
-            for msg in history_messages:
-                role = "user" if msg.role == MessageRole.USER else "assistant"
-                messages.append({"role": role, "content": msg.content})
-
-        # 添加当前消息
-        messages.append({"role": "user", "content": current_message})
-
-        # 构建上下文
-        context_parts = []
-        if include_history and history_messages:
-            context_parts.append(self._inner.build_history_summary_section(days=3))
-            context_parts.append(self._inner.build_queue_section(max_tokens=max_history_tokens // 2))
-
-        context_parts.append(f"用户最新消息: {current_message}")
-
-        return "\n\n".join(context_parts)
+        # 保留参数兼容性，实际只注入当前用户消息，避免与 system prompt 重复注入上下文。
+        _ = include_history, max_history_tokens
+        return f"用户最新消息: {current_message}"
 
     def build_full_prompt(
         self,
@@ -163,7 +147,22 @@ class SessionPromptBuilder:
         Returns:
             记忆描述字符串
         """
-        memories = self._persona.get_recent_memories(limit=limit)
+        memory_cfg = getattr(self._config, "memory_injection", None)
+        if memory_cfg and getattr(memory_cfg, "enabled", True):
+            policy = {
+                "enabled": bool(getattr(memory_cfg, "enabled", True)),
+                "total_limit": min(int(getattr(memory_cfg, "total_limit", limit)), limit),
+                "per_type_limit": dict(getattr(memory_cfg, "per_type_limit", {}) or {}),
+                "type_weight": dict(getattr(memory_cfg, "type_weight", {}) or {}),
+                "recency_half_life_days": float(getattr(memory_cfg, "recency_half_life_days", 14.0)),
+                "min_importance": float(getattr(memory_cfg, "min_importance", 0.0)),
+                "dedupe": bool(getattr(memory_cfg, "dedupe", True)),
+                "sticky_contexts": list(getattr(memory_cfg, "sticky_contexts", []) or []),
+                "query_boost": bool(getattr(memory_cfg, "query_boost", True)),
+            }
+            memories = self._persona.get_memories_for_injection(policy=policy)
+        else:
+            memories = self._persona.get_recent_memories(limit=limit)
         if not memories:
             return ""
 

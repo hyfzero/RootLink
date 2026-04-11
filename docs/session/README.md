@@ -37,6 +37,13 @@ data/{brain_id}/tags/reply_tags.json
 data/{brain_id}/persona/memories.json
 ```
 
+当前发送链路关键行为（2026-04 更新）：
+
+- 每轮消息都会双轨写入：`SessionStorage`（会话文件）+ `MessageHistory`（上下文历史）。
+- `SessionPromptBuilder.build_conversation_context()` 只注入最新用户消息，历史段落由 system prompt 统一承载，减少重复 token。
+- 回复标签使用 `generate_and_save()`，`reply_tags.json` 每轮持久化。
+- 异步日摘要 JSON 与同步字段对齐（含 `topics/user_preferences/unfinished_topics` 等）。
+
 ## 典型用法
 
 ```python
@@ -61,5 +68,86 @@ result = manager.send_message_sync("晚上好")
 ## 注意事项
 
 - `send_message()` 是异步方法，`send_message_sync()` 是同步方法。
-- 同步日期切换只做归档；异步路径会生成摘要。
+- 同步路径与异步路径都会在日期切换时尝试生成日终摘要（满足 `min_messages_for_summary` 时）。
 - 切换 Brain 会重置 storage、summarizer、prompt builder 和 memory updater 缓存。
+
+## 回归测试
+
+```bash
+python src/agent_core/tests/test_session_stability.py
+```
+
+## Config Examples (Memory + Prompt + Relationship)
+
+`data/{brain_id}/config.json` can now control memory injection and prompt section budgets.
+
+```json
+{
+  "memory_injection": {
+    "enabled": true,
+    "total_limit": 8,
+    "per_type_limit": {
+      "fact": 3,
+      "preference": 3,
+      "episodic": 2,
+      "daily_summary": 1,
+      "monthly_summary": 1
+    },
+    "type_weight": {
+      "fact": 1.4,
+      "preference": 1.3,
+      "episodic": 1.0,
+      "daily_summary": 0.7,
+      "monthly_summary": 1.1
+    },
+    "recency_half_life_days": 14.0,
+    "min_importance": 0.0,
+    "dedupe": true,
+    "sticky_contexts": ["project", "deadline"],
+    "query_boost": true
+  },
+  "prompt_budget": {
+    "enabled": true,
+    "total_tokens": 3000,
+    "section_tokens": {
+      "identity": 800,
+      "style": 400,
+      "relationship": 180,
+      "memory": 900,
+      "history_summary": 700,
+      "queue": 900,
+      "runtime": 120
+    }
+  },
+  "relationship_state_machine": {
+    "enabled": true,
+    "default_state": "neutral",
+    "initial_score": 0.0,
+    "min_score": -100.0,
+    "max_score": 100.0,
+    "decay_per_turn": 0.02,
+    "role_weight": {
+      "user": 1.0,
+      "assistant": 0.25
+    },
+    "signal_weights": {
+      "positive": 6.0,
+      "trust": 8.0,
+      "negative": -8.0,
+      "conflict": -12.0
+    },
+    "signal_keywords": {
+      "positive": ["谢谢", "喜欢", "支持"],
+      "trust": ["信任", "放心", "承诺"],
+      "negative": ["讨厌", "烦", "失望"],
+      "conflict": ["闭嘴", "滚", "骗子"]
+    },
+    "states": [
+      {"name": "cold", "min_score": -100.0, "max_score": -25.0, "prompt_hint": "保持克制"},
+      {"name": "neutral", "min_score": -25.0, "max_score": 20.0, "prompt_hint": "自然交流"},
+      {"name": "warm", "min_score": 20.0, "max_score": 60.0, "prompt_hint": "适度关心"},
+      {"name": "close", "min_score": 60.0, "max_score": 101.0, "prompt_hint": "强化信任连续性"}
+    ]
+  }
+}
+```

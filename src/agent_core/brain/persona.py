@@ -6,6 +6,8 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
+import math
+import time
 from typing import Any, Optional
 
 
@@ -32,6 +34,9 @@ class PersonaProfile:
     speaking_style: str = "friendly"
     birthday: Optional[str] = None
     interests: list[str] = field(default_factory=list)
+    relationship_state: str = "neutral"
+    relationship_score: float = 0.0
+    relationship_updated_at: Optional[float] = None
 
     def to_dict(self) -> dict:
         """转换为字典格式。"""
@@ -44,6 +49,9 @@ class PersonaProfile:
             "speaking_style": self.speaking_style,
             "birthday": self.birthday,
             "interests": self.interests,
+            "relationship_state": self.relationship_state,
+            "relationship_score": self.relationship_score,
+            "relationship_updated_at": self.relationship_updated_at,
         }
 
     @classmethod
@@ -58,6 +66,9 @@ class PersonaProfile:
             speaking_style=data.get("speaking_style", "friendly"),
             birthday=data.get("birthday"),
             interests=data.get("interests", []),
+            relationship_state=data.get("relationship_state", "neutral"),
+            relationship_score=float(data.get("relationship_score", 0.0)),
+            relationship_updated_at=data.get("relationship_updated_at"),
         )
 
 
@@ -223,6 +234,194 @@ class Persona:
                 results.append(memory)
 
         return results[:limit]
+
+    def get_relationship_snapshot(self, policy: Optional[dict] = None) -> dict:
+        """获取当前关系状态快照。"""
+        policy = policy or {}
+        default_state = str(policy.get("default_state", "neutral"))
+        initial_score = float(policy.get("initial_score", 0.0))
+
+        state = self.profile.relationship_state or default_state
+        score = float(self.profile.relationship_score if self.profile.relationship_score is not None else initial_score)
+        updated_at = self.profile.relationship_updated_at
+
+        hint = ""
+        for state_cfg in (policy.get("states", []) or []):
+            if isinstance(state_cfg, dict) and state_cfg.get("name") == state:
+                hint = str(state_cfg.get("prompt_hint", ""))
+                break
+
+        return {
+            "state": state,
+            "score": score,
+            "updated_at": updated_at,
+            "prompt_hint": hint,
+        }
+
+    def update_relationship_state(
+        self,
+        content: str,
+        role: str = "user",
+        policy: Optional[dict] = None,
+    ) -> dict:
+        """按配置状态机更新关系状态。"""
+        policy = policy or {}
+        if not bool(policy.get("enabled", False)):
+            return self.get_relationship_snapshot(policy)
+
+        text = (content or "").lower()
+        states = [s for s in (policy.get("states", []) or []) if isinstance(s, dict)]
+        default_state = str(policy.get("default_state", "neutral"))
+
+        min_score = float(policy.get("min_score", -100.0))
+        max_score = float(policy.get("max_score", 100.0))
+        decay_per_turn = float(policy.get("decay_per_turn", 0.0))
+        decay_per_turn = min(max(decay_per_turn, 0.0), 1.0)
+
+        role_weight = policy.get("role_weight", {}) or {}
+        signal_weights = policy.get("signal_weights", {}) or {}
+        signal_keywords = policy.get("signal_keywords", {}) or {}
+
+        score = float(self.profile.relationship_score if self.profile.relationship_score is not None else policy.get("initial_score", 0.0))
+        if decay_per_turn > 0:
+            score *= (1.0 - decay_per_turn)
+
+        delta = 0.0
+        for signal, keywords in signal_keywords.items():
+            if not isinstance(keywords, list) or not keywords:
+                continue
+            weight = float(signal_weights.get(signal, 0.0))
+            hit_count = 0
+            for kw in keywords:
+                kw_str = str(kw).strip().lower()
+                if kw_str and kw_str in text:
+                    hit_count += 1
+            delta += hit_count * weight
+
+        delta *= float(role_weight.get(role, 1.0))
+        score += delta
+        score = max(min_score, min(max_score, score))
+
+        # 由 score 映射状态
+        state = default_state
+        if states:
+            sorted_states = sorted(states, key=lambda s: float(s.get("min_score", 0.0)))
+            for idx, state_cfg in enumerate(sorted_states):
+                low = float(state_cfg.get("min_score", min_score))
+                high = float(state_cfg.get("max_score", max_score))
+                is_last = idx == len(sorted_states) - 1
+                in_range = (low <= score <= high) if is_last else (low <= score < high)
+                if in_range:
+                    state = str(state_cfg.get("name", default_state))
+                    break
+
+        self.profile.relationship_score = score
+        self.profile.relationship_state = state
+        self.profile.relationship_updated_at = time.time()
+
+        return self.get_relationship_snapshot(policy)
+
+    def get_memories_for_injection(
+        self,
+        policy: Optional[dict] = None,
+        query: Optional[str] = None,
+    ) -> list[MemoryEntry]:
+        """按配置策略选择要注入 Prompt 的记忆。"""
+        policy = policy or {}
+        if not bool(policy.get("enabled", True)):
+            return self.get_recent_memories(limit=10)
+
+        total_limit = int(policy.get("total_limit", 8))
+        if total_limit <= 0:
+            return []
+
+        per_type_limit: dict[str, int] = policy.get("per_type_limit", {}) or {}
+        type_weight: dict[str, float] = policy.get("type_weight", {}) or {}
+        min_importance = float(policy.get("min_importance", 0.0))
+        half_life_days = max(0.1, float(policy.get("recency_half_life_days", 14.0)))
+        dedupe = bool(policy.get("dedupe", True))
+        sticky_contexts = [s for s in (policy.get("sticky_contexts", []) or []) if isinstance(s, str)]
+        query_boost = bool(policy.get("query_boost", True))
+        query_lower = (query or "").strip().lower()
+
+        all_memories = (
+            self.episodic_memories
+            + self.preference_memories
+            + self.fact_memories
+            + self.daily_summary_memories
+            + self.monthly_summary_memories
+        )
+
+        now_ts = time.time()
+
+        def is_sticky(memory: MemoryEntry) -> bool:
+            if not sticky_contexts:
+                return False
+            context = (memory.context or "").lower()
+            return any(s.lower() in context for s in sticky_contexts)
+
+        def score(memory: MemoryEntry) -> float:
+            type_w = float(type_weight.get(memory.memory_type, 1.0))
+            age_days = max(0.0, (now_ts - memory.timestamp) / 86400.0)
+            recency = math.exp(-math.log(2) * (age_days / half_life_days))
+            value = max(0.0, memory.importance) * type_w * recency
+            if query_lower and query_boost:
+                haystack = f"{memory.content}\n{memory.context or ''}".lower()
+                if query_lower in haystack:
+                    value *= 1.25
+            if is_sticky(memory):
+                value *= 1.3
+            return value
+
+        # 过滤候选（sticky 记忆可越过 min_importance）
+        candidates = [
+            m
+            for m in all_memories
+            if (m.importance >= min_importance) or is_sticky(m)
+        ]
+        candidates.sort(key=score, reverse=True)
+
+        selected: list[MemoryEntry] = []
+        selected_ids: set[str] = set()
+        per_type_used: dict[str, int] = {}
+        seen_keys: set[str] = set()
+
+        def memory_key(memory: MemoryEntry) -> str:
+            return f"{memory.memory_type}:{(memory.context or '').strip()}:{memory.content.strip()}"
+
+        def try_add(memory: MemoryEntry, ignore_type_limit: bool = False) -> bool:
+            if memory.id in selected_ids:
+                return False
+            if len(selected) >= total_limit:
+                return False
+            if not ignore_type_limit:
+                type_cap = int(per_type_limit.get(memory.memory_type, total_limit))
+                if type_cap <= 0:
+                    return False
+                if per_type_used.get(memory.memory_type, 0) >= type_cap:
+                    return False
+            if dedupe:
+                key = memory_key(memory)
+                if key in seen_keys:
+                    return False
+                seen_keys.add(key)
+            selected.append(memory)
+            selected_ids.add(memory.id)
+            per_type_used[memory.memory_type] = per_type_used.get(memory.memory_type, 0) + 1
+            return True
+
+        # 先注入 sticky 上下文
+        for memory in candidates:
+            if is_sticky(memory):
+                try_add(memory, ignore_type_limit=True)
+
+        # 再按配额注入
+        for memory in candidates:
+            try_add(memory)
+
+        # 保持时间顺序（便于模型理解）
+        selected.sort(key=lambda m: m.timestamp)
+        return selected
 
     def to_dict(self) -> dict:
         """转换为字典格式。"""

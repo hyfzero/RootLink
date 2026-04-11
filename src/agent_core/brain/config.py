@@ -53,6 +53,154 @@ class PersonaConfig:
 
 
 @dataclass
+class MemoryInjectionConfig:
+    """记忆注入策略配置。"""
+
+    enabled: bool = True
+    total_limit: int = 8
+    per_type_limit: dict[str, int] = field(default_factory=lambda: {
+        "fact": 3,
+        "preference": 3,
+        "episodic": 2,
+        "daily_summary": 1,
+        "monthly_summary": 1,
+    })
+    type_weight: dict[str, float] = field(default_factory=lambda: {
+        "fact": 1.4,
+        "preference": 1.3,
+        "episodic": 1.0,
+        "daily_summary": 0.7,
+        "monthly_summary": 1.1,
+    })
+    recency_half_life_days: float = 14.0
+    min_importance: float = 0.0
+    dedupe: bool = True
+    sticky_contexts: list[str] = field(default_factory=list)
+    query_boost: bool = True
+
+
+@dataclass
+class PromptBudgetConfig:
+    """Prompt 分段预算配置。"""
+
+    enabled: bool = False
+    total_tokens: int = 3000
+    section_tokens: dict[str, int] = field(default_factory=lambda: {
+        "identity": 800,
+        "style": 400,
+        "relationship": 180,
+        "memory": 900,
+        "history_summary": 700,
+        "queue": 900,
+        "runtime": 120,
+    })
+
+
+@dataclass
+class RelationshipStateConfig:
+    """关系状态分段配置。"""
+
+    name: str
+    min_score: float
+    max_score: float
+    prompt_hint: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "RelationshipStateConfig":
+        return cls(
+            name=str(data.get("name", "neutral")),
+            min_score=float(data.get("min_score", 0.0)),
+            max_score=float(data.get("max_score", 0.0)),
+            prompt_hint=str(data.get("prompt_hint", "")),
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "min_score": self.min_score,
+            "max_score": self.max_score,
+            "prompt_hint": self.prompt_hint,
+        }
+
+
+@dataclass
+class RelationshipStateMachineConfig:
+    """关系状态机配置。"""
+
+    enabled: bool = True
+    default_state: str = "neutral"
+    initial_score: float = 0.0
+    min_score: float = -100.0
+    max_score: float = 100.0
+    decay_per_turn: float = 0.02
+    role_weight: dict[str, float] = field(default_factory=lambda: {
+        "user": 1.0,
+        "assistant": 0.25,
+    })
+    signal_weights: dict[str, float] = field(default_factory=lambda: {
+        "positive": 6.0,
+        "trust": 8.0,
+        "negative": -8.0,
+        "conflict": -12.0,
+    })
+    signal_keywords: dict[str, list[str]] = field(default_factory=lambda: {
+        "positive": ["谢谢", "喜欢", "支持", "关心", "在意", "thanks", "love"],
+        "trust": ["信任", "放心", "依赖", "秘密", "承诺", "trust"],
+        "negative": ["讨厌", "烦", "失望", "无聊", "hate", "annoying"],
+        "conflict": ["闭嘴", "滚", "骗子", "去死", "stupid", "shut up"],
+    })
+    states: list[RelationshipStateConfig] = field(default_factory=lambda: [
+        RelationshipStateConfig(
+            name="cold",
+            min_score=-100.0,
+            max_score=-25.0,
+            prompt_hint="保持礼貌但克制，避免主动拉近距离。",
+        ),
+        RelationshipStateConfig(
+            name="neutral",
+            min_score=-25.0,
+            max_score=20.0,
+            prompt_hint="自然交流，理性回应，不做过度亲密表达。",
+        ),
+        RelationshipStateConfig(
+            name="warm",
+            min_score=20.0,
+            max_score=60.0,
+            prompt_hint="语气更柔和，可适度表达关心和共同目标。",
+        ),
+        RelationshipStateConfig(
+            name="close",
+            min_score=60.0,
+            max_score=101.0,
+            prompt_hint="在专业边界内保持明显亲近感，强化信任与连续性。",
+        ),
+    ])
+
+    def __post_init__(self):
+        parsed_states: list[RelationshipStateConfig] = []
+        for state in self.states:
+            if isinstance(state, RelationshipStateConfig):
+                parsed_states.append(state)
+            elif isinstance(state, dict):
+                parsed_states.append(RelationshipStateConfig.from_dict(state))
+        self.states = parsed_states
+
+    def to_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "default_state": self.default_state,
+            "initial_score": self.initial_score,
+            "min_score": self.min_score,
+            "max_score": self.max_score,
+            "decay_per_turn": self.decay_per_turn,
+            "role_weight": self.role_weight,
+            "signal_weights": self.signal_weights,
+            "signal_keywords": self.signal_keywords,
+            "states": [s.to_dict() for s in self.states],
+        }
+
+
+@dataclass
 class AgentConfig:
     """Agent主配置类。"""
 
@@ -60,6 +208,9 @@ class AgentConfig:
     history: HistoryConfig = field(default_factory=HistoryConfig)
     tags: TagsConfig = field(default_factory=TagsConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
+    memory_injection: MemoryInjectionConfig = field(default_factory=MemoryInjectionConfig)
+    prompt_budget: PromptBudgetConfig = field(default_factory=PromptBudgetConfig)
+    relationship_state_machine: RelationshipStateMachineConfig = field(default_factory=RelationshipStateMachineConfig)
 
     def __post_init__(self):
         """将字典类型的输入转换为正确的 dataclass 类型。"""
@@ -71,6 +222,12 @@ class AgentConfig:
             self.tags = TagsConfig(**self.tags)
         if isinstance(self.storage, dict):
             self.storage = StorageConfig(**self.storage)
+        if isinstance(self.memory_injection, dict):
+            self.memory_injection = MemoryInjectionConfig(**self.memory_injection)
+        if isinstance(self.prompt_budget, dict):
+            self.prompt_budget = PromptBudgetConfig(**self.prompt_budget)
+        if isinstance(self.relationship_state_machine, dict):
+            self.relationship_state_machine = RelationshipStateMachineConfig(**self.relationship_state_machine)
 
     @classmethod
     def from_dict(cls, data: dict) -> "AgentConfig":
@@ -86,12 +243,18 @@ class AgentConfig:
         history_data = data.get("history", {})
         tags_data = data.get("tags", {})
         storage_data = data.get("storage", {})
+        memory_injection_data = data.get("memory_injection", {})
+        prompt_budget_data = data.get("prompt_budget", {})
+        relationship_state_machine_data = data.get("relationship_state_machine", {})
 
         return cls(
             persona=PersonaConfig(**persona_data),
             history=HistoryConfig(**history_data),
             tags=TagsConfig(**tags_data),
             storage=StorageConfig(**storage_data),
+            memory_injection=MemoryInjectionConfig(**memory_injection_data),
+            prompt_budget=PromptBudgetConfig(**prompt_budget_data),
+            relationship_state_machine=RelationshipStateMachineConfig(**relationship_state_machine_data),
         )
 
     def to_dict(self) -> dict:
@@ -124,4 +287,21 @@ class AgentConfig:
                 "data_dir": self.storage.data_dir,
                 "format": self.storage.format,
             },
+            "memory_injection": {
+                "enabled": self.memory_injection.enabled,
+                "total_limit": self.memory_injection.total_limit,
+                "per_type_limit": self.memory_injection.per_type_limit,
+                "type_weight": self.memory_injection.type_weight,
+                "recency_half_life_days": self.memory_injection.recency_half_life_days,
+                "min_importance": self.memory_injection.min_importance,
+                "dedupe": self.memory_injection.dedupe,
+                "sticky_contexts": self.memory_injection.sticky_contexts,
+                "query_boost": self.memory_injection.query_boost,
+            },
+            "prompt_budget": {
+                "enabled": self.prompt_budget.enabled,
+                "total_tokens": self.prompt_budget.total_tokens,
+                "section_tokens": self.prompt_budget.section_tokens,
+            },
+            "relationship_state_machine": self.relationship_state_machine.to_dict(),
         }

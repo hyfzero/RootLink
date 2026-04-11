@@ -44,6 +44,21 @@ data/{brain_id}/history/summaries/YYYY-MM-DD.summary.md
 data/{brain_id}/history/daily/YYYY-MM-DD.summary.json
 ```
 
+其中 `daily/*.summary.json` 当前统一包含以下字段：
+
+```json
+{
+  "date": "YYYY-MM-DD",
+  "summary_text": "string",
+  "important_messages": ["..."],
+  "topics": ["..."],
+  "emotional_tone": "string",
+  "user_preferences": ["..."],
+  "unfinished_topics": ["..."],
+  "message_count": 0
+}
+```
+
 月摘要输出：
 
 ```text
@@ -83,5 +98,7 @@ data = await monthly.generate_summary("2026-04", daily_summaries)
 ## 注意事项
 
 - 摘要 Prompt 要求 LLM 返回 JSON；解析后会格式化为 Markdown。
+- 异步 `DailySummarizer.generate_summary()` 与同步路径字段已对齐；JSON 解析失败时会使用安全默认值（空字符串/空数组）。
 - `MemoryUpdater` 会把用户偏好、未完成话题、重要消息和月度变化拆成不同类型记忆。
+- `MemoryUpdater.update_from_summary()` 兼容旧摘要格式（缺失结构化字段时按空值处理）。
 - 摘要失败不应阻塞主聊天流程，调用方应记录错误并继续。

@@ -76,7 +76,17 @@ from .brain import (
     estimate_tokens,
 )
 from .brain import ReplyTag, TagGenerator, TagCache
-from .brain import AgentConfig, HistoryConfig, TagsConfig, StorageConfig, PersonaConfig
+from .brain import (
+    AgentConfig,
+    HistoryConfig,
+    TagsConfig,
+    StorageConfig,
+    PersonaConfig,
+    MemoryInjectionConfig,
+    PromptBudgetConfig,
+    RelationshipStateConfig,
+    RelationshipStateMachineConfig,
+)
 from .brain import AgentStorage, PersonaStorage, HistoryStorage, TagsStorage, ConfigStorage
 from .brain import (
     PromptBuilder,
@@ -153,6 +163,10 @@ __all__ = [
     "TagsConfig",
     "StorageConfig",
     "PersonaConfig",
+    "MemoryInjectionConfig",
+    "PromptBudgetConfig",
+    "RelationshipStateConfig",
+    "RelationshipStateMachineConfig",
     # 存储模块
     "AgentStorage",
     "PersonaStorage",

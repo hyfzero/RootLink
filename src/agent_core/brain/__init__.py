@@ -26,7 +26,17 @@ from .history import (
     generate_daily_summaries_with_llm,
 )
 from .tags import ReplyTag, TagGenerator, TagCache
-from .config import AgentConfig, HistoryConfig, TagsConfig, StorageConfig, PersonaConfig
+from .config import (
+    AgentConfig,
+    HistoryConfig,
+    TagsConfig,
+    StorageConfig,
+    PersonaConfig,
+    MemoryInjectionConfig,
+    PromptBudgetConfig,
+    RelationshipStateConfig,
+    RelationshipStateMachineConfig,
+)
 from .persistence import AgentStorage, PersonaStorage, HistoryStorage, TagsStorage, ConfigStorage
 from .prompt_builder import (
     PromptBuilder,
@@ -73,6 +83,10 @@ __all__ = [
     "TagsConfig",
     "StorageConfig",
     "PersonaConfig",
+    "MemoryInjectionConfig",
+    "PromptBudgetConfig",
+    "RelationshipStateConfig",
+    "RelationshipStateMachineConfig",
     # 存储模块
     "AgentStorage",
     "PersonaStorage",
