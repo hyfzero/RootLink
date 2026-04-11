@@ -1,0 +1,72 @@
+{
+  "tags": {
+    "msg_1775896842136": {
+      "message_id": "msg_1775896842136",
+      "emotion": "neutral",
+      "expression": "neutral",
+      "action": "wave",
+      "pose": "standing",
+      "overlays": [
+        "question_mark"
+      ],
+      "intensity": 1.2000000000000002,
+      "timestamp": 1775896842.1366138
+    },
+    "msg_1775897909045": {
+      "message_id": "msg_1775897909045",
+      "emotion": "neutral",
+      "expression": "neutral",
+      "action": "wave",
+      "pose": "standing",
+      "overlays": [
+        "question_mark"
+      ],
+      "intensity": 1.0,
+      "timestamp": 1775897909.045919
+    },
+    "msg_1775899039095": {
+      "message_id": "msg_1775899039095",
+      "emotion": "angry",
+      "expression": "scowl",
+      "action": "shake_head",
+      "pose": "standing",
+      "overlays": [
+        "anger_mark",
+        "question_mark"
+      ],
+      "intensity": 1.6,
+      "timestamp": 1775899039.0955632
+    },
+    "msg_1775899763328": {
+      "message_id": "msg_1775899763328",
+      "emotion": "confused_zh",
+      "expression": "困惑",
+      "action": "nod",
+      "pose": "standing",
+      "overlays": [
+        "question_mark"
+      ],
+      "intensity": 1.6,
+      "timestamp": 1775899763.3281744
+    },
+    "msg_1775900364905": {
+      "message_id": "msg_1775900364905",
+      "emotion": "neutral",
+      "expression": "neutral",
+      "action": "shake_head",
+      "pose": "standing",
+      "overlays": [
+        "question_mark"
+      ],
+      "intensity": 1.0,
+      "timestamp": 1775900364.905735
+    }
+  },
+  "recent_order": [
+    "msg_1775896842136",
+    "msg_1775897909045",
+    "msg_1775899039095",
+    "msg_1775899763328",
+    "msg_1775900364905"
+  ]
+}

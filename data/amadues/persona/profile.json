@@ -23,5 +23,8 @@
     "吃布丁",
     "改造发明",
     "未来道具"
-  ]
+  ],
+  "relationship_state": "neutral",
+  "relationship_score": 0.0,
+  "relationship_updated_at": 1775900364.905735
 }
