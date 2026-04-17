@@ -29,6 +29,7 @@ amadues 是一个基于 Python 的 AI Agent 框架，核心能力包括角色人
 - [session/brain-registry.md](session/brain-registry.md)：多 Brain 管理
 - [session/prompt-and-manager.md](session/prompt-and-manager.md)：SessionPromptBuilder 和 SessionManager
 - [session/summarizer-and-memory.md](session/summarizer-and-memory.md)：日/月摘要、标签和记忆回写
+- [session/skill-vs-runtime.md](session/skill-vs-runtime.md)：人格模拟中 skill 与运行时系统的方案优劣分析
 - [gui/README.md](gui/README.md)：GUI 总览
 - [gui/components-and-interfaces.md](gui/components-and-interfaces.md)：组件和接口
 
