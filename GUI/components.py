@@ -1,0 +1,562 @@
+"""Reusable Flet controls for the mobile-first companion UI."""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Callable, Optional
+
+import flet as ft
+
+try:
+    from flet.controls.box import BoxFit
+except ImportError:
+    BoxFit = ft.ImageFit
+
+from .interfaces import ChatMessage, CompanionRole, MemoryDraft
+from .theme import MOTION, animation, glass_gradient, hex_with_alpha, palette, soft_shadow
+
+IMAGE_COVER = BoxFit.COVER
+IMAGE_CONTAIN = BoxFit.CONTAIN
+
+
+def animated_click(handler: Optional[Callable], pressed_scale: float = 0.96) -> Callable:
+    """Wrap click handlers with a short tap-scale feedback animation."""
+
+    def _handle(event) -> None:
+        control = event.control
+        try:
+            control.scale = pressed_scale
+            control.update()
+        except (AssertionError, RuntimeError):
+            pass
+
+        if handler:
+            handler(event)
+
+        async def _restore() -> None:
+            await asyncio.sleep(0.08)
+            try:
+                control.scale = 1.0
+                control.update()
+            except (AssertionError, RuntimeError):
+                pass
+
+        try:
+            page = control.page
+        except RuntimeError:
+            page = None
+        if page:
+            page.run_task(_restore)
+
+    return _handle
+
+
+def text(value: str, size: int, color: str, weight: ft.FontWeight | str | None = None, **kwargs) -> ft.Text:
+    return ft.Text(value, size=size, color=color, weight=weight, font_family="Microsoft YaHei", **kwargs)
+
+
+def round_icon_button(icon: str, colors: dict[str, str], on_click: Optional[Callable] = None, size: int = 40) -> ft.Container:
+    return ft.Container(
+        width=size,
+        height=size,
+        border_radius=size / 2,
+        bgcolor=colors["card"],
+        border=ft.border.all(1, colors["card_border"]),
+        alignment=ft.Alignment(0, 0),
+        ink=True,
+        scale=1.0,
+        animate_scale=animation("fast", phase="press"),
+        animate_opacity=animation("fast", phase="press"),
+        on_click=animated_click(on_click),
+        content=ft.Icon(icon, size=18, color=colors["text"]),
+    )
+
+
+def avatar(path: str, size: int = 48, ring_color: Optional[str] = None) -> ft.Container:
+    return ft.Container(
+        width=size,
+        height=size,
+        border_radius=size / 2,
+        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        border=ft.border.all(1, ring_color or hex_with_alpha("#FFFFFF", 0x1A)),
+        shadow=soft_shadow(True, None, "card") if size >= 72 else None,
+        content=ft.Image(src=path, width=size, height=size, fit=IMAGE_COVER),
+    )
+
+
+def pill(label: str, color: str, is_dark: bool) -> ft.Container:
+    return ft.Container(
+        padding=ft.padding.symmetric(horizontal=10, vertical=5),
+        border_radius=16,
+        bgcolor=hex_with_alpha(color, 28 if is_dark else 38),
+        content=text(label, 11, hex_with_alpha(color, 238 if is_dark else 255)),
+    )
+
+
+def section_card(content: ft.Control, colors: dict[str, str], padding: int = 20) -> ft.Container:
+    is_dark = colors.get("text") == "#FFFFFF"
+    return ft.Container(
+        padding=padding,
+        border_radius=24,
+        bgcolor=colors["card"],
+        border=ft.border.all(1, colors["card_border"]),
+        shadow=soft_shadow(is_dark, None, "card"),
+        content=content,
+    )
+
+
+class MotionEntry(ft.Container):
+    """Reusable mount animation container with optional delay."""
+
+    def __init__(
+        self,
+        content: ft.Control,
+        delay_ms: int = 0,
+        offset: Optional[ft.Offset] = None,
+        scale_from: float = 1.0,
+        duration_name: str = "normal",
+        curve: ft.AnimationCurve | None = None,
+        key: str | None = None,
+    ) -> None:
+        self._delay_ms = delay_ms
+        self._alive = True
+        self._initial_offset = offset or ft.Offset(0, 0.05)
+        super().__init__(
+            key=key,
+            content=content,
+            opacity=0,
+            offset=self._initial_offset,
+            scale=scale_from,
+            animate_opacity=animation(duration_name, curve=curve),
+            animate_offset=animation(duration_name, curve=curve),
+            animate_scale=animation(duration_name, curve=curve),
+        )
+
+    def did_mount(self) -> None:
+        try:
+            self.page.run_task(self._enter)
+        except RuntimeError:
+            pass
+
+    def will_unmount(self) -> None:
+        self._alive = False
+
+    async def _enter(self) -> None:
+        if self._delay_ms > 0:
+            await asyncio.sleep(self._delay_ms / 1000)
+        if not self._alive:
+            return
+        self.opacity = 1
+        self.offset = ft.Offset(0, 0)
+        self.scale = 1
+        try:
+            self.update()
+        except (AssertionError, RuntimeError):
+            pass
+
+
+class StaggerEntry(MotionEntry):
+    """Staggered vertical entry used by page sections."""
+
+    def __init__(
+        self,
+        content: ft.Control,
+        index: int = 0,
+        offset_y: float = 0.05,
+        scale_from: float = 1.0,
+        duration_name: str = "slow",
+        offset_x: float = 0.0,
+        key: str | None = None,
+    ) -> None:
+        super().__init__(
+            content=content,
+            delay_ms=index * MOTION["stagger"],
+            offset=ft.Offset(offset_x, offset_y),
+            scale_from=scale_from,
+            duration_name=duration_name,
+            curve=ft.AnimationCurve.FAST_OUT_SLOWIN,
+            key=key,
+        )
+
+
+class MessageBubbleEntry(MotionEntry):
+    """Message-specific entry animation."""
+
+    def __init__(self, content: ft.Control, key: str | None = None, delay_ms: int = 0) -> None:
+        super().__init__(
+            content=content,
+            delay_ms=delay_ms,
+            offset=ft.Offset(0, 0.03),
+            scale_from=1.0,
+            duration_name="message",
+            curve=ft.AnimationCurve.FAST_OUT_SLOWIN,
+            key=key,
+        )
+
+
+class TypingDots(ft.Row):
+    """Local animated typing dots that do not trigger page-wide rebuilds."""
+
+    def __init__(self, color: str) -> None:
+        self._phase = 0
+        self._alive = True
+        self._color = color
+        super().__init__(spacing=5, tight=True, controls=self._build_dots())
+
+    def did_mount(self) -> None:
+        self._alive = True
+        try:
+            self.page.run_task(self._pulse_loop)
+        except RuntimeError:
+            pass
+
+    def will_unmount(self) -> None:
+        self._alive = False
+
+    def _build_dots(self) -> list[ft.Control]:
+        dots: list[ft.Control] = []
+        for index in range(3):
+            active = index == self._phase % 3
+            dots.append(
+                ft.Container(
+                    width=8,
+                    height=8,
+                    border_radius=4,
+                    bgcolor=self._color,
+                    opacity=1.0 if active else 0.32,
+                    scale=1.16 if active else 0.88,
+                    animate_opacity=animation("normal"),
+                    animate_scale=animation("normal"),
+                )
+            )
+        return dots
+
+    async def _pulse_loop(self) -> None:
+        while self._alive:
+            await asyncio.sleep(0.42)
+            if not self._alive:
+                break
+            self._phase = (self._phase + 1) % 3
+            self.controls = self._build_dots()
+            try:
+                self.update()
+            except (AssertionError, RuntimeError):
+                break
+
+
+class RoleFeatureCard(ft.Container):
+    """Large selected-role card from the Figma home screen."""
+
+    def __init__(self, role: CompanionRole, is_dark: bool, on_chat: Callable[[str], None]) -> None:
+        colors = palette(is_dark)
+        super().__init__(
+            padding=24,
+            border_radius=28,
+            border=ft.border.all(1, hex_with_alpha(role.accent_color, 32 if is_dark else 48)),
+            gradient=glass_gradient(role.accent_color, is_dark),
+            shadow=soft_shadow(is_dark, role.accent_color, "card"),
+            opacity=1.0,
+            scale=1.0,
+            animate_opacity=animation("page"),
+            animate_scale=animation("normal", ft.AnimationCurve.FAST_OUT_SLOWIN),
+            content=ft.Column(
+                spacing=18,
+                controls=[
+                    ft.Row(
+                        spacing=18,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                        controls=[
+                            ft.Stack(
+                                width=86,
+                                height=86,
+                                controls=[
+                                    avatar(role.avatar_path, 80, hex_with_alpha(role.accent_color, 90)),
+                                    ft.Container(
+                                        width=18,
+                                        height=18,
+                                        right=2,
+                                        bottom=2,
+                                        border_radius=9,
+                                        bgcolor=role.accent_color,
+                                        border=ft.border.all(2, "#1E1A2E" if is_dark else "#EBE9F3"),
+                                    ),
+                                ],
+                            ),
+                            ft.Column(
+                                expand=True,
+                                spacing=7,
+                                controls=[
+                                    text(role.name, 20, colors["text"], ft.FontWeight.W_500),
+                                    text(role.type, 13, hex_with_alpha(role.accent_color, 220)),
+                                    ft.Row(spacing=6, wrap=True, controls=[pill(tag, role.accent_color, is_dark) for tag in role.tags]),
+                                ],
+                            ),
+                        ],
+                    ),
+                    text(role.intro, 14, colors["text_secondary"]),
+                    ft.Container(
+                        height=48,
+                        border_radius=16,
+                        bgcolor=role.accent_color,
+                        shadow=soft_shadow(is_dark, role.accent_color, "button"),
+                        alignment=ft.Alignment(0, 0),
+                        ink=True,
+                        scale=1.0,
+                        animate_scale=animation("fast", phase="press"),
+                        on_click=animated_click(lambda _: on_chat(role.id)),
+                        content=ft.Row(
+                            alignment=ft.MainAxisAlignment.CENTER,
+                            spacing=8,
+                            controls=[
+                                ft.Icon(ft.Icons.CHAT_BUBBLE_OUTLINE, size=18, color=colors["button_text_dark"]),
+                                text("立即聊天", 15, colors["button_text_dark"], ft.FontWeight.W_500),
+                            ],
+                        ),
+                    ),
+                ],
+            ),
+        )
+
+
+class RoleSelectorCard(ft.Container):
+    """Small horizontal role selector card."""
+
+    def __init__(self, role: CompanionRole, selected: bool, is_dark: bool, on_select: Callable[[str], None]) -> None:
+        colors = palette(is_dark)
+        super().__init__(
+            width=140,
+            padding=14,
+            border_radius=18,
+            opacity=1 if selected else 0.65,
+            border=ft.border.all(1, hex_with_alpha(role.accent_color, 96) if selected else colors["card_border"]),
+            gradient=glass_gradient(role.accent_color, is_dark, selected),
+            shadow=soft_shadow(is_dark, role.accent_color if selected else None, "card") if selected else None,
+            ink=True,
+            scale=1.0,
+            animate_scale=animation("fast", phase="press"),
+            animate_opacity=animation("normal"),
+            on_click=animated_click(lambda _: on_select(role.id)),
+            content=ft.Column(
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=9,
+                controls=[
+                    avatar(role.avatar_path, 56, hex_with_alpha(role.accent_color, 50)),
+                    ft.Column(
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=2,
+                        controls=[
+                            text(role.name, 13, colors["text"], ft.FontWeight.W_500, text_align=ft.TextAlign.CENTER),
+                            text(role.type, 10, colors["text_tertiary"], max_lines=1, overflow=ft.TextOverflow.ELLIPSIS, text_align=ft.TextAlign.CENTER),
+                        ],
+                    ),
+                ],
+            ),
+        )
+
+
+class RecentChatRow(ft.Container):
+    def __init__(self, role: CompanionRole, is_dark: bool, on_open: Callable[[str], None]) -> None:
+        colors = palette(is_dark)
+        super().__init__(
+            padding=16,
+            border_radius=18,
+            bgcolor=colors["card"],
+            border=ft.border.all(1, colors["card_border"]),
+            shadow=soft_shadow(is_dark, None, "card"),
+            ink=True,
+            scale=1.0,
+            animate_scale=animation("fast", phase="press"),
+            animate_opacity=animation("normal"),
+            on_click=animated_click(lambda _: on_open(role.id)),
+            content=ft.Row(
+                spacing=12,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    avatar(role.avatar_path, 48, hex_with_alpha(role.accent_color, 48)),
+                    ft.Column(
+                        expand=True,
+                        spacing=4,
+                        controls=[
+                            ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[text(role.name, 14, colors["text"]), text(role.last_time, 11, colors["text_tertiary"])]),
+                            text(role.last_message, 12, colors["text_secondary"], max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                        ],
+                    ),
+                ],
+            ),
+        )
+
+
+class QuickAction(ft.Container):
+    def __init__(self, title: str, subtitle: str, icon: str, colors: dict[str, str], on_click: Callable) -> None:
+        is_dark = colors.get("text") == "#FFFFFF"
+        super().__init__(
+            padding=14,
+            border_radius=18,
+            bgcolor=colors["card"],
+            border=ft.border.all(1, colors["card_border"]),
+            shadow=soft_shadow(is_dark, None, "card"),
+            ink=True,
+            scale=1.0,
+            animate_scale=animation("fast", phase="press"),
+            on_click=animated_click(on_click),
+            content=ft.Row(
+                spacing=10,
+                controls=[
+                    ft.Container(width=40, height=40, border_radius=20, bgcolor=colors["muted"], alignment=ft.Alignment(0, 0), content=ft.Icon(icon, size=18, color=colors["text_secondary"])),
+                    ft.Column(expand=True, spacing=2, controls=[text(title, 13, colors["text"]), text(subtitle, 10, colors["text_tertiary"], max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)]),
+                ],
+            ),
+        )
+
+
+class MessageBubble(ft.Container):
+    def __init__(self, message: ChatMessage, role: CompanionRole, is_dark: bool) -> None:
+        colors = palette(is_dark)
+        is_user = message.is_user
+        bubble_bg = hex_with_alpha(role.accent_color, 0x25 if is_dark else 0x30) if is_user else colors["message"]
+        time_value = message.timestamp.strftime("%H:%M")
+        bubble = ft.Column(
+            spacing=4,
+            horizontal_alignment=ft.CrossAxisAlignment.END if is_user else ft.CrossAxisAlignment.START,
+            controls=[
+                ft.Container(
+                    padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                    border_radius=ft.border_radius.only(top_left=16 if is_user else 5, top_right=5 if is_user else 16, bottom_left=16, bottom_right=16),
+                    bgcolor=bubble_bg,
+                    border=ft.border.all(1, hex_with_alpha(role.accent_color, 0x30 if is_dark else 0x40) if is_user else colors["message_border"]),
+                    shadow=soft_shadow(is_dark, role.accent_color if is_user else None, "card"),
+                    content=text(message.text, 14, colors["text"], max_lines=None),
+                ),
+                text(time_value, 10, colors["text_tertiary"]),
+            ],
+        )
+        row_controls: list[ft.Control] = [bubble]
+        if not is_user:
+            row_controls.insert(0, avatar(role.avatar_path, 32, colors["card_border"]))
+        super().__init__(
+            alignment=ft.Alignment(1, 0) if is_user else ft.Alignment(-1, 0),
+            content=ft.Row(
+                alignment=ft.MainAxisAlignment.END if is_user else ft.MainAxisAlignment.START,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+                spacing=8,
+                controls=[ft.Container(width=300, content=ft.Row(alignment=ft.MainAxisAlignment.END if is_user else ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.START, spacing=8, controls=row_controls))],
+            ),
+        )
+
+
+class ChatInputBar(ft.Container):
+    """Bottom input row used by both chat modes."""
+
+    def __init__(self, role: CompanionRole, is_dark: bool, mode: str, on_send: Callable[[str], None], on_voice: Optional[Callable] = None) -> None:
+        self._colors = palette(is_dark)
+        self._on_send = on_send
+        self._field = ft.TextField(
+            hint_text="输入你的回应..." if mode == "immersive" else "输入消息...",
+            text_size=14,
+            color=self._colors["text"],
+            hint_style=ft.TextStyle(color=self._colors["text_tertiary"], size=14),
+            border=ft.InputBorder.NONE,
+            filled=True,
+            fill_color=self._colors["input"],
+            bgcolor=self._colors["input"],
+            border_radius=16,
+            content_padding=ft.padding.symmetric(horizontal=14, vertical=11),
+            on_submit=self._handle_send,
+            expand=True,
+        )
+        super().__init__(
+            padding=ft.padding.only(left=16, right=16, top=12, bottom=24),
+            content=ft.Row(
+                spacing=8,
+                controls=[
+                    self._field,
+                    round_icon_button(ft.Icons.MIC_NONE_OUTLINED, self._colors, on_voice, 44),
+                    ft.Container(width=44, height=44, border_radius=22, bgcolor=role.accent_color, shadow=soft_shadow(is_dark, role.accent_color, "button"), alignment=ft.Alignment(0, 0), ink=True, scale=1.0, animate_scale=animation("fast", phase="press"), on_click=animated_click(self._handle_send), content=ft.Icon(ft.Icons.SEND, size=20, color="#FFFFFF")),
+                ],
+            ),
+        )
+
+    def _handle_send(self, event) -> None:
+        value = (self._field.value or "").strip()
+        if not value:
+            return
+        self._field.value = ""
+        self._on_send(value)
+        try:
+            self.update()
+        except RuntimeError:
+            pass
+
+
+class FormField(ft.TextField):
+    def __init__(self, label: str, placeholder: str, colors: dict[str, str], multiline: bool = False, password: bool = False):
+        super().__init__(
+            label=label,
+            hint_text=placeholder,
+            text_size=14,
+            min_lines=3 if multiline else None,
+            max_lines=5 if multiline else 1,
+            multiline=multiline,
+            password=password,
+            can_reveal_password=password,
+            color=colors["text"],
+            label_style=ft.TextStyle(color=colors["text_secondary"], size=13),
+            hint_style=ft.TextStyle(color=colors["text_tertiary"], size=13),
+            border_radius=16,
+            border_color=colors["input_border"],
+            focused_border_color=colors["text_secondary"],
+            bgcolor=colors["input"],
+            filled=True,
+            fill_color=colors["input"],
+            content_padding=ft.padding.symmetric(horizontal=14, vertical=12),
+        )
+
+
+class MemoryEditor(ft.Container):
+    def __init__(self, memory: MemoryDraft, colors: dict[str, str], on_remove: Callable[[], None]) -> None:
+        self.content_field = FormField("记忆内容", "记忆内容...", colors, multiline=True)
+        self.content_field.value = memory.content
+        self.context_field = FormField("上下文", "例如：第一次见面", colors)
+        self.context_field.value = memory.context
+        self.type_dropdown = ft.Dropdown(
+            label="类型",
+            value=memory.memory_type,
+            options=[
+                ft.dropdown.Option("episodic", "情节记忆"),
+                ft.dropdown.Option("preference", "偏好记忆"),
+                ft.dropdown.Option("fact", "事实记忆"),
+                ft.dropdown.Option("daily_summary", "日度总结"),
+                ft.dropdown.Option("monthly_summary", "月度总结"),
+            ],
+            text_size=12,
+            color=colors["text"],
+            border_radius=12,
+            border_color=colors["input_border"],
+            bgcolor=colors["input"],
+        )
+        self.importance = ft.Slider(min=0, max=2, divisions=20, value=memory.importance)
+        super().__init__(
+            padding=14,
+            border_radius=18,
+            bgcolor=colors["card"],
+            border=ft.border.all(1, colors["card_border"]),
+            shadow=soft_shadow(True, None, "card"),
+            content=ft.Column(
+                spacing=10,
+                controls=[
+                    ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[text("记忆条目", 13, colors["text_secondary"]), ft.IconButton(icon=ft.Icons.CLOSE, icon_color=colors["text_tertiary"], on_click=lambda _: on_remove())]),
+                    self.content_field,
+                    self.type_dropdown,
+                    ft.Column(spacing=2, controls=[text("重要度", 12, colors["text_secondary"]), self.importance]),
+                    self.context_field,
+                ],
+            ),
+        )
+
+    def to_draft(self) -> MemoryDraft:
+        return MemoryDraft(
+            content=self.content_field.value or "",
+            memory_type=self.type_dropdown.value or "episodic",
+            importance=float(self.importance.value or 1.0),
+            context=self.context_field.value or "",
+        )
