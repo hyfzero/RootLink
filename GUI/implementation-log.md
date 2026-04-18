@@ -85,3 +85,24 @@
 - 2026-04-18 00:29:50 +08:00: `.\.venv\Scripts\python.exe -B -c "import runpy; runpy.run_path('GUI/app.py', run_name='not_main')"` passed.
 - 2026-04-18 00:29:50 +08:00: `git diff --check -- GUI` passed.
 - 2026-04-18 00:34:26 +08:00: fixed Flet compatibility in immersive layout (`ft.alignment.bottom_center` -> `ft.Alignment(0, 1)`), then reran `compileall`, import smoke, script-path smoke, and state-transition smoke (`home/settings/create/chat`, mode switches, typing, append, clear) and all passed.
+
+## Chinese UI and Chat Layout Revision
+
+- Source check: Figma Make `g7EB8aqSZGjbIQO0j42Ax0` was used as the primary source for Chinese copy, the compact icon chat-mode switch, and immersive chat layout. The published `figma.site` URL still resolves to the JavaScript shell and is treated as same-source confirmation only.
+- Localized visible demo/UI copy across the root `GUI/` package:
+  - role data, tags, status text, recent-chat text, settings labels, create-wizard labels, input hints, memory editor labels, and demo reply text are now Chinese.
+  - internal ids and public control-layer values remain stable (`normal`, `immersive`, provider ids, template ids, etc.).
+- Chat mode switch now uses two icon-only buttons: chat bubble for regular chat and sparkles for immersive mode, with Chinese tooltips.
+- Immersive chat now uses a portrait stage plus a fixed lower dialogue area instead of a full-page overlay. The input bar remains separated at the bottom.
+- Added start-chat motion:
+  - all home chat entry points route through `_begin_open_chat`.
+  - selected role card briefly scales/fades before opening chat.
+  - chat header, body, and input bar use staggered first-entry motion.
+- Tests:
+  - 2026-04-18 00:55 +08:00: `.\.venv\Scripts\python.exe -m compileall -q GUI` passed after rerun outside the default sandbox because Windows blocked pycache temp writes.
+  - 2026-04-18 00:55 +08:00: `.\.venv\Scripts\python.exe -m compileall -q GUI src` passed.
+  - 2026-04-18 00:55 +08:00: import and construction smoke test passed.
+  - 2026-04-18 00:55 +08:00: direct script-path smoke test with `runpy.run_path('GUI/app.py', run_name='not_main')` passed.
+  - 2026-04-18 00:55 +08:00: state smoke test for settings/create/chat mode/message APIs passed.
+  - 2026-04-18 00:55 +08:00: `git diff --check -- GUI` passed.
+  - 2026-04-18 01:02 +08:00: after final Chinese label cleanup, `python -B` syntax/import smoke tests and `git diff --check -- GUI` passed.

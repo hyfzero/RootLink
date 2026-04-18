@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Optional
 
@@ -44,6 +45,7 @@ from .theme import (
     animation,
     app_gradient,
     character_chat_gradient,
+    glass_gradient,
     hex_with_alpha,
     palette,
     soft_shadow,
@@ -54,18 +56,18 @@ SETTINGS_PROVIDERS = [
     ("anthropic", "Anthropic"),
     ("google", "Google"),
     ("deepseek", "DeepSeek"),
-    ("custom", "Custom"),
+    ("custom", "自定义"),
 ]
 
 PORTRAIT_EMOTIONS = [
-    ("neutral", "Neutral"),
-    ("happy", "Happy"),
-    ("sad", "Sad"),
-    ("angry", "Angry"),
-    ("surprised", "Surprised"),
+    ("neutral", "平静"),
+    ("happy", "开心"),
+    ("sad", "难过"),
+    ("angry", "生气"),
+    ("surprised", "惊讶"),
 ]
 
-CREATE_STEPS = ["Basic", "Portraits", "Personality", "Memory", "Style"]
+CREATE_STEPS = ["基础信息", "立绘", "人格", "记忆", "语言风格"]
 
 
 def default_roles() -> list[CompanionRole]:
@@ -108,6 +110,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._memory_editors: list[MemoryEditor] = []
         self.motion_enabled = True
         self._page_seed = {page: 0 for page in self.VALID_PAGES}
+        self._chat_launching_role_id: Optional[str] = None
+        self._chat_entry_seed = 0
         self._build()
 
     @property
@@ -119,13 +123,13 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _seed_messages(self, role: CompanionRole) -> list[ChatMessage]:
         seed = {
-            "amadeus": "I remember where we stopped last time.",
-            "shinji": "I am here. You can speak slowly.",
-            "asuka": "Stop holding it alone. Say it directly.",
-        }.get(role.id, "I am ready.")
+            "amadeus": "记得你上次停下来的地方。准备好继续了吗？",
+            "shinji": "我会在这里。你可以慢慢说。",
+            "asuka": "别一个人扛着，直接说出来。",
+        }.get(role.id, "我已经准备好了。")
         return [
             ChatMessage("seed-1", role.id, seed, False, datetime.now()),
-            ChatMessage("seed-2", role.id, "Understood. Keep going.", True, datetime.now()),
+            ChatMessage("seed-2", role.id, "最近有点累。", True, datetime.now()),
             ChatMessage("seed-3", role.id, role.last_message or role.status_text, False, datetime.now()),
         ]
 
@@ -211,6 +215,14 @@ class CompanionAppView(ft.Container, CompanionUIView):
         selected = self.active_role
         role_cards = [RoleSelectorCard(role, role.id == selected.id, self._is_dark, self.set_active_role) for role in self._roles]
         role_cards.append(self._create_selector_card(colors))
+        launching = self._chat_launching_role_id == selected.id
+        feature_card = ft.Container(
+            content=RoleFeatureCard(selected, self._is_dark, self._begin_open_chat),
+            scale=0.97 if launching else 1.0,
+            opacity=0.72 if launching else 1.0,
+            animate_scale=animation("fast", phase="press"),
+            animate_opacity=animation("fast", phase="exit"),
+        )
         controls = [
             self._stagger(
                 "home",
@@ -233,7 +245,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                                     spacing=8,
                                     controls=[
                                         ft.Icon(ft.Icons.DARK_MODE if self._is_dark else ft.Icons.LIGHT_MODE, size=17, color=colors["text"]),
-                                        text("Dark" if self._is_dark else "Light", 12, colors["text"]),
+                                        text("夜晚" if self._is_dark else "白天", 12, colors["text"]),
                                     ],
                                 ),
                             ),
@@ -250,13 +262,13 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     content=ft.Column(
                         spacing=7,
                         controls=[
-                            text("Welcome back", 28, colors["text"], ft.FontWeight.W_500),
-                            text("Choose a companion and continue your conversation.", 15, colors["text_secondary"]),
+                            text("今天想和谁聊聊天？", 28, colors["text"], ft.FontWeight.W_500),
+                            text("深夜的陪伴，从选择一个懂你的人开始。", 15, colors["text_secondary"]),
                         ],
                     ),
                 ),
             ),
-            self._stagger("home", 2, RoleFeatureCard(selected, self._is_dark, self._open_chat), offset_y=0.04, scale_from=0.98),
+            self._stagger("home", 2, feature_card, offset_y=0.04, scale_from=0.98),
             self._stagger(
                 "home",
                 3,
@@ -268,8 +280,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 ft.Row(
                     spacing=12,
                     controls=[
-                        ft.Container(expand=True, content=QuickAction("Create role", "Start a 5-step wizard", ft.Icons.ADD, colors, lambda _: self.show_page("create"))),
-                        ft.Container(expand=True, content=QuickAction("Open chat", "Jump to current role", ft.Icons.CHAT_BUBBLE_OUTLINE, colors, lambda _: self._open_chat(selected.id))),
+                        ft.Container(expand=True, content=QuickAction("创建角色", "定制专属陪伴", ft.Icons.ADD, colors, lambda _: self.show_page("create"))),
+                        ft.Container(expand=True, content=QuickAction("继续话题", "上次聊到哪", ft.Icons.CHAT_BUBBLE_OUTLINE, colors, lambda _: self._begin_open_chat(selected.id))),
                     ],
                 ),
             ),
@@ -278,7 +290,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 5,
                 ft.Column(
                     spacing=12,
-                    controls=[text("Recent chats", 15, colors["text_secondary"]), *[RecentChatRow(role, self._is_dark, self._open_chat) for role in self._roles]],
+                    controls=[text("最近聊天", 15, colors["text_secondary"]), *[RecentChatRow(role, self._is_dark, self._begin_open_chat) for role in self._roles]],
                 ),
             ),
             ft.Container(height=28),
@@ -302,8 +314,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 spacing=9,
                 controls=[
                     ft.Container(width=56, height=56, border_radius=28, bgcolor=colors["muted"], alignment=ft.Alignment(0, 0), content=ft.Icon(ft.Icons.AUTO_AWESOME, size=22, color=colors["text_secondary"])),
-                    text("Create role", 13, colors["text_secondary"], text_align=ft.TextAlign.CENTER),
-                    text("New companion", 10, colors["text_tertiary"], text_align=ft.TextAlign.CENTER),
+                    text("创建角色", 13, colors["text_secondary"], text_align=ft.TextAlign.CENTER),
+                    text("定制陪伴", 10, colors["text_tertiary"], text_align=ft.TextAlign.CENTER),
                 ],
             ),
         )
@@ -340,10 +352,26 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if self.motion_enabled:
             body = MotionEntry(
                 content=body,
+                delay_ms=100,
                 offset=ft.Offset(-0.05, 0) if self._chat_mode == "normal" else ft.Offset(0, 0.03),
                 scale_from=1.0 if self._chat_mode == "normal" else 0.97,
                 duration_name="normal",
-                key=f"chat-body-{self._chat_mode}-{self._chat_mode_seed}",
+                key=f"chat-body-{self._chat_mode}-{self._chat_mode_seed}-{self._chat_entry_seed}",
+            )
+            header = MotionEntry(
+                content=header,
+                offset=ft.Offset(0, -0.03),
+                duration_name="normal",
+                key=f"chat-header-{self._chat_entry_seed}-{self._chat_mode_seed}",
+            )
+        input_bar: ft.Control = ChatInputBar(role=role, is_dark=self._is_dark, mode=self._chat_mode, on_send=self._send_message, on_voice=lambda _: self._callback.on_voice_requested())
+        if self.motion_enabled:
+            input_bar = MotionEntry(
+                content=input_bar,
+                delay_ms=180,
+                offset=ft.Offset(0, 0.04),
+                duration_name="normal",
+                key=f"chat-input-{self._chat_entry_seed}-{self._chat_mode_seed}",
             )
         return ft.Container(
             gradient=character_chat_gradient(role.id if self._chat_mode == "immersive" else "amadeus", self._is_dark),
@@ -363,7 +391,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                             transition=ft.AnimatedSwitcherTransition.FADE,
                         ),
                     ),
-                    ChatInputBar(role=role, is_dark=self._is_dark, mode=self._chat_mode, on_send=self._send_message, on_voice=lambda _: self._callback.on_voice_requested()),
+                    input_bar,
                 ],
             ),
         )
@@ -374,22 +402,31 @@ class CompanionAppView(ft.Container, CompanionUIView):
             border_radius=16,
             bgcolor=colors["card"],
             border=ft.border.all(1, colors["card_border"]),
-            content=ft.Row(spacing=4, controls=[self._mode_button("normal", "Chat", colors), self._mode_button("immersive", "Immersive", colors)]),
+            content=ft.Row(
+                spacing=4,
+                controls=[
+                    self._mode_button("normal", ft.Icons.CHAT_BUBBLE_OUTLINE, "常规聊天", colors),
+                    self._mode_button("immersive", ft.Icons.AUTO_AWESOME, "沉浸陪伴", colors),
+                ],
+            ),
         )
 
-    def _mode_button(self, mode: str, label: str, colors: dict[str, str]) -> ft.Container:
+    def _mode_button(self, mode: str, icon: str, tooltip: str, colors: dict[str, str]) -> ft.Container:
         active = self._chat_mode == mode
         return ft.Container(
-            padding=ft.padding.symmetric(horizontal=10, vertical=7),
-            border_radius=12,
+            width=32,
+            height=32,
+            border_radius=16,
             bgcolor=hex_with_alpha(self.active_role.accent_color, 58 if active else 0) if active else None,
             border=ft.border.all(1, hex_with_alpha(self.active_role.accent_color, 70) if active else colors["card_border"]),
+            tooltip=tooltip,
+            alignment=ft.Alignment(0, 0),
             ink=True,
             scale=1.0,
             animate_scale=animation("fast", phase="press"),
             animate_opacity=animation("normal"),
             on_click=animated_click(lambda _: self._set_chat_mode(mode)),
-            content=text(label, 11, colors["text"] if active else colors["text_secondary"]),
+            content=ft.Icon(icon, size=16, color=colors["text"] if active else colors["text_secondary"]),
         )
 
     def _build_normal_chat(self, colors: dict[str, str], role: CompanionRole) -> ft.Control:
@@ -429,25 +466,56 @@ class CompanionAppView(ft.Container, CompanionUIView):
         latest = next((m.text for m in reversed(self._messages) if m.role_id == role.id and not m.is_user), role.status_text)
         portrait: ft.Control = ft.Container(
             alignment=ft.Alignment(0, 1),
-            content=ft.Image(src=role.standing_image_path, fit=IMAGE_CONTAIN, width=390, height=620),
+            content=ft.Image(src=role.standing_image_path, fit=IMAGE_CONTAIN, width=390, height=520),
         )
         dialogue: ft.Control = ft.Container(
-            alignment=ft.Alignment(0, 1),
-            margin=ft.margin.only(left=16, right=16, bottom=14),
-            padding=ft.padding.symmetric(horizontal=16, vertical=14),
-            border_radius=16,
-            bgcolor=hex_with_alpha("#FFFFFF", 28 if self._is_dark else 220),
-            border=ft.border.all(1, hex_with_alpha("#FFFFFF", 42 if self._is_dark else 58)),
+            height=168,
+            margin=ft.margin.only(left=16, right=16, bottom=12),
+            padding=ft.padding.symmetric(horizontal=18, vertical=16),
+            border_radius=24,
+            gradient=glass_gradient(role.accent_color, self._is_dark, strong=True),
+            border=ft.border.all(1, hex_with_alpha(role.accent_color, 0x36 if self._is_dark else 0x48)),
             shadow=soft_shadow(self._is_dark, role.accent_color, "card"),
-            content=text(latest, 14, colors["text"], max_lines=4, overflow=ft.TextOverflow.ELLIPSIS),
+            content=ft.Row(
+                spacing=12,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+                controls=[
+                    avatar(role.avatar_path, 40, hex_with_alpha(role.accent_color, 0x66)),
+                    ft.Column(
+                        expand=True,
+                        spacing=5,
+                        controls=[
+                            text(role.name, 13, hex_with_alpha(role.accent_color, 0xEE), ft.FontWeight.W_500),
+                            text(latest, 15, colors["text_soft"], max_lines=4, overflow=ft.TextOverflow.ELLIPSIS),
+                        ],
+                    ),
+                ],
+            ),
         )
         if self.motion_enabled:
             portrait = MotionEntry(content=portrait, delay_ms=200, offset=ft.Offset(0, 0.08), duration_name="slow", key=f"portrait-{self._chat_mode_seed}")
             dialogue = MotionEntry(content=dialogue, delay_ms=400, offset=ft.Offset(0, 0.06), duration_name="medium", key=f"dialogue-{self._chat_mode_seed}")
-        return ft.Stack(expand=True, controls=[ft.Container(expand=True, bgcolor=hex_with_alpha("#000000", 14 if self._is_dark else 0)), portrait, dialogue])
+        return ft.Container(
+            expand=True,
+            bgcolor=hex_with_alpha("#000000", 14 if self._is_dark else 0),
+            content=ft.Column(
+                expand=True,
+                spacing=0,
+                controls=[
+                    ft.Container(
+                        expand=True,
+                        alignment=ft.Alignment(0, 1),
+                        clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                        padding=ft.padding.only(left=10, right=10, top=10),
+                        content=portrait,
+                    ),
+                    dialogue,
+                ],
+            ),
+        )
 
     def _build_settings_page(self, colors: dict[str, str]) -> ft.Control:
-        self._settings_name_field = FormField("Display name", "Your nickname", colors)
+        self._settings_name_field = FormField("显示名称", "你的昵称", colors)
         self._settings_name_field.value = self._settings.user_name
         self._quality_slider = ft.Slider(
             min=0,
@@ -458,7 +526,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             inactive_color=colors["muted"],
         )
         self._provider_dropdown = ft.Dropdown(
-            label="Model provider",
+            label="模型来源",
             value=self._settings.model_provider,
             options=[ft.dropdown.Option(key, label) for key, label in SETTINGS_PROVIDERS],
             text_size=12,
@@ -467,16 +535,16 @@ class CompanionAppView(ft.Container, CompanionUIView):
             bgcolor=colors["input"],
             color=colors["text"],
         )
-        self._api_key_field = FormField("API key", "sk-...", colors, password=True)
+        self._api_key_field = FormField("接口密钥", "sk-...", colors, password=True)
         self._api_key_field.value = self._settings.api_key
 
         controls = [
-            self._stagger("settings", 0, self._header("Settings", colors, lambda _: self.show_page("home")), offset_y=0.02),
+            self._stagger("settings", 0, self._header("设置", colors, lambda _: self.show_page("home")), offset_y=0.02),
             self._stagger("settings", 1, self._settings_profile_card(colors)),
             self._stagger("settings", 2, section_card(self._quality_card(colors), colors)),
             self._stagger("settings", 3, section_card(self._provider_card(colors), colors)),
             self._stagger("settings", 4, section_card(self._api_key_card(colors), colors)),
-            self._stagger("settings", 5, self._primary_button("Save", self.active_role.accent_color, lambda _: self._save_settings())),
+            self._stagger("settings", 5, self._primary_button("保存", self.active_role.accent_color, lambda _: self._save_settings())),
             ft.Container(height=28),
         ]
         return self._page_column([ft.Container(padding=ft.padding.symmetric(horizontal=20), content=ft.Column(spacing=14, controls=controls))])
@@ -495,8 +563,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
                                 expand=True,
                                 spacing=3,
                                 controls=[
-                                    text("Profile", 13, colors["text_secondary"]),
-                                    text("UI-only profile settings", 11, colors["text_tertiary"]),
+                                    text("个人资料", 13, colors["text_secondary"]),
+                                    text("仅用于界面展示的资料设置", 11, colors["text_tertiary"]),
                                 ],
                             ),
                             round_icon_button(ft.Icons.UPLOAD_FILE, colors, lambda _: self._callback.on_avatar_upload_requested(), size=36),
@@ -512,31 +580,31 @@ class CompanionAppView(ft.Container, CompanionUIView):
         return ft.Column(
             spacing=8,
             controls=[
-                text("Conversation quality", 13, colors["text_secondary"]),
-                text("Balance quality and speed", 11, colors["text_tertiary"]),
+                text("对话质量", 13, colors["text_secondary"]),
+                text("平衡回复质量与速度", 11, colors["text_tertiary"]),
                 self._quality_slider,
             ],
         )
 
     def _provider_card(self, colors: dict[str, str]) -> ft.Control:
         provider_desc = {
-            "openai": "GPT family",
-            "anthropic": "Claude family",
-            "google": "Gemini family",
-            "deepseek": "DeepSeek family",
-            "custom": "Custom endpoint",
-        }.get(self._provider_dropdown.value or "openai", "GPT family")
+            "openai": "GPT 系列",
+            "anthropic": "Claude 系列",
+            "google": "Gemini 系列",
+            "deepseek": "DeepSeek 系列",
+            "custom": "自定义 API 地址",
+        }.get(self._provider_dropdown.value or "openai", "GPT 系列")
         return ft.Column(
             spacing=8,
             controls=[
-                text("Model source", 13, colors["text_secondary"]),
+                text("模型来源", 13, colors["text_secondary"]),
                 self._provider_dropdown,
                 text(provider_desc, 11, colors["text_tertiary"]),
             ],
         )
 
     def _api_key_card(self, colors: dict[str, str]) -> ft.Control:
-        return ft.Column(spacing=8, controls=[text("Credentials", 13, colors["text_secondary"]), self._api_key_field])
+        return ft.Column(spacing=8, controls=[text("凭据", 13, colors["text_secondary"]), self._api_key_field])
 
     def _build_create_page(self, colors: dict[str, str]) -> ft.Control:
         step_content = self._build_create_step(colors)
@@ -557,7 +625,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             transition=ft.AnimatedSwitcherTransition.FADE,
         )
         controls = [
-            self._stagger("create", 0, self._header("Create Companion", colors, lambda _: self.show_page("home")), offset_y=0.02),
+            self._stagger("create", 0, self._header("创建角色", colors, lambda _: self.show_page("home")), offset_y=0.02),
             self._stagger("create", 1, self._create_progress(colors)),
             self._stagger("create", 2, ft.Container(content=step_switcher), offset_y=0.03),
             self._stagger("create", 3, self._create_footer(colors), offset_y=0.03),
@@ -587,7 +655,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 controls=[
                     ft.Row(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                        controls=[text(f"Step {self._create_step}/5", 13, colors["text"]), text(CREATE_STEPS[self._create_step - 1], 12, colors["text_secondary"])],
+                        controls=[text(f"第 {self._create_step}/5 步", 13, colors["text"]), text(CREATE_STEPS[self._create_step - 1], 12, colors["text_secondary"])],
                     ),
                     ft.Row(spacing=8, controls=bars),
                 ],
@@ -599,10 +667,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
         return ft.Row(
             spacing=10,
             controls=[
-                ft.Container(expand=True, content=self._secondary_button("Back", colors, lambda _: self._previous_step())),
+                ft.Container(expand=True, content=self._secondary_button("上一步", colors, lambda _: self._previous_step())),
                 ft.Container(
                     expand=True,
-                    content=self._primary_button("Create" if self._create_step == 5 else "Next", self.active_role.accent_color, lambda _: self._next_step()),
+                    content=self._primary_button("创建" if self._create_step == 5 else "下一步", self.active_role.accent_color, lambda _: self._next_step()),
                 ),
             ],
         )
@@ -619,26 +687,26 @@ class CompanionAppView(ft.Container, CompanionUIView):
         return self._speaking_step(colors)
 
     def _basic_step(self, colors: dict[str, str]) -> ft.Control:
-        self._brain_id_field = FormField("Brain ID", "companion-id", colors)
+        self._brain_id_field = FormField("角色标识", "companion-id", colors)
         self._brain_id_field.value = self._draft.brain_id
         self._template_dropdown = ft.Dropdown(
-            label="Template",
+            label="模板",
             value=self._draft.template or "default",
-            options=[ft.dropdown.Option("default"), ft.dropdown.Option("empathetic"), ft.dropdown.Option("strict")],
+            options=[ft.dropdown.Option("default", "默认"), ft.dropdown.Option("empathetic", "共情"), ft.dropdown.Option("strict", "克制")],
             text_size=12,
             border_radius=14,
             border_color=colors["input_border"],
             bgcolor=colors["input"],
             color=colors["text"],
         )
-        self._name_field = FormField("Name", "Companion name", colors)
+        self._name_field = FormField("名称", "角色名称", colors)
         self._name_field.value = self._draft.name
-        self._description_field = FormField("Description", "Short persona summary", colors, multiline=True)
+        self._description_field = FormField("描述", "简短描述这个角色", colors, multiline=True)
         self._description_field.value = self._draft.description
         return section_card(
             ft.Column(
                 spacing=12,
-                controls=[text("Basic information", 18, colors["text"], ft.FontWeight.W_500), self._brain_id_field, self._template_dropdown, self._name_field, self._description_field],
+                controls=[text("基础信息", 18, colors["text"], ft.FontWeight.W_500), self._brain_id_field, self._template_dropdown, self._name_field, self._description_field],
             ),
             colors,
         )
@@ -665,8 +733,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
             ft.Column(
                 spacing=12,
                 controls=[
-                    text("Portrait setup", 18, colors["text"], ft.FontWeight.W_500),
-                    text("Select emotion and upload portrait image.", 12, colors["text_secondary"]),
+                    text("立绘设置", 18, colors["text"], ft.FontWeight.W_500),
+                    text("选择情绪并上传对应立绘。", 12, colors["text_secondary"]),
                     ft.Row(spacing=8, wrap=True, controls=chips),
                     ft.Container(
                         height=260,
@@ -676,41 +744,41 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         border=ft.border.all(1, colors["card_border"]),
                         content=ft.Image(src=preview_path, fit=IMAGE_CONTAIN),
                     ),
-                    self._primary_button(f"Upload {self._emotion_id} portrait", self.active_role.accent_color, lambda _: self._upload_portrait()),
+                    self._primary_button(f"上传{self._current_emotion_label()}立绘", self.active_role.accent_color, lambda _: self._upload_portrait()),
                 ],
             ),
             colors,
         )
 
     def _personality_step(self, colors: dict[str, str]) -> ft.Control:
-        self._age_field = FormField("Age", "Optional", colors)
+        self._age_field = FormField("年龄", "可选", colors)
         self._age_field.value = self._draft.age
         self._gender_dropdown = ft.Dropdown(
-            label="Gender",
+            label="性别",
             value=self._draft.gender or "unknown",
-            options=[ft.dropdown.Option("unknown"), ft.dropdown.Option("female"), ft.dropdown.Option("male"), ft.dropdown.Option("other")],
+            options=[ft.dropdown.Option("unknown", "未知"), ft.dropdown.Option("female", "女性"), ft.dropdown.Option("male", "男性"), ft.dropdown.Option("other", "其他")],
             text_size=12,
             border_radius=14,
             border_color=colors["input_border"],
             bgcolor=colors["input"],
             color=colors["text"],
         )
-        self._birthday_field = FormField("Birthday", "YYYY-MM-DD", colors)
+        self._birthday_field = FormField("生日", "YYYY-MM-DD", colors)
         self._birthday_field.value = self._draft.birthday
-        self._background_field = FormField("Background", "Context and history", colors, multiline=True)
+        self._background_field = FormField("背景", "角色经历与上下文", colors, multiline=True)
         self._background_field.value = self._draft.background
         self._style_dropdown = ft.Dropdown(
-            label="Speaking style preset",
+            label="语言风格预设",
             value=self._draft.speaking_style_preset or "friendly",
-            options=[ft.dropdown.Option("friendly"), ft.dropdown.Option("calm"), ft.dropdown.Option("confident"), ft.dropdown.Option("direct")],
+            options=[ft.dropdown.Option("friendly", "友好"), ft.dropdown.Option("calm", "冷静"), ft.dropdown.Option("confident", "自信"), ft.dropdown.Option("direct", "直接")],
             text_size=12,
             border_radius=14,
             border_color=colors["input_border"],
             bgcolor=colors["input"],
             color=colors["text"],
         )
-        self._trait_field = FormField("Add trait", "e.g. patient", colors)
-        self._interest_field = FormField("Add interest", "e.g. piano", colors)
+        self._trait_field = FormField("添加特质", "例如：耐心", colors)
+        self._interest_field = FormField("添加兴趣", "例如：钢琴", colors)
         return ft.Column(
             spacing=12,
             controls=[
@@ -718,7 +786,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     ft.Column(
                         spacing=12,
                         controls=[
-                            text("Personality", 18, colors["text"], ft.FontWeight.W_500),
+                            text("人格", 18, colors["text"], ft.FontWeight.W_500),
                             ft.Row(spacing=10, controls=[ft.Container(expand=True, content=self._age_field), ft.Container(expand=True, content=self._gender_dropdown)]),
                             self._birthday_field,
                             self._background_field,
@@ -731,10 +799,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     ft.Column(
                         spacing=10,
                         controls=[
-                            text("Traits", 13, colors["text_secondary"]),
+                            text("特质", 13, colors["text_secondary"]),
                             ft.Row(spacing=8, controls=[ft.Container(expand=True, content=self._trait_field), self._small_add_button(colors, lambda _: self._add_trait())]),
                             self._chip_wrap(self._draft.personality_traits, colors, self._remove_trait),
-                            text("Interests", 13, colors["text_secondary"]),
+                            text("兴趣", 13, colors["text_secondary"]),
                             ft.Row(spacing=8, controls=[ft.Container(expand=True, content=self._interest_field), self._small_add_button(colors, lambda _: self._add_interest())]),
                             self._chip_wrap(self._draft.interests, colors, self._remove_interest),
                         ],
@@ -773,8 +841,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         spacing=8,
                         controls=[
                             ft.Icon(ft.Icons.AUTO_AWESOME, size=24, color=colors["text_tertiary"]),
-                            text("No memories yet", 13, colors["text_secondary"]),
-                            text("Add memory entries to guide role behavior.", 11, colors["text_tertiary"]),
+                            text("还没有记忆", 13, colors["text_secondary"]),
+                            text("添加记忆条目来引导角色行为。", 11, colors["text_tertiary"]),
                         ],
                     ),
                     colors,
@@ -786,7 +854,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 ft.Row(
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
-                        ft.Column(spacing=2, controls=[text("Memory", 18, colors["text"], ft.FontWeight.W_500), text("Episodic, preference, and factual entries.", 13, colors["text_secondary"])]),
+                        ft.Column(spacing=2, controls=[text("记忆", 18, colors["text"], ft.FontWeight.W_500), text("记录情节、偏好和事实。", 13, colors["text_secondary"])]),
                         round_icon_button(ft.Icons.ADD, colors, lambda _: self._add_memory()),
                     ],
                 ),
@@ -795,10 +863,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
         )
 
     def _speaking_step(self, colors: dict[str, str]) -> ft.Control:
-        self._vocabulary_dropdown = self._compact_dropdown("Vocabulary", self._draft.vocabulary_level, [("simple", "Simple"), ("common", "Common"), ("academic", "Academic")], colors)
-        self._sentence_dropdown = self._compact_dropdown("Sentence length", self._draft.sentence_length, [("short", "Short"), ("medium", "Medium"), ("long", "Long"), ("varied", "Varied")], colors)
-        self._emoji_dropdown = self._compact_dropdown("Emoji usage", self._draft.emoji_usage, [("none", "None"), ("sparse", "Sparse"), ("moderate", "Moderate"), ("rich", "Rich")], colors)
-        self._parenthesis_dropdown = self._compact_dropdown("Parenthesis usage", self._draft.parenthesis_usage, [("none", "None"), ("sparse", "Sparse"), ("moderate", "Moderate")], colors)
+        self._vocabulary_dropdown = self._compact_dropdown("词汇难度", self._draft.vocabulary_level, [("simple", "简单"), ("common", "常用"), ("academic", "学术")], colors)
+        self._sentence_dropdown = self._compact_dropdown("句子长度", self._draft.sentence_length, [("short", "短句"), ("medium", "中等"), ("long", "长句"), ("varied", "变化")], colors)
+        self._emoji_dropdown = self._compact_dropdown("表情使用", self._draft.emoji_usage, [("none", "不用"), ("sparse", "少量"), ("moderate", "适中"), ("rich", "丰富")], colors)
+        self._parenthesis_dropdown = self._compact_dropdown("括号补充", self._draft.parenthesis_usage, [("none", "不用"), ("sparse", "少量"), ("moderate", "适中")], colors)
         self._exclamation_slider = ft.Slider(min=0, max=1, divisions=10, value=self._draft.exclamation_rate)
         self._question_slider = ft.Slider(min=0, max=1, divisions=10, value=self._draft.question_rate)
         self._ellipsis_slider = ft.Slider(min=0, max=1, divisions=10, value=self._draft.ellipsis_rate)
@@ -807,14 +875,14 @@ class CompanionAppView(ft.Container, CompanionUIView):
             ft.Column(
                 spacing=12,
                 controls=[
-                    text("Language style", 18, colors["text"], ft.FontWeight.W_500),
+                    text("语言风格", 18, colors["text"], ft.FontWeight.W_500),
                     self._vocabulary_dropdown,
                     self._sentence_dropdown,
-                    self._slider_block("Exclamation rate", self._exclamation_slider, colors),
-                    self._slider_block("Question rate", self._question_slider, colors),
-                    self._slider_block("Ellipsis rate", self._ellipsis_slider, colors),
+                    self._slider_block("感叹号频率", self._exclamation_slider, colors),
+                    self._slider_block("问句频率", self._question_slider, colors),
+                    self._slider_block("省略号频率", self._ellipsis_slider, colors),
                     ft.Row(spacing=10, controls=[ft.Container(expand=True, content=self._emoji_dropdown), ft.Container(expand=True, content=self._parenthesis_dropdown)]),
-                    self._slider_block("Memory influence weight", self._influence_slider, colors),
+                    self._slider_block("记忆影响权重", self._influence_slider, colors),
                 ],
             ),
             colors,
@@ -837,7 +905,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _chip_wrap(self, values: list[str], colors: dict[str, str], on_remove) -> ft.Control:
         if not values:
-            return text("No entries yet.", 11, colors["text_tertiary"])
+            return text("还没有条目。", 11, colors["text_tertiary"])
         chips: list[ft.Control] = []
         for item in values:
             chips.append(
@@ -904,13 +972,46 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._callback.on_theme_toggled(self._is_dark)
         self._safe_update()
 
-    def _open_chat(self, role_id: str) -> None:
+    def _prepare_chat(self, role_id: str) -> None:
         self._active_role_id = role_id
         if not any(message.role_id == role_id for message in self._messages):
             seeded = self._seed_messages(self.active_role)
             self._messages.extend(seeded)
             self._seen_message_ids.update(message.id for message in seeded)
+
+    def _begin_open_chat(self, role_id: str) -> None:
+        self._prepare_chat(role_id)
         self._callback.on_open_chat(role_id)
+        if not self.motion_enabled:
+            self._chat_entry_seed += 1
+            self.show_page("chat")
+            return
+        self._chat_launching_role_id = role_id
+        self._safe_update()
+
+        async def _finish_open() -> None:
+            await asyncio.sleep(MOTION["fast"] / 1000)
+            if self._chat_launching_role_id != role_id:
+                return
+            self._chat_launching_role_id = None
+            self._chat_entry_seed += 1
+            self.show_page("chat")
+
+        try:
+            page = self.page
+        except RuntimeError:
+            page = None
+        if page:
+            page.run_task(_finish_open)
+        else:
+            self._chat_launching_role_id = None
+            self._chat_entry_seed += 1
+            self.show_page("chat")
+
+    def _open_chat(self, role_id: str) -> None:
+        self._prepare_chat(role_id)
+        self._callback.on_open_chat(role_id)
+        self._chat_entry_seed += 1
         self.show_page("chat")
 
     def _set_chat_mode(self, mode: str) -> None:
@@ -930,7 +1031,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._settings.token_quality = int(self._quality_slider.value or 50)
         self._settings.model_provider = self._provider_dropdown.value or "openai"
         self._settings.api_key = self._api_key_field.value or ""
-        self._settings.user_name = self._settings_name_field.value or "User"
+        self._settings.user_name = self._settings_name_field.value or "用户"
         self._profile.name = self._settings.user_name
         self._callback.on_settings_saved(self._settings)
         self.show_page("home")
@@ -938,6 +1039,12 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _set_emotion(self, emotion_id: str) -> None:
         self._emotion_id = emotion_id
         self._safe_update()
+
+    def _current_emotion_label(self) -> str:
+        for emotion_id, label in PORTRAIT_EMOTIONS:
+            if emotion_id == self._emotion_id:
+                return label
+        return "当前"
 
     def _persist_current_step(self) -> None:
         if hasattr(self, "_brain_id_field"):

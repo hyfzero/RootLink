@@ -33,7 +33,7 @@ class DemoCallback(CompanionUICallback):
                 ChatMessage(
                     id=f"demo-{datetime.now().timestamp()}",
                     role_id=role_id,
-                    text="Received. Real control-layer responses appear here after integration.",
+                    text="已收到。接入控制层后，真实回复会显示在这里。",
                     is_user=False,
                     timestamp=datetime.now(),
                 )
@@ -62,7 +62,7 @@ class DemoCallback(CompanionUICallback):
 
 
 def run_demo(page: ft.Page) -> None:
-    page.title = "Amadues Companion UI"
+    page.title = "Amadues 伴侣界面"
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 0
     page.spacing = 0

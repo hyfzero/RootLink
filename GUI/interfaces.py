@@ -40,7 +40,7 @@ class ChatMessage:
 class UserProfile:
     """User display information for the settings screen."""
 
-    name: str = "User"
+    name: str = "用户"
     avatar_path: Optional[str] = None
 
 
@@ -52,7 +52,7 @@ class UiSettings:
     token_quality: int = 50
     model_provider: str = "openai"
     api_key: str = ""
-    user_name: str = "User"
+    user_name: str = "用户"
     user_avatar_path: Optional[str] = None
 
 
