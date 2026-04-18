@@ -228,10 +228,12 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 "home",
                 0,
                 ft.Container(
-                    padding=ft.padding.only(left=20, right=20, top=26, bottom=18),
+                    padding=ft.padding.only(bottom=2),
                     content=ft.Row(
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        alignment=ft.MainAxisAlignment.END,
+                        spacing=12,
                         controls=[
+                            ft.Container(expand=True),
                             ft.Container(
                                 padding=ft.padding.symmetric(horizontal=15, vertical=10),
                                 border_radius=22,
@@ -258,12 +260,11 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 "home",
                 1,
                 ft.Container(
-                    padding=ft.padding.symmetric(horizontal=20),
                     content=ft.Column(
                         spacing=7,
                         controls=[
-                            text("今天想和谁聊聊天？", 28, colors["text"], ft.FontWeight.W_500),
-                            text("深夜的陪伴，从选择一个懂你的人开始。", 15, colors["text_secondary"]),
+                            text("晚上好，今天想和谁聊聊天？" if self._is_dark else "你好，今天想和谁聊聊天？", 28, colors["text"], ft.FontWeight.W_500),
+                            text("深夜的陪伴，从选择一个懂你的人开始" if self._is_dark else "每一天的陪伴，从选择一个懂你的人开始", 15, colors["text_secondary"]),
                         ],
                     ),
                 ),
@@ -272,7 +273,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._stagger(
                 "home",
                 3,
-                ft.Container(height=190, content=ft.Row(spacing=12, scroll=ft.ScrollMode.AUTO, controls=role_cards)),
+                ft.Container(height=148, content=ft.Row(spacing=12, scroll=ft.ScrollMode.AUTO, controls=role_cards)),
             ),
             self._stagger(
                 "home",
@@ -281,7 +282,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     spacing=12,
                     controls=[
                         ft.Container(expand=True, content=QuickAction("创建角色", "定制专属陪伴", ft.Icons.ADD, colors, lambda _: self.show_page("create"))),
-                        ft.Container(expand=True, content=QuickAction("继续话题", "上次聊到哪", ft.Icons.CHAT_BUBBLE_OUTLINE, colors, lambda _: self._begin_open_chat(selected.id))),
+                        ft.Container(expand=True, content=QuickAction("继续话题", "上次聊到哪", ft.Icons.ACCESS_TIME, colors, lambda _: self._begin_open_chat(selected.id))),
                     ],
                 ),
             ),
@@ -295,7 +296,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             ),
             ft.Container(height=28),
         ]
-        return self._page_column([ft.Container(padding=ft.padding.symmetric(horizontal=20), content=ft.Column(spacing=24, controls=controls))])
+        return self._page_column([ft.Container(padding=ft.padding.only(left=20, right=20, top=32, bottom=20), content=ft.Column(spacing=28, controls=controls))])
 
     def _create_selector_card(self, colors: dict[str, str]) -> ft.Container:
         return ft.Container(
@@ -303,7 +304,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             padding=14,
             border_radius=18,
             bgcolor=colors["card"],
-            border=ft.border.all(1, colors["card_border"]),
+            border=ft.border.all(2, colors["card_border"]),
             ink=True,
             scale=1.0,
             animate_scale=animation("fast", phase="press"),

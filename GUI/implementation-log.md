@@ -106,3 +106,20 @@
   - 2026-04-18 00:55 +08:00: state smoke test for settings/create/chat mode/message APIs passed.
   - 2026-04-18 00:55 +08:00: `git diff --check -- GUI` passed.
   - 2026-04-18 01:02 +08:00: after final Chinese label cleanup, `python -B` syntax/import smoke tests and `git diff --check -- GUI` passed.
+
+## Homepage Figma Alignment Pass
+
+- Reference: Figma Make `App.tsx` home screen structure and published `figma.site` same-source confirmation.
+- Fixed the most visible home-screen layout deviations:
+  - top bar now matches Figma's right-aligned theme/settings control group instead of splitting controls across the row.
+  - removed duplicate horizontal padding around the top bar and greeting, restoring the 20px mobile canvas gutter.
+  - greeting now matches the Figma day/night copy: `晚上好，今天想和谁聊聊天？` / `你好，今天想和谁聊聊天？`.
+  - role selector height was reduced to remove excess blank vertical space.
+  - `继续话题` now uses a clock icon to match the Figma quick action.
+  - create-character selector border weight was increased to read closer to the Figma dashed-card affordance within Flet's native border limits.
+- Tests:
+  - 2026-04-18 01:22 +08:00: `.\.venv\Scripts\python.exe -m compileall -q GUI` passed.
+  - 2026-04-18 01:22 +08:00: `.\.venv\Scripts\python.exe -m compileall -q GUI src` passed.
+  - 2026-04-18 01:22 +08:00: import/construction smoke, direct `runpy` smoke, and state-transition smoke tests passed.
+  - 2026-04-18 01:22 +08:00: visible English and mojibake checks found no user-facing leftovers.
+  - 2026-04-18 01:22 +08:00: `git diff --check -- GUI` passed.
