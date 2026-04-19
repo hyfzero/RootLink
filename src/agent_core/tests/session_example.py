@@ -34,9 +34,6 @@ _script_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.abspath(os.path.join(_script_dir, "..", "..", ".."))
 sys.path.insert(0, os.path.join(_project_root, "src"))
 
-# 数据存储基地址
-DATA_BASE = os.path.join(_project_root, "data")
-
 from agent_core.brain import (
     Persona,
     PersonaProfile,
@@ -59,8 +56,11 @@ from agent_core.session import (
 )
 import json
 
+# 数据存储基地址。统一走 PathResolver，避免直接读写项目目录 data/。
+DATA_BASE = PathResolver.get_data_dir()
 
-def load_persona_from_path(base_path: str) -> tuple[Optional[Persona], Optional[SpeakingStyleEngine]]:
+
+def load_persona_from_path(base_path: str | Path) -> tuple[Optional[Persona], Optional[SpeakingStyleEngine]]:
     """从指定路径加载 Persona 和 SpeakingStyle。
 
     期望目录结构:
@@ -68,10 +68,10 @@ def load_persona_from_path(base_path: str) -> tuple[Optional[Persona], Optional[
             persona/
                 profile.json
                 memories.json
-            speaking_style.json
+                speaking_style.json
 
     Args:
-        base_path: 包含 persona/ 和 speaking_style.json 的目录路径
+        base_path: Brain 数据目录，包含 persona/ 子目录
 
     Returns:
         (Persona, SpeakingStyleEngine) 元组，任一可能为 None
@@ -109,7 +109,7 @@ def load_persona_from_path(base_path: str) -> tuple[Optional[Persona], Optional[
             print(f"  警告: 无法加载 memories.json: {e}")
 
     # 加载 speaking_style.json
-    style_file = persona_path / "speaking_style.json"
+    style_file = persona_path / "persona" / "speaking_style.json"
     if style_file.exists():
         try:
             with open(style_file, "r", encoding="utf-8") as f:
@@ -156,7 +156,7 @@ def load_model_from_config(config_dir: str = "./config") -> ModelConfig:
 
 
 def create_default_brain(
-    persona_path: Optional[str] = None,
+    persona_path: Optional[str | Path] = None,
 ) -> dict:
     """创建默认 Brain 组件
 
@@ -231,8 +231,8 @@ def create_default_brain(
 def initialize_amadues(
     config_dir: str = "./config",
     brain_id: str = "amadues",
-    brain_base_path: Optional[str] = None,
-    persona_path: Optional[str] = None,
+    brain_base_path: Optional[str | Path] = None,
+    persona_path: Optional[str | Path] = None,
 ) -> tuple[SessionManager, BrainRegistry]:
     """初始化 Amadues 会话系统
 
@@ -245,7 +245,7 @@ def initialize_amadues(
     Args:
         config_dir: 配置文件目录
         brain_id: Brain ID
-        brain_base_path: Brain 数据根目录，默认使用 {project_root}/src/agent_core/data
+        brain_base_path: Brain 数据根目录，默认使用 PathResolver.get_data_dir()
 
     Returns:
         (SessionManager, BrainRegistry) 元组
@@ -268,9 +268,8 @@ def initialize_amadues(
 
     # 3. 创建 BrainRegistry
     print("\n[3/4] 初始化 Brain...")
-    # 默认使用 data/amadues/brain 目录
     if brain_base_path is None:
-        brain_base_path = os.path.join(DATA_BASE)
+        brain_base_path = DATA_BASE
     brain_registry = BrainRegistry(Path(brain_base_path))
 
     # 加载已有 Brain
@@ -461,14 +460,14 @@ def main():
                         help="手动生成指定月份的月度总结（格式: YYYY-MM，不指定则为上月）")
     args = parser.parse_args()
 
-    # 默认 persona 路径和 brain_base_path 统一使用 DATA_BASE 目录
+    # 默认 persona 路径和 brain_base_path 统一使用 PathResolver 管理的数据目录
     if args.persona_path is None:
-        persona_path = os.path.join(DATA_BASE, args.brain_id)
+        persona_path = PathResolver.get_brain_dir(args.brain_id)
     else:
-        persona_path = args.persona_path
+        persona_path = Path(args.persona_path)
 
     # brain_base_path 与 persona_path 保持一致
-    brain_base_path = os.path.dirname(persona_path)  # data/brain
+    brain_base_path = persona_path.parent
 
     # 初始化
     session_manager, brain_registry = initialize_amadues(
@@ -510,7 +509,6 @@ def main():
         print(f"\n手动生成月度总结: {target_month}")
         # 获取该月所有每日摘要
         daily_summaries = []
-        from agent_core.session.path_resolver import PathResolver
         brain_id = args.brain_id
         summary_dir = PathResolver.get_brain_dir(brain_id) / "history" / "daily"
         if summary_dir.exists():

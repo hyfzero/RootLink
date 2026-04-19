@@ -1,6 +1,7 @@
-"""Session Manager 模块 - 三端路径兼容解析器。
+"""Session Manager module path resolver.
 
-提供跨平台（Windows/Linux/Mac）的路径解析支持。
+Resolves project paths for local development and persistent app data paths
+for packaged Flet apps on Windows, Android, and iOS.
 """
 
 from pathlib import Path
@@ -9,16 +10,19 @@ import os
 
 
 class PathResolver:
-    """三端路径解析器。
+    """Resolve project and persistent data paths.
 
-    优先使用环境变量，支持相对路径解析。
+    Data directory priority:
+    AGENT_DATA_DIR > FLET_APP_STORAGE_DATA > Windows app data > project_root/data.
     """
 
-    # 环境变量配置项
     ENV_DATA_DIR = "AGENT_DATA_DIR"
     ENV_CONFIG_DIR = "AGENT_CONFIG_DIR"
+    ENV_FLET_DATA_DIR = "FLET_APP_STORAGE_DATA"
+    ENV_WINDOWS_LOCAL_APPDATA = "LOCALAPPDATA"
+    ENV_WINDOWS_ROAMING_APPDATA = "APPDATA"
 
-    # 默认相对路径（相对于项目根目录）
+    APP_DIR_NAME = "amadues"
     DEFAULT_DATA_RELATIVE = "data"
     DEFAULT_CONFIG_RELATIVE = "config"
 
@@ -34,12 +38,12 @@ class PathResolver:
     def _find_project_root(cls) -> Path:
         """自动查找项目根目录。
 
-        向上查找 pyproject.toml 或 project.godot 文件。
+        向上查找 Python 项目标记文件。
         """
         current = Path.cwd()
 
         # 向上查找项目标记文件
-        markers = ["pyproject.toml", "project.godot", "setup.py", ".git"]
+        markers = ["pyproject.toml", "setup.py", ".git"]
         for parent in [current] + list(current.parents):
             for marker in markers:
                 if (parent / marker).exists():
@@ -50,17 +54,43 @@ class PathResolver:
 
     @classmethod
     def get_project_root(cls) -> Path:
-        """获取项目根目录（向上查找 pyproject.toml / project.godot）"""
+        """获取项目根目录（向上查找 pyproject.toml / setup.py / .git）"""
         return cls()._base_path
+
+    @classmethod
+    def _env_path(cls, env_name: str) -> Optional[Path]:
+        env_path = os.environ.get(env_name)
+        if not env_path:
+            return None
+        return Path(env_path).expanduser()
+
+    @classmethod
+    def _windows_data_dir(cls) -> Optional[Path]:
+        if os.name != "nt":
+            return None
+
+        appdata_root = cls._env_path(cls.ENV_WINDOWS_LOCAL_APPDATA)
+        if appdata_root is None:
+            appdata_root = cls._env_path(cls.ENV_WINDOWS_ROAMING_APPDATA)
+        if appdata_root is None:
+            return None
+
+        return appdata_root / cls.APP_DIR_NAME / cls.DEFAULT_DATA_RELATIVE
 
     @classmethod
     def get_data_dir(cls) -> Path:
         """获取数据目录。
 
-        优先级: 环境变量 > 项目根/data > ./data
+        优先级: AGENT_DATA_DIR > FLET_APP_STORAGE_DATA > Windows AppData > 项目根/data
         """
-        if env_path := os.environ.get(cls.ENV_DATA_DIR):
-            return Path(env_path)
+        if data_dir := cls._env_path(cls.ENV_DATA_DIR):
+            return data_dir
+
+        if flet_data_dir := cls._env_path(cls.ENV_FLET_DATA_DIR):
+            return flet_data_dir
+
+        if windows_data_dir := cls._windows_data_dir():
+            return windows_data_dir
 
         base = cls()._base_path
         data_dir = base / cls.DEFAULT_DATA_RELATIVE
@@ -72,8 +102,8 @@ class PathResolver:
 
         优先级: 环境变量 > 项目根/config > ./config
         """
-        if env_path := os.environ.get(cls.ENV_CONFIG_DIR):
-            return Path(env_path)
+        if config_dir := cls._env_path(cls.ENV_CONFIG_DIR):
+            return config_dir
 
         base = cls()._base_path
         config_dir = base / cls.DEFAULT_CONFIG_RELATIVE

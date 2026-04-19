@@ -20,6 +20,7 @@ from agent_core.brain import (
     SpeakingStyleEngine,
     PersonaStorage,
 )
+from agent_core.session import PathResolver
 
 
 def create_kurisu_persona() -> Persona:
@@ -148,8 +149,9 @@ def create_kurisu_speaking_style() -> SpeakingStyle:
 
 def main():
     # 输出目录
-    output_dir = os.path.join(_project_root, "data", "amadues", "persona")
-    os.makedirs(output_dir, exist_ok=True)
+    brain_dir = PathResolver.get_brain_dir("amadues")
+    output_dir = brain_dir / "persona"
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # 使用 Brain 系统创建人格
     persona = create_kurisu_persona()
@@ -161,21 +163,21 @@ def main():
         influence_weight=0.2
     )
 
-    # 使用 PersonaStorage 保存（base_dir 传 data/amadues，内部会自动创建 persona/ 子目录）
-    storage = PersonaStorage(os.path.join(_project_root, "data", "amadues"))
+    # 使用 PersonaStorage 保存（base_dir 传 brain 目录，内部会自动创建 persona/ 子目录）
+    storage = PersonaStorage(str(brain_dir))
     storage.save_profile(persona)
     storage.save_memories(persona)
 
     # 保存说话风格配置
-    style_path = os.path.join(output_dir, "speaking_style.json")
+    style_path = output_dir / "speaking_style.json"
     import json
     with open(style_path, "w", encoding="utf-8") as f:
         json.dump(style_engine.to_dict(), f, ensure_ascii=False, indent=2)
 
     print("已生成配置文件:")
-    print(f"  - {output_dir}/profile.json")
-    print(f"  - {output_dir}/memories.json")
-    print(f"  - {output_dir}/speaking_style.json")
+    print(f"  - {output_dir / 'profile.json'}")
+    print(f"  - {output_dir / 'memories.json'}")
+    print(f"  - {output_dir / 'speaking_style.json'}")
     print()
     print(f"influence_weight: {style_engine.influence_weight}")
 
