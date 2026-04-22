@@ -123,3 +123,21 @@
   - 2026-04-18 01:22 +08:00: import/construction smoke, direct `runpy` smoke, and state-transition smoke tests passed.
   - 2026-04-18 01:22 +08:00: visible English and mojibake checks found no user-facing leftovers.
   - 2026-04-18 01:22 +08:00: `git diff --check -- GUI` passed.
+
+## Chat Partial Refresh Fix
+
+- Root cause: chat state updates (`append_message`, `set_messages`, `set_typing`, `clear_chat`) previously routed through `_safe_update()`, which rebuilt the whole page and replayed chat entry animations on every message send.
+- Fix in [GUI/views.py](D:/Godot/amadues/GUI/views.py):
+  - added local runtime refs for the normal-chat `ListView` and immersive dialogue text control.
+  - extracted `_build_chat_message_controls()` so normal chat can rebuild only the message list.
+  - added `_refresh_chat_surface()` to prefer chat-surface updates over full-page rebuilds.
+  - `set_messages`, `append_message`, `set_typing`, and `clear_chat` now update the active chat surface in place when the current page is `chat`, while keeping full rebuilds as fallback for detached or non-chat contexts.
+- Expected behavior change:
+  - new chat bubbles still animate in.
+  - header, mode switch, and input bar no longer replay their page-entry animation when sending a message or toggling typing state.
+  - immersive mode updates only the lower dialogue content instead of remounting the full chat page.
+- Tests:
+  - 2026-04-23 00:57:10 +08:00: `.\.venv\Scripts\python.exe -m compileall -q GUI` passed.
+  - 2026-04-23 00:57:10 +08:00: `.\.venv\Scripts\python.exe -B -c "from GUI import CompanionAppView, DemoCallback; from GUI.interfaces import ChatMessage; from datetime import datetime; v=CompanionAppView(callback=DemoCallback()); v.show_page('chat'); v.append_message(ChatMessage('m1', v.active_role.id, '测试消息', True, datetime.now())); v.set_typing(True); v.set_typing(False); print('ok')"` passed (`ok`).
+  - 2026-04-23 00:57:10 +08:00: `.\.venv\Scripts\python.exe -B -c "import runpy; runpy.run_path('GUI/app.py', run_name='not_main'); print('ok')"` passed (`ok`).
+  - 2026-04-23 00:57:10 +08:00: `git diff --check -- GUI` passed.

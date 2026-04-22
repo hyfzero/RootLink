@@ -112,6 +112,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._page_seed = {page: 0 for page in self.VALID_PAGES}
         self._chat_launching_role_id: Optional[str] = None
         self._chat_entry_seed = 0
+        self._chat_list_view: Optional[ft.ListView] = None
+        self._immersive_dialogue_text: Optional[ft.Text] = None
         self._build()
 
     @property
@@ -141,6 +143,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _build(self) -> None:
         colors = self._colors()
+        self._chat_list_view = None
+        self._immersive_dialogue_text = None
         page_content = self._build_current_page(colors)
         page_content.key = f"page-{self._page_name}-{self._page_seed[self._page_name]}-{self._active_role_id}-{self._chat_mode}-{self._create_step}"
         self.gradient = app_gradient(self._is_dark)
@@ -430,7 +434,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
             content=ft.Icon(icon, size=16, color=colors["text"] if active else colors["text_secondary"]),
         )
 
-    def _build_normal_chat(self, colors: dict[str, str], role: CompanionRole) -> ft.Control:
+    def _latest_role_reply_text(self, role: CompanionRole) -> str:
+        return next((message.text for message in reversed(self._messages) if message.role_id == role.id and not message.is_user), role.status_text)
+
+    def _build_chat_message_controls(self, colors: dict[str, str], role: CompanionRole) -> list[ft.Control]:
         chat_messages = [message for message in self._messages if message.role_id == role.id]
         controls: list[ft.Control] = []
         for message in chat_messages:
@@ -442,9 +449,42 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 controls.append(bubble)
         if self._typing:
             controls.append(self._typing_indicator(role, colors))
+        return controls
+
+    def _refresh_chat_surface(self) -> bool:
+        if self._page_name != "chat":
+            return False
+
+        role = self.active_role
+        if self._chat_mode == "normal":
+            if self._chat_list_view is None:
+                return False
+            self._chat_list_view.controls = self._build_chat_message_controls(self._colors(), role)
+            try:
+                self._chat_list_view.update()
+            except (AssertionError, RuntimeError):
+                return False
+            return True
+
+        if self._immersive_dialogue_text is None:
+            return False
+        self._immersive_dialogue_text.value = self._latest_role_reply_text(role)
+        try:
+            self._immersive_dialogue_text.update()
+        except (AssertionError, RuntimeError):
+            return False
+        return True
+
+    def _build_normal_chat(self, colors: dict[str, str], role: CompanionRole) -> ft.Control:
+        self._chat_list_view = ft.ListView(
+            controls=self._build_chat_message_controls(colors, role),
+            spacing=12,
+            auto_scroll=True,
+            expand=True,
+        )
         return ft.Container(
             padding=ft.padding.symmetric(horizontal=16, vertical=10),
-            content=ft.ListView(controls=controls, spacing=12, auto_scroll=True, expand=True),
+            content=self._chat_list_view,
         )
 
     def _typing_indicator(self, role: CompanionRole, colors: dict[str, str]) -> ft.Control:
@@ -464,7 +504,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         )
 
     def _build_immersive_chat(self, colors: dict[str, str], role: CompanionRole) -> ft.Control:
-        latest = next((m.text for m in reversed(self._messages) if m.role_id == role.id and not m.is_user), role.status_text)
+        self._immersive_dialogue_text = text(self._latest_role_reply_text(role), 15, colors["text_soft"], max_lines=4, overflow=ft.TextOverflow.ELLIPSIS)
         portrait: ft.Control = ft.Container(
             alignment=ft.Alignment(0, 1),
             content=ft.Image(src=role.standing_image_path, fit=IMAGE_CONTAIN, width=390, height=520),
@@ -487,7 +527,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         spacing=5,
                         controls=[
                             text(role.name, 13, hex_with_alpha(role.accent_color, 0xEE), ft.FontWeight.W_500),
-                            text(latest, 15, colors["text_soft"], max_lines=4, overflow=ft.TextOverflow.ELLIPSIS),
+                            self._immersive_dialogue_text,
                         ],
                     ),
                 ],
@@ -1137,16 +1177,20 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def set_messages(self, messages: list[ChatMessage]) -> None:
         self._messages = messages
-        self._seen_message_ids = {message.id for message in messages}
-        self._safe_update()
+        message_ids = {message.id for message in messages}
+        self._seen_message_ids.intersection_update(message_ids)
+        if not self._refresh_chat_surface():
+            self._safe_update()
 
     def append_message(self, message: ChatMessage) -> None:
         self._messages.append(message)
-        self._safe_update()
+        if not self._refresh_chat_surface():
+            self._safe_update()
 
     def set_typing(self, visible: bool) -> None:
         self._typing = visible
-        self._safe_update()
+        if not self._refresh_chat_surface():
+            self._safe_update()
 
     def apply_settings(self, settings: UiSettings) -> None:
         self._settings = settings
@@ -1164,4 +1208,5 @@ class CompanionAppView(ft.Container, CompanionUIView):
         active_role = self.active_role.id
         self._messages = [message for message in self._messages if message.role_id != active_role]
         self._seen_message_ids = {message.id for message in self._messages}
-        self._safe_update()
+        if not self._refresh_chat_surface():
+            self._safe_update()
