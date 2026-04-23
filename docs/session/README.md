@@ -40,7 +40,8 @@ data/{brain_id}/persona/state.json
 
 当前发送链路关键行为（2026-04 更新）：
 
-- 每轮消息都会双轨写入：`SessionStorage`（会话文件）+ `MessageHistory`（上下文历史）。
+- 每轮消息都会双轨写入：`SessionStorage`（完整会话文件）+ `MessageHistory`（prompt 上下文历史，持久化到 `history/history.json`）。
+- 新进程启动后会优先加载 `history/history.json` 的今日队列；如果该文件缺失且当天 session 文件存在，会从 `session/current/YYYY-MM-DD.json` 恢复今日上下文。
 - `SessionPromptBuilder.build_conversation_context()` 只注入最新用户消息，历史段落由 system prompt 统一承载，减少重复 token。
 - 回复标签使用 `generate_and_save()`，`reply_tags.json` 每轮持久化。
 - 运行时人格状态会在每轮用户/助手消息后更新，并写入 `persona/state.json`。

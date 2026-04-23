@@ -30,6 +30,7 @@ src/
 用户输入
   -> SessionManager 检查日期/月切换
   -> SessionStorage 保存用户消息
+  -> MessageHistory 保存/恢复 prompt 今日上下文
   -> SessionPromptBuilder 构建 system prompt 和上下文
   -> ChatAgent 调用 Provider
   -> ReplyTagger 生成 ReplyTag
@@ -40,7 +41,7 @@ src/
 
 ## 数据流/存储
 
-实际路径由 `PathResolver` 决定，默认根目录是项目下的 `data/`。
+实际路径由 `PathResolver` 决定。数据目录优先级为 `AGENT_DATA_DIR`、`FLET_APP_STORAGE_DATA`、Windows AppData、项目下的 `data/`；因此 Windows 桌面运行时可能默认写入 `%LOCALAPPDATA%/amadues/data`，而不是仓库内 `data/`。
 
 ```text
 data/

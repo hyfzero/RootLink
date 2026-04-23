@@ -4,6 +4,7 @@
 """
 
 import json
+import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -86,6 +87,7 @@ class SessionManager:
         # 日期跟踪
         self._current_date: Optional[str] = None
         self._current_month: Optional[str] = None
+        self._restored_history_keys: set[tuple[str, str]] = set()
 
         # 摘要器（延迟初始化）
         self._summarizer: Optional[DailySummarizer] = None
@@ -310,6 +312,7 @@ class SessionManager:
 
         self._current_date = today
         self.storage.get_or_create_today()
+        self._restore_today_history_context()
 
     def _check_and_handle_day_change_sync(self) -> None:
         """检查并处理日期切换（同步版本）"""
@@ -329,6 +332,7 @@ class SessionManager:
         self._current_date = today
         self._current_month = current_month
         self.storage.get_or_create_today()
+        self._restore_today_history_context()
 
     async def _generate_end_of_day_summary(self, session: DaySession) -> None:
         """生成日终摘要（异步）"""
@@ -613,6 +617,10 @@ class SessionManager:
         # 重置存储和摘要器
         self._storage = None
         self._summarizer = None
+        self._restored_history_keys = {
+            key for key in self._restored_history_keys
+            if key[0] != brain_id
+        }
 
         # 检查日期切换
         self._check_and_handle_day_change_sync()
@@ -678,8 +686,58 @@ class SessionManager:
         """将消息同步写入 MessageHistory，失败时不影响主流程。"""
         try:
             self.add_message_to_history(role=role, content=content)
+            self._save_message_history()
         except Exception as e:
             print(f"Warning: Failed to sync message to history ({role}): {e}")
+
+    def _history_path(self) -> Path:
+        """获取当前 Brain 的完整 MessageHistory 落盘路径。"""
+        return self.brain_registry._base_path / self._current_brain_id / "history" / "history.json"
+
+    def _save_message_history(self) -> None:
+        """原子保存当前 Brain 的 MessageHistory。"""
+        components = self.brain_registry.current()
+        history_path = self._history_path()
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+
+        temp_path = history_path.with_name(f"{history_path.name}.tmp.{os.getpid()}")
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(components.history.to_dict(), f, ensure_ascii=False, indent=2)
+        temp_path.replace(history_path)
+
+    def _restore_today_history_context(self) -> None:
+        """从当天 SessionStorage 恢复 prompt 使用的 MessageHistory 队列。"""
+        today = datetime.now().strftime("%Y-%m-%d")
+        restore_key = (self._current_brain_id, today)
+        if restore_key in self._restored_history_keys:
+            return
+
+        components = self.brain_registry.current()
+        if components.history.current_queue.messages:
+            self._restored_history_keys.add(restore_key)
+            return
+
+        session = self.storage.get_or_create_today()
+        if not session.messages:
+            self._restored_history_keys.add(restore_key)
+            return
+
+        for item in session.messages:
+            role = item.get("role", "user")
+            if role not in {"user", "assistant", "system", "tool"}:
+                continue
+            content = item.get("content", "")
+            if not content:
+                continue
+            components.history.add_message(
+                content=content,
+                role=MessageRole(role),
+                timestamp=item.get("timestamp") or time.time(),
+            )
+
+        self._restored_history_keys.add(restore_key)
+        if components.history.current_queue.messages:
+            self._save_message_history()
 
     def _relationship_policy_dict(self) -> dict[str, Any]:
         """读取关系状态机配置并转换为字典策略。"""

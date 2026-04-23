@@ -83,6 +83,20 @@ class SessionStabilityTests(unittest.TestCase):
         )
         return manager, registry
 
+    def _reload_session_manager(self, assistant_reply: str = "pong") -> tuple[SessionManager, BrainRegistry, _FakeChatAgent]:
+        registry = BrainRegistry(self._tmp_path)
+        registry.load_all()
+        registry.switch("testbrain")
+
+        chat_agent = _FakeChatAgent(assistant_reply)
+        manager = SessionManager(
+            config=SessionConfig(min_messages_for_summary=1),
+            brain_registry=registry,
+            chat_agent=chat_agent,  # type: ignore[arg-type]
+            tag_generator=TagGenerator(),
+        )
+        return manager, registry, chat_agent
+
     def test_send_message_sync_updates_storage_history_and_tags(self) -> None:
         manager, registry = self._build_session_manager(assistant_reply="test-reply")
 
@@ -96,10 +110,48 @@ class SessionStabilityTests(unittest.TestCase):
         self.assertEqual(queue_messages[0].content, "hello-session")
         self.assertEqual(queue_messages[1].content, "test-reply")
 
+        history_path = self._tmp_path / "testbrain" / "history" / "history.json"
+        self.assertTrue(history_path.exists())
+        history_data = json.loads(history_path.read_text(encoding="utf-8"))
+        persisted_queue = history_data.get("current_queue", {}).get("messages", [])
+        self.assertEqual([m.get("content") for m in persisted_queue], ["hello-session", "test-reply"])
+
         tags_path = self._tmp_path / "testbrain" / "tags" / "reply_tags.json"
         self.assertTrue(tags_path.exists())
         tags_data = json.loads(tags_path.read_text(encoding="utf-8"))
         self.assertIn(result["message_id"], tags_data.get("tags", {}))
+
+    def test_reloaded_manager_injects_persisted_history_queue(self) -> None:
+        manager, _ = self._build_session_manager(assistant_reply="morning-reply")
+        manager.send_message_sync("morning-context")
+
+        reloaded_manager, _, chat_agent = self._reload_session_manager(assistant_reply="afternoon-reply")
+        reloaded_manager.send_message_sync("afternoon-message")
+
+        system_prompt = chat_agent.calls[-1][0][0].content
+        self.assertIn("morning-context", system_prompt)
+        self.assertIn("morning-reply", system_prompt)
+        self.assertIn("afternoon-message", system_prompt)
+
+    def test_reloaded_manager_restores_today_context_from_session_when_history_missing(self) -> None:
+        manager, _ = self._build_session_manager(assistant_reply="session-only-reply")
+        manager.send_message_sync("session-only-morning")
+
+        history_path = self._tmp_path / "testbrain" / "history" / "history.json"
+        history_path.unlink()
+
+        reloaded_manager, registry, chat_agent = self._reload_session_manager(assistant_reply="fallback-reply")
+        self.assertEqual(len(registry.current().history.current_queue.messages), 0)
+
+        reloaded_manager.send_message_sync("fallback-afternoon")
+
+        restored_messages = registry.current().history.current_queue.messages
+        self.assertIn("session-only-morning", [m.content for m in restored_messages])
+        self.assertIn("session-only-reply", [m.content for m in restored_messages])
+
+        system_prompt = chat_agent.calls[-1][0][0].content
+        self.assertIn("session-only-morning", system_prompt)
+        self.assertIn("session-only-reply", system_prompt)
 
     def test_build_conversation_context_keeps_only_latest_message(self) -> None:
         manager, _ = self._build_session_manager(assistant_reply="context-reply")

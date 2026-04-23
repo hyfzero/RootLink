@@ -35,18 +35,28 @@
 ```text
 send_message(user_message)
   -> _check_and_handle_day_change()
+  -> restore today MessageHistory queue from history/session storage if needed
   -> storage.add_message("user", user_message)
-  -> add_message_to_history("user", user_message)   # 失败仅告警，不中断主流程
+  -> add_message_to_history("user", user_message)
+  -> save history/history.json                      # 失败仅告警，不中断主流程
   -> update_personality_state("user", user_message)
   -> prompt_builder.build_system_prompt()
   -> prompt_builder.build_conversation_context()
   -> _call_api()
   -> ReplyTagger.generate_and_save()
   -> storage.add_message("assistant", response)
-  -> add_message_to_history("assistant", response)  # 失败仅告警，不中断主流程
+  -> add_message_to_history("assistant", response)
+  -> save history/history.json                      # 失败仅告警，不中断主流程
   -> update_personality_state("assistant", response)
   -> return dict
 ```
+
+Prompt 历史来源：
+
+- `SessionStorage` 保存完整按日会话，供导出、摘要和兜底恢复使用。
+- `MessageHistory.current_queue` 是 system prompt 中 `## 今日消息` 的直接来源。
+- `history/history.json` 保存 `MessageHistory`，让同一天跨进程运行时能延续今日上下文。
+- 如果 `history/history.json` 缺失且当前队列为空，`SessionManager` 会从当天 `SessionStorage` 重建队列；如果队列已存在，则不会重复重放 session 文件。
 
 返回格式：
 
@@ -86,7 +96,7 @@ json_text = manager.export_session("2026-04-11", format="json")
 - `switch_brain()` 会让 SessionStorage 切到新 `brain_id` 并清空相关延迟初始化缓存。
 - `build_conversation_context()` 当前只注入“用户最新消息”，历史摘要和队列消息由 system prompt 统一承载，避免重复占用 token。
 - `send_message()` 与 `send_message_sync()` 都会调用 `ReplyTagger.generate_and_save()`，确保 `reply_tags.json` 每轮稳定落盘。
-- 消息写入 `MessageHistory` 是“尽力而为”：异常只会告警，不会阻塞主聊天流程。
+- 消息写入和保存 `MessageHistory` 是“尽力而为”：异常只会告警，不会阻塞主聊天流程。
 - `send_message()` 与 `send_message_sync()` 都会同步更新 `Persona.state` 并写入 `persona/state.json`；失败只告警，不阻塞聊天流程。
 
 ## 配置化策略

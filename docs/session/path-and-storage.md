@@ -7,7 +7,7 @@
 - `PathResolver` 负责跨平台路径，不保存业务对象。
 - `SessionStorage` 保存当前日会话、归档旧会话、按日期读取会话。
 - `DaySession` 是可序列化的单日会话数据。
-- 不负责生成摘要或更新 Persona 记忆。
+- 不负责生成摘要、更新 Persona 记忆，也不是 prompt 历史的直接注入层。
 
 ## 核心对象
 
@@ -66,6 +66,8 @@ SessionStorage(brain_id="default")
   -> data/default/session/archive/YYYY-MM/YYYY-MM-DD.json
 ```
 
+`session/current/YYYY-MM-DD.json` 是完整按日会话记录。Prompt 中的 `## 今日消息` 直接来自 `MessageHistory.current_queue`，该队列由 `SessionManager` 保存到 `history/history.json`；当 `history/history.json` 缺失且队列为空时，`SessionManager` 会用当天 session 文件恢复上下文。
+
 当消息数或估算 token 超过配置上限时，`SessionStorage.add_message()` 会调用 `DaySession.compact()`，保留条数由 `SessionConfig.calculate_keep_count()` 决定。
 
 ## 典型用法
@@ -86,7 +88,7 @@ messages = storage.get_today_messages()
 - `DaySession.messages` 内部保存 dict，`get_messages()` 才转换成 Brain 的 `Message`。
 - `SessionStorage` 的 token 估算策略与当前 Brain 的 `history.token_estimator` 对齐，`compact` 判定会随之变化。
 - `use_msgpack=True` 会使用 `.msgpack` 扩展名。
-- 环境变量路径优先于项目默认 `data`/`config`。
+- 数据路径优先级为 `AGENT_DATA_DIR`、`FLET_APP_STORAGE_DATA`、Windows AppData、项目默认 `data`；配置路径优先级为 `AGENT_CONFIG_DIR`、项目默认 `config`。
 
 ## Token Strategy Alignment
 
