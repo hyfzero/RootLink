@@ -84,6 +84,12 @@ data/{brain_id}/persona/state.json
 
 `save_full()` 会保存 profile、memories 和 state；`load_full()` 在缺少 `state.json` 时会使用默认 `PersonalityState`。
 
+状态语义约定：
+
+- `affinity` 是长期亲近度，不做自然衰减。
+- `tension`、`energy`、`mood` 是短期互动状态，可按回合轻微回落。
+- `last_emotion` 只记录角色最近一次自身情绪，不混入用户情绪。
+
 ## 注意事项
 
 - `AgentConfig.__post_init__()` 会把传入的 dict 转成对应 dataclass。

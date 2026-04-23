@@ -5,7 +5,7 @@
 ## 职责边界
 
 - 保存角色名称、年龄、性别、性格、背景、说话风格、生日和兴趣。
-- 保存运行时人格状态：心境、精力、亲近感、张力、当前关注和上一轮情绪。
+- 保存运行时人格状态：心境、精力、亲近感、张力、当前关注和最近自身情绪。
 - 保存三类动态记忆：`episodic`、`preference`、`fact`。
 - 提供最近记忆、关键词搜索、人格文本构建和人格状态更新。
 - 不负责文件写入；持久化由 `PersonaStorage`、`AgentStorage` 或 Session 的 `MemoryUpdater` 处理。
@@ -47,6 +47,8 @@ data/{brain_id}/persona/state.json
 - `state.json` 是运行时人格状态，由后端自动创建、加载和更新。
 - Session 的 `MemoryUpdater` 只写动态记忆，不应修改 `profile.json`。
 - `state.json` 与 `profile.json` 分离，避免 GUI 编辑静态人格时混入运行时状态。
+- `affinity` 表示长期亲近度，不做自然衰减；`tension/energy/mood` 表示短期波动，可自然回落。
+- `last_emotion` 只表示角色最近一次自身情绪，不记录用户情绪。
 
 ## 典型用法
 
@@ -76,3 +78,5 @@ print(persona.build_personality_state_text())
 - `importance` 推荐保持在 `0.0` 到 `2.0`。
 - 搜索是简单包含匹配，不是向量检索。
 - `PersonalityState` 更新规则是固定轻量规则，不通过 `AgentConfig` 暴露配置项。
+- `update_personality_state()` 现在区分 user/assistant 两类输入：用户轮主要影响 `affinity/tension/current_focus`，助手轮主要影响 `mood/energy/last_emotion`。
+- 自然回落只用于缓和短期张力和表达活跃度，不会把高亲和关系自动抹平成长期中性。

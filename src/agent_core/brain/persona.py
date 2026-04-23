@@ -16,6 +16,27 @@ def _clamp(value: float, minimum: float, maximum: float) -> float:
     return max(minimum, min(maximum, value))
 
 
+def _move_towards(value: float, target: float, step: float) -> float:
+    """Move a numeric value toward a target by a fixed step."""
+    if step <= 0:
+        return value
+    if value < target:
+        return min(target, value + step)
+    if value > target:
+        return max(target, value - step)
+    return value
+
+
+STATE_ENERGY_BASELINE = 0.6
+STATE_ENERGY_RETURN_STEP = 0.04
+STATE_TENSION_DECAY = 0.6
+STATE_AFFINITY_DELTA_CAP = 2.0
+STATE_TENSION_DELTA_CAP = 3.0
+STATE_ENERGY_DELTA_CAP = 0.08
+STATE_WARM_AFFINITY_THRESHOLD = 8.0
+STATE_TENSE_TENSION_THRESHOLD = 8.0
+
+
 @dataclass
 class PersonaProfile:
     """Agent角色配置。
@@ -142,7 +163,7 @@ class PersonalityState:
         if self.tension >= 12.0:
             interaction_text = "优先缓和张力，保持边界和耐心"
         elif self.affinity >= 12.0:
-            interaction_text = "可以保持自然的亲近感和连续性"
+            interaction_text = "保持稳定、自然的亲近感，延续关系温度"
         else:
             interaction_text = "保持自然、稳定的互动"
 
@@ -152,7 +173,7 @@ class PersonalityState:
             f"互动倾向：{interaction_text}",
         ]
         if self.last_emotion and self.last_emotion != "neutral":
-            parts.append(f"上一轮情绪信号：{self.last_emotion}")
+            parts.append(f"最近自身情绪：{self.last_emotion}")
         if self.current_focus:
             parts.append(f"当前关注：{self.current_focus}")
 
@@ -332,7 +353,6 @@ class Persona:
     ) -> PersonalityState:
         """按固定轻量规则更新运行时人格状态。"""
         text = (content or "").lower()
-        role_factor = 1.0 if role == "user" else 0.4
 
         positive_keywords = [
             "谢谢", "感谢", "喜欢", "支持", "信任", "开心", "关心", "太好",
@@ -350,56 +370,104 @@ class Persona:
         positive_hits = sum(1 for kw in positive_keywords if kw in text)
         negative_hits = sum(1 for kw in negative_keywords if kw in text)
         concern_hits = sum(1 for kw in concern_keywords if kw in text)
-
         normalized_emotion = (emotion or "neutral").replace("_zh", "")
-        self.state.last_emotion = normalized_emotion or "neutral"
 
-        affinity_delta = role_factor * (positive_hits * 4.0 - negative_hits * 2.0)
-        tension_delta = role_factor * (negative_hits * 6.0 - positive_hits * 2.0)
-        energy_delta = 0.0
-
-        if normalized_emotion == "happy":
-            affinity_delta += role_factor * 2.0
-            tension_delta -= role_factor * 1.0
-            energy_delta += 0.03
-        elif normalized_emotion in ("sad", "scared"):
-            tension_delta += role_factor * 1.0
-            energy_delta -= 0.05
-        elif normalized_emotion == "angry":
-            affinity_delta -= role_factor * 1.0
-            tension_delta += role_factor * 4.0
-            energy_delta += 0.08
-        elif normalized_emotion == "surprised":
-            energy_delta += 0.06
-        elif normalized_emotion in ("thinking", "confused"):
-            energy_delta += 0.02
-
+        relationship_state = ""
         if relationship_snapshot:
             relationship_state = str(relationship_snapshot.get("state", "neutral"))
+
+        has_question = any(token in (content or "") for token in ("?", "？")) or any(
+            kw in text for kw in ("怎么", "为什么", "如何", "what", "why", "how")
+        )
+
+        self.state.tension = _clamp(self.state.tension - STATE_TENSION_DECAY, 0.0, 100.0)
+        self.state.energy = _clamp(
+            _move_towards(self.state.energy, STATE_ENERGY_BASELINE, STATE_ENERGY_RETURN_STEP),
+            0.0,
+            1.0,
+        )
+
+        if role == "user":
+            affinity_delta = positive_hits * 1.2 - negative_hits * 0.8
+            tension_delta = negative_hits * 1.6 - positive_hits * 0.6
+
+            if normalized_emotion == "happy":
+                affinity_delta += 0.6
+                tension_delta -= 0.3
+            elif normalized_emotion in ("sad", "scared"):
+                tension_delta += 0.4
+            elif normalized_emotion == "angry":
+                affinity_delta -= 0.6
+                tension_delta += 1.2
+
             if relationship_state in ("warm", "close"):
-                affinity_delta += role_factor * 1.0
+                affinity_delta += 0.6
             elif relationship_state == "cold":
-                tension_delta += role_factor * 1.0
+                tension_delta += 0.6
 
-        self.state.affinity = _clamp(self.state.affinity + affinity_delta, 0.0, 100.0)
-        self.state.tension = _clamp(self.state.tension + tension_delta, 0.0, 100.0)
-        self.state.energy = _clamp(self.state.energy + energy_delta, 0.0, 1.0)
+            affinity_delta = _clamp(
+                affinity_delta,
+                -STATE_AFFINITY_DELTA_CAP,
+                STATE_AFFINITY_DELTA_CAP,
+            )
+            tension_delta = _clamp(tension_delta, -1.5, STATE_TENSION_DELTA_CAP)
 
-        if negative_hits or normalized_emotion == "angry" or self.state.tension >= 12.0:
+            self.state.affinity = _clamp(self.state.affinity + affinity_delta, 0.0, 100.0)
+            self.state.tension = _clamp(self.state.tension + tension_delta, 0.0, 100.0)
+
+            if negative_hits or normalized_emotion == "angry" or self.state.tension >= 5.0:
+                self.state.current_focus = "缓和对话张力"
+            elif concern_hits or normalized_emotion in ("sad", "scared"):
+                self.state.current_focus = "理解并安抚用户状态"
+            elif has_question or normalized_emotion in ("thinking", "confused"):
+                self.state.current_focus = "澄清问题并组织思路"
+            elif positive_hits or normalized_emotion == "happy" or relationship_state in ("warm", "close"):
+                self.state.current_focus = "延续积极互动"
+        else:
+            energy_delta = 0.0
+            assistant_emotion = normalized_emotion or "neutral"
+            self.state.last_emotion = assistant_emotion
+
+            if assistant_emotion == "happy":
+                energy_delta += 0.05
+            elif assistant_emotion in ("sad", "scared"):
+                energy_delta -= 0.05
+            elif assistant_emotion == "angry":
+                energy_delta += 0.04
+            elif assistant_emotion == "surprised":
+                energy_delta += 0.04
+            elif assistant_emotion in ("thinking", "confused"):
+                energy_delta += 0.02
+
+            energy_delta = _clamp(
+                energy_delta,
+                -STATE_ENERGY_DELTA_CAP,
+                STATE_ENERGY_DELTA_CAP,
+            )
+            self.state.energy = _clamp(self.state.energy + energy_delta, 0.0, 1.0)
+
+        warm_baseline = (
+            self.state.affinity >= STATE_WARM_AFFINITY_THRESHOLD
+            or relationship_state in ("warm", "close")
+        ) and self.state.tension <= 4.0
+
+        if self.state.tension >= STATE_TENSE_TENSION_THRESHOLD or self.state.current_focus == "缓和对话张力" or (
+            role == "assistant" and normalized_emotion == "angry"
+        ):
             self.state.mood = "tense"
-            self.state.current_focus = "缓和对话张力"
-        elif concern_hits or normalized_emotion in ("sad", "scared"):
+        elif self.state.current_focus == "理解并安抚用户状态":
             self.state.mood = "concerned"
-            self.state.current_focus = "理解并安抚用户状态"
-        elif positive_hits or normalized_emotion == "happy" or self.state.affinity >= 12.0:
-            self.state.mood = "warm"
-            self.state.current_focus = "延续积极互动"
-        elif normalized_emotion in ("thinking", "confused") or "?" in (content or "") or "？" in (content or ""):
+        elif self.state.current_focus == "澄清问题并组织思路" or (
+            role == "assistant" and normalized_emotion in ("thinking", "confused")
+        ):
             self.state.mood = "focused"
-            self.state.current_focus = "澄清问题并组织思路"
-        elif self.state.energy < 0.35:
+        elif role == "assistant" and normalized_emotion == "happy" and self.state.tension <= 4.0:
+            self.state.mood = "warm"
+        elif warm_baseline:
+            self.state.mood = "warm"
+        elif self.state.energy < 0.28 and self.state.tension < 4.0:
             self.state.mood = "low"
-        elif self.state.tension < 3.0 and self.state.affinity < 3.0:
+        else:
             self.state.mood = "neutral"
 
         self.state.updated_at = time.time()

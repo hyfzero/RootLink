@@ -224,7 +224,12 @@ class SessionStabilityTests(unittest.TestCase):
 
     def test_personality_state_section_is_injected_before_memory(self) -> None:
         persona = Persona(PersonaProfile(name="state-prompt"))
-        persona.state = PersonalityState(mood="warm", affinity=15.0, current_focus="延续积极互动")
+        persona.state = PersonalityState(
+            mood="warm",
+            affinity=15.0,
+            current_focus="延续积极互动",
+            last_emotion="happy",
+        )
         persona.add_memory("用户喜欢稳定的陪伴感", memory_type="preference", importance=1.5)
 
         builder = PromptBuilder(persona=persona, history=MessageHistory(), config=AgentConfig())
@@ -232,15 +237,142 @@ class SessionStabilityTests(unittest.TestCase):
 
         self.assertIn("## 当前人格状态", prompt)
         self.assertIn("当前心境：温和亲近", prompt)
+        self.assertIn("最近自身情绪：happy", prompt)
         self.assertLess(prompt.index("## 当前人格状态"), prompt.index("## 近期记忆"))
+
+    def test_personality_state_user_turn_only_updates_relationship_side(self) -> None:
+        persona = Persona(PersonaProfile(name="user-state"))
+        persona.state = PersonalityState(
+            mood="warm",
+            energy=0.62,
+            affinity=4.0,
+            tension=0.5,
+            current_focus="延续积极互动",
+            last_emotion="happy",
+        )
+
+        persona.update_personality_state("谢谢你一直支持我", role="user", emotion="happy")
+
+        self.assertGreater(persona.state.affinity, 4.0)
+        self.assertLess(persona.state.tension, 0.5)
+        self.assertEqual(persona.state.current_focus, "延续积极互动")
+        self.assertEqual(persona.state.last_emotion, "happy")
+        self.assertAlmostEqual(persona.state.energy, 0.6, places=2)
+
+    def test_personality_state_assistant_turn_only_updates_self_state(self) -> None:
+        persona = Persona(PersonaProfile(name="assistant-state"))
+        persona.state = PersonalityState(
+            mood="neutral",
+            energy=0.52,
+            affinity=9.0,
+            tension=1.0,
+            current_focus="延续积极互动",
+            last_emotion="neutral",
+        )
+
+        persona.update_personality_state("哈哈，那我继续陪着你。", role="assistant", emotion="happy")
+
+        self.assertEqual(persona.state.mood, "warm")
+        self.assertGreater(persona.state.energy, 0.52)
+        self.assertEqual(persona.state.last_emotion, "happy")
+        self.assertEqual(persona.state.affinity, 9.0)
+        self.assertLess(persona.state.tension, 1.0)
+
+    def test_personality_state_natural_decay_preserves_warm_baseline(self) -> None:
+        persona = Persona(PersonaProfile(name="warm-baseline"))
+        persona.state = PersonalityState(
+            mood="warm",
+            energy=0.72,
+            affinity=16.0,
+            tension=1.2,
+            current_focus="延续积极互动",
+            last_emotion="happy",
+        )
+
+        persona.update_personality_state("今天就先这样。", role="user")
+
+        self.assertEqual(persona.state.mood, "warm")
+        self.assertLess(persona.state.tension, 1.2)
+        self.assertLess(persona.state.energy, 0.72)
+        self.assertEqual(persona.state.last_emotion, "happy")
+
+    def test_personality_state_natural_decay_reduces_tension_and_recenters_energy(self) -> None:
+        persona = Persona(PersonaProfile(name="decay-state"))
+        persona.state = PersonalityState(
+            mood="tense",
+            energy=0.85,
+            affinity=2.0,
+            tension=6.5,
+            current_focus="缓和对话张力",
+        )
+
+        persona.update_personality_state("收到。", role="assistant", emotion="neutral")
+        persona.update_personality_state("嗯。", role="assistant", emotion="neutral")
+
+        self.assertLess(persona.state.tension, 6.5)
+        self.assertLess(persona.state.energy, 0.85)
+        self.assertGreater(persona.state.energy, 0.6)
+
+    def test_personality_state_damping_caps_single_turn_delta(self) -> None:
+        persona = Persona(PersonaProfile(name="damping-state"))
+        persona.state = PersonalityState(affinity=10.0, tension=0.0)
+
+        persona.update_personality_state(
+            "谢谢谢谢谢谢你，我真的很喜欢很喜欢，也很信任很信任你",
+            role="user",
+            emotion="happy",
+        )
+        positive_affinity = persona.state.affinity
+
+        self.assertLessEqual(positive_affinity - 10.0, 2.0)
+
+        persona.state.affinity = 10.0
+        persona.state.tension = 0.0
+        persona.update_personality_state(
+            "我讨厌讨厌讨厌你，真的很烦很烦，生气死了，闭嘴，蠢，hate hate",
+            role="user",
+            emotion="angry",
+        )
+
+        self.assertLessEqual(10.0 - persona.state.affinity, 2.0)
+        self.assertLessEqual(persona.state.tension, 3.0)
+
+    def test_last_emotion_tracks_assistant_only(self) -> None:
+        persona = Persona(PersonaProfile(name="emotion-owner"))
+        persona.state = PersonalityState(last_emotion="happy", current_focus="延续积极互动")
+
+        persona.update_personality_state("我现在很生气", role="user", emotion="angry")
+        self.assertEqual(persona.state.last_emotion, "happy")
+
+        persona.update_personality_state("我会继续帮你。", role="assistant", emotion="thinking")
+        self.assertEqual(persona.state.last_emotion, "thinking")
 
     def test_personality_state_updates_for_negative_input(self) -> None:
         persona = Persona(PersonaProfile(name="negative-state"))
+        persona.state = PersonalityState(last_emotion="happy")
 
         persona.update_personality_state("你这样很烦，我讨厌这个回答", role="user", emotion="angry")
 
         self.assertGreater(persona.state.tension, 0.0)
         self.assertEqual(persona.state.mood, "tense")
+        self.assertEqual(persona.state.last_emotion, "happy")
+
+    def test_send_message_sync_preserves_warm_state_for_positive_interaction(self) -> None:
+        manager, registry = self._build_session_manager(assistant_reply="哈哈，我也很开心继续陪着你。")
+        registry.current().persona.state.affinity = 10.0
+        registry.current().persona.state.current_focus = "延续积极互动"
+
+        manager.send_message_sync("谢谢你一直支持我")
+
+        state_path = self._tmp_path / "testbrain" / "persona" / "state.json"
+        state_data = json.loads(state_path.read_text(encoding="utf-8"))
+        self.assertGreater(state_data["affinity"], 10.0)
+        self.assertEqual(state_data["mood"], "warm")
+
+        reloaded = BrainRegistry(self._tmp_path)
+        reloaded.load_all()
+        reloaded.switch("testbrain")
+        self.assertEqual(reloaded.current().persona.state.mood, "warm")
 
     def test_daily_summarizer_async_writes_structured_json(self) -> None:
         llm_json = """```json

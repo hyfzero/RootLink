@@ -46,7 +46,7 @@ data/{brain_id}/
   tags/
 ```
 
-`profile.json` 保存 GUI 可编辑的静态人格；`state.json` 保存运行时人格状态，包含当前心境、精力、亲近感、张力、关注点和上一轮情绪信号。
+`profile.json` 保存 GUI 可编辑的静态人格；`state.json` 保存运行时人格状态，包含当前心境、精力、亲近感、张力、关注点和最近自身情绪。
 
 ## 典型用法
 
@@ -78,3 +78,4 @@ system_prompt = builder.build_system_prompt(emotion="happy")
 - `SummaryGenerator` 可以无 LLM callable 运行，此时使用规则后备。
 - `AgentStorage` 是单 Brain 的基础存储工具；多 Brain 隔离由 Session 层的 `BrainRegistry` 和 `PathResolver` 管理。
 - `PersonalityState` 是运行时状态，不应作为 GUI 静态配置项直接编辑。
+- `PersonalityState` 区分长期温度和短期波动：`affinity` 保留关系连续性，`tension/energy/mood` 用来表现并缓和当前互动状态。

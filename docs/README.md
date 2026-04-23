@@ -49,3 +49,5 @@ amadues 是一个基于 Python 的 AI Agent 框架，核心能力包括角色人
 - Tags 文档补充 LLM 情感模式：优先 LLM JSON 解析，失败回退关键词检测。
 - Session 文档补充每轮消息会更新 `Persona.state` 并持久化到 `state.json`。
 - 示例脚本文档说明 `generate_kurisu_brain.py` 会生成 `state.json`，`session_example.py` 会加载并更新它。
+- `PersonalityState` 文档补充“可控亲密关系”语义：`affinity` 保留长期温度，`tension/energy/mood` 表现短期波动并轻微回落。
+- `last_emotion` 文档口径已收敛为“角色最近自身情绪”，不再混用为用户情绪信号。
