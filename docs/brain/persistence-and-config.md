@@ -37,6 +37,7 @@ data/
   persona/
     profile.json
     memories.json
+    state.json
   history/
     daily/
     queue.json
@@ -67,8 +68,25 @@ storage.save_all_persona(persona)
 loaded = storage.load_all_persona()
 ```
 
+## Runtime Personality State
+
+`PersonaStorage` 现在会同时读写运行时人格状态：
+
+```text
+data/{brain_id}/persona/state.json
+```
+
+约定：
+
+- `profile.json`：静态人格配置，面向 GUI 编辑。
+- `memories.json`：长期记忆、偏好、事实和摘要记忆。
+- `state.json`：运行时人格状态，如 `mood/energy/affinity/tension/current_focus/last_emotion`。
+
+`save_full()` 会保存 profile、memories 和 state；`load_full()` 在缺少 `state.json` 时会使用默认 `PersonalityState`。
+
 ## 注意事项
 
 - `AgentConfig.__post_init__()` 会把传入的 dict 转成对应 dataclass。
 - `StorageConfig.format` 当前描述的是 `"json"` 或 `"md"`；SessionStorage 另有 `use_msgpack`。
 - `FileStorage` 读写失败时返回 `None` 或 `False`，调用方应自行处理。
+- 不要把 `state.json` 的字段加入 GUI 静态人格表单，除非明确做运行时调试面板。

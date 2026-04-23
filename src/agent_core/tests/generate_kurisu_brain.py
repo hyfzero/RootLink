@@ -167,6 +167,7 @@ def main():
     storage = PersonaStorage(str(brain_dir))
     storage.save_profile(persona)
     storage.save_memories(persona)
+    storage.save_state(persona)
 
     # 保存说话风格配置
     style_path = output_dir / "speaking_style.json"
@@ -177,6 +178,7 @@ def main():
     print("已生成配置文件:")
     print(f"  - {output_dir / 'profile.json'}")
     print(f"  - {output_dir / 'memories.json'}")
+    print(f"  - {output_dir / 'state.json'}")
     print(f"  - {output_dir / 'speaking_style.json'}")
     print()
     print(f"influence_weight: {style_engine.influence_weight}")

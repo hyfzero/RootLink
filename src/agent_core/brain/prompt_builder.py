@@ -354,6 +354,17 @@ class PromptBuilder:
 
         return "\n".join(parts)
 
+    def build_personality_state_section(self) -> str:
+        """构建运行时人格状态段落。"""
+        state_text = self.persona.build_personality_state_text()
+        if not state_text:
+            return ""
+
+        return "\n".join([
+            "## 当前人格状态",
+            state_text,
+        ])
+
     def build_search_memory_section(self, query: str, limit: int = 3) -> str:
         """构建搜索相关的记忆段落。
 
@@ -480,6 +491,7 @@ class PromptBuilder:
             ("identity", self.build_identity_section()),
             ("style", self.build_style_section(emotion=emotion)),
             ("relationship", self.build_relationship_section()),
+            ("personality_state", self.build_personality_state_section()),
             ("memory", self.build_memory_section()),
             ("history_summary", self.build_history_summary_section()),
             ("queue", self.build_queue_section()),
@@ -509,6 +521,7 @@ class PromptBuilder:
             ("identity", self.build_identity_section()),
             ("style", self.build_style_section(emotion=emotion)),
             ("relationship", self.build_relationship_section()),
+            ("personality_state", self.build_personality_state_section()),
         ]
 
         if query:

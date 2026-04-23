@@ -37,12 +37,14 @@ send_message(user_message)
   -> _check_and_handle_day_change()
   -> storage.add_message("user", user_message)
   -> add_message_to_history("user", user_message)   # 失败仅告警，不中断主流程
+  -> update_personality_state("user", user_message)
   -> prompt_builder.build_system_prompt()
   -> prompt_builder.build_conversation_context()
   -> _call_api()
   -> ReplyTagger.generate_and_save()
   -> storage.add_message("assistant", response)
   -> add_message_to_history("assistant", response)  # 失败仅告警，不中断主流程
+  -> update_personality_state("assistant", response)
   -> return dict
 ```
 
@@ -85,10 +87,12 @@ json_text = manager.export_session("2026-04-11", format="json")
 - `build_conversation_context()` 当前只注入“用户最新消息”，历史摘要和队列消息由 system prompt 统一承载，避免重复占用 token。
 - `send_message()` 与 `send_message_sync()` 都会调用 `ReplyTagger.generate_and_save()`，确保 `reply_tags.json` 每轮稳定落盘。
 - 消息写入 `MessageHistory` 是“尽力而为”：异常只会告警，不会阻塞主聊天流程。
+- `send_message()` 与 `send_message_sync()` 都会同步更新 `Persona.state` 并写入 `persona/state.json`；失败只告警，不阻塞聊天流程。
 
 ## 配置化策略
 
 - 记忆注入策略：`AgentConfig.memory_injection`（按类型配额、权重、时间衰减、重要度阈值、去重、sticky context、query boost）。
 - Prompt 分段预算：`AgentConfig.prompt_budget`（`section_tokens` + `total_tokens`）。
 - 关系状态机：`AgentConfig.relationship_state_machine`（信号词/权重/衰减/状态区间/prompt_hint）。
-- 默认行为兼容：关闭预算时，PromptBuilder 保持原有拼接；开启预算时按 `identity -> style -> relationship -> memory -> history_summary -> queue -> runtime` 顺序裁剪。
+- 默认行为兼容：关闭预算时，PromptBuilder 保持原有拼接；开启预算时按 `identity -> style -> relationship -> personality_state -> memory -> history_summary -> queue -> runtime` 顺序裁剪。
+- 运行时人格状态不是配置项，固定规则更新，避免给 GUI 增加额外配置复杂度。

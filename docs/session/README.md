@@ -35,6 +35,7 @@ data/{brain_id}/history/summaries/YYYY-MM-DD.summary.md
 data/{brain_id}/history/summaries/YYYY-MM.monthly.md
 data/{brain_id}/tags/reply_tags.json
 data/{brain_id}/persona/memories.json
+data/{brain_id}/persona/state.json
 ```
 
 当前发送链路关键行为（2026-04 更新）：
@@ -42,6 +43,7 @@ data/{brain_id}/persona/memories.json
 - 每轮消息都会双轨写入：`SessionStorage`（会话文件）+ `MessageHistory`（上下文历史）。
 - `SessionPromptBuilder.build_conversation_context()` 只注入最新用户消息，历史段落由 system prompt 统一承载，减少重复 token。
 - 回复标签使用 `generate_and_save()`，`reply_tags.json` 每轮持久化。
+- 运行时人格状态会在每轮用户/助手消息后更新，并写入 `persona/state.json`。
 - 异步日摘要 JSON 与同步字段对齐（含 `topics/user_preferences/unfinished_topics` 等）。
 
 ## 典型用法
@@ -76,6 +78,15 @@ result = manager.send_message_sync("晚上好")
 ```bash
 python src/agent_core/tests/test_session_stability.py
 ```
+
+示例脚本：
+
+```bash
+python src/agent_core/tests/generate_kurisu_brain.py
+python src/agent_core/tests/session_example.py "谢谢你，红莉栖，今天也拜托你了"
+```
+
+`generate_kurisu_brain.py` 会生成 `profile.json`、`memories.json`、`state.json` 和 `speaking_style.json`。`session_example.py` 会加载现有 Brain，发送消息后更新 `state.json`。
 
 ## Config Examples (History + Memory + Prompt + Relationship)
 

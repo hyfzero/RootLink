@@ -43,6 +43,7 @@ data/{brain_id}/
   persona/
     profile.json
     memories.json
+    state.json
   history/
     history.json
 ```
@@ -51,7 +52,7 @@ data/{brain_id}/
 
 ```text
 config.json
-  -> profile.json + memories.json
+  -> profile.json + memories.json + state.json
   -> history/history.json
   -> SpeakingStyleEngine
   -> PromptBuilder
@@ -78,3 +79,4 @@ info = registry.get_brain_info(registry.current_brain_id())
 - `load_all()` 会跳过加载失败的 Brain。
 - `current()` 在未加载或未注册任何 Brain 时会抛出 `RuntimeError`。
 - `delete_brain()` 不允许删除当前选中的 Brain。
+- 缺少 `persona/state.json` 时会使用默认 `PersonalityState`，旧 Brain 无需迁移脚本。

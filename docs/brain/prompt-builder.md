@@ -1,6 +1,6 @@
 # Prompt Builder - 分段式 Prompt 构建
 
-`prompt_builder.py` 将人格、风格、记忆、历史摘要、队列消息和运行时信息组合成系统 Prompt 或上下文 Prompt。
+`prompt_builder.py` 将人格、风格、关系状态、运行时人格状态、记忆、历史摘要、队列消息和运行时信息组合成系统 Prompt 或上下文 Prompt。
 
 ## 职责边界
 
@@ -13,6 +13,8 @@
 - `PromptBuilder`
   - `build_identity_section()`
   - `build_style_section()`
+  - `build_relationship_section()`
+  - `build_personality_state_section()`
   - `build_memory_section()`
   - `build_search_memory_section()`
   - `build_history_summary_section()`
@@ -36,6 +38,8 @@
 ```text
 身份定义
   -> 说话风格
+  -> 关系状态
+  -> 当前人格状态
   -> 近期记忆
   -> 历史摘要
   -> 当前队列消息
@@ -67,3 +71,4 @@ context_prompt = builder.build_context_prompt(query="用户偏好", include_queu
 - `build_runtime_section()` 默认时区是 `Asia/Shanghai`。
 - `build_context_prompt(query=...)` 会按关键词搜索相关记忆。
 - Session 层还有 `SessionPromptBuilder`，它封装 Brain 的 `PromptBuilder` 并返回 API 消息列表。
+- `当前人格状态` 段来自 `Persona.state`，放在记忆之前，帮助模型在读取长期记忆前先获得当前互动姿态。

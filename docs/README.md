@@ -39,3 +39,13 @@ amadues 是一个基于 Python 的 AI Agent 框架，核心能力包括角色人
 - 未从模块 `__init__.py` 导出的对象，用明确子模块路径导入。
 - 数据路径统一描述为 `data/{brain_id}/...`；Session 当前/归档数据位于 `data/{brain_id}/session/...`。
 - 文档不记录已经过时的实现阶段、Phase 计划或重复设计草案。
+
+## 最近同步
+
+2026-04-23 更新：
+
+- Brain 文档补充 `PersonalityState`，说明 `persona/state.json` 是运行时人格状态文件，和 GUI 静态配置 `profile.json` 分离。
+- Prompt 文档补充 `当前人格状态` 段，顺序为 `identity -> style -> relationship -> personality_state -> memory -> history_summary -> queue -> runtime`。
+- Tags 文档补充 LLM 情感模式：优先 LLM JSON 解析，失败回退关键词检测。
+- Session 文档补充每轮消息会更新 `Persona.state` 并持久化到 `state.json`。
+- 示例脚本文档说明 `generate_kurisu_brain.py` 会生成 `state.json`，`session_example.py` 会加载并更新它。

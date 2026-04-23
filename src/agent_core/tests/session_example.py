@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.join(_project_root, "src"))
 from agent_core.brain import (
     Persona,
     PersonaProfile,
+    PersonalityState,
     MessageHistory,
     SpeakingStyleEngine,
     PromptBuilder,
@@ -107,6 +108,15 @@ def load_persona_from_path(base_path: str | Path) -> tuple[Optional[Persona], Op
                 persona.fact_memories.append(MemoryEntry.from_dict(m))
         except (json.JSONDecodeError, IOError) as e:
             print(f"  警告: 无法加载 memories.json: {e}")
+
+    # 加载 state.json（运行时人格状态）
+    state_file = persona_path / "persona" / "state.json"
+    if state_file.exists() and persona:
+        try:
+            with open(state_file, "r", encoding="utf-8") as f:
+                persona.state = PersonalityState.from_dict(json.load(f))
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"  警告: 无法加载 state.json: {e}")
 
     # 加载 speaking_style.json
     style_file = persona_path / "persona" / "speaking_style.json"

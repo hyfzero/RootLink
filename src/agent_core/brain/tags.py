@@ -11,6 +11,7 @@
 - overlay: 特效叠加层
 """
 
+import json
 import re
 import time
 from dataclasses import dataclass, field
@@ -58,8 +59,9 @@ EMOTION_TO_EXPRESSION = {
 ALL_EMOTIONS = ["happy", "sad", "angry", "surprised", "thinking", "scared", "embarrassed", "confused", "neutral"]
 
 # LLM情感解析Prompt（极简版，追求速度）
-LLM_EMOTION_PROMPT = """情感:hapy|sad|angry|surprised|thinking|scared|embarrassed|confused|neutral
-分析:"""
+LLM_EMOTION_PROMPT = """情感:happy|sad|angry|surprised|thinking|scared|embarrassed|confused|neutral
+请只输出JSON，例如 {"emotion":"happy"}。
+分析文本:"""
 # 输出:{"emotion":"happy"}
 
 # 中文情感到表情映射
@@ -194,17 +196,8 @@ class TagGenerator:
         """
         self.llm_callable = llm_callable
 
-    def detect_emotion(self, text: str) -> tuple[str, float]:
-        """从文本内容检测情感。
-
-        使用多语言关键词匹配。
-
-        Args:
-            text: 消息文本
-
-        Returns:
-            (情感类型, 置信度) 元组
-        """
+    def _detect_emotion_by_keyword(self, text: str) -> tuple[str, float]:
+        """使用多语言关键词匹配情感。"""
         text_lower = text.lower()
         scores: dict[str, float] = {}
 
@@ -224,6 +217,68 @@ class TagGenerator:
         confidence = min(1.0, best[1] / 3.0)
 
         return best[0], confidence
+
+    def _extract_json_object(self, response_text: str) -> dict:
+        """从 LLM 响应中提取 JSON 对象。"""
+        json_str = (response_text or "").strip()
+        if json_str.startswith("```json"):
+            json_str = json_str[7:]
+        if json_str.startswith("```"):
+            json_str = json_str[3:]
+        if json_str.endswith("```"):
+            json_str = json_str[:-3]
+        json_str = json_str.strip()
+
+        if not json_str.startswith("{"):
+            start = json_str.find("{")
+            end = json_str.rfind("}")
+            if start >= 0 and end > start:
+                json_str = json_str[start:end + 1]
+
+        data = json.loads(json_str)
+        return data if isinstance(data, dict) else {}
+
+    def _detect_emotion_by_llm(self, text: str) -> Optional[tuple[str, float]]:
+        """调用 LLM 解析情感，失败时返回 None 以便回退。"""
+        if self.llm_callable is None:
+            return None
+
+        prompt = f"{LLM_EMOTION_PROMPT}{text[:500]}"
+        response_text = self.llm_callable(prompt)
+        data = self._extract_json_object(response_text)
+        emotion = str(data.get("emotion", "")).strip().lower()
+        if emotion == "hapy":
+            emotion = "happy"
+        if emotion not in ALL_EMOTIONS:
+            return None
+
+        try:
+            confidence = float(data.get("confidence", 1.0))
+        except (TypeError, ValueError):
+            confidence = 1.0
+        confidence = max(0.2, min(1.0, confidence))
+        return emotion, confidence
+
+    def detect_emotion(self, text: str) -> tuple[str, float]:
+        """从文本内容检测情感。
+
+        emotion_mode 为 llm 时优先调用 LLM，失败后回退关键词匹配。
+
+        Args:
+            text: 消息文本
+
+        Returns:
+            (情感类型, 置信度) 元组
+        """
+        if self.emotion_mode == "llm":
+            try:
+                llm_result = self._detect_emotion_by_llm(text)
+                if llm_result is not None:
+                    return llm_result
+            except Exception:
+                pass
+
+        return self._detect_emotion_by_keyword(text)
 
     def detect_expression(self, emotion: str) -> str:
         """根据情感获取对应表情。

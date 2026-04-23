@@ -25,6 +25,7 @@ from agent_core.brain import (
     MessageRole,
     Persona,
     PersonaProfile,
+    PersonalityState,
     PromptBuilder,
     TagGenerator,
     estimate_tokens,
@@ -108,6 +109,86 @@ class SessionStabilityTests(unittest.TestCase):
 
         self.assertIn("latest-message", context)
         self.assertNotIn("##", context)
+
+    def test_llm_emotion_mode_parses_json_response(self) -> None:
+        generator = TagGenerator(
+            llm_callable=lambda prompt: '{"emotion":"happy"}',
+            emotion_mode="llm",
+        )
+
+        tag = generator.generate_tag("llm-emotion", "ignored text")
+
+        self.assertEqual(tag.emotion, "happy")
+        self.assertEqual(tag.expression, "smile")
+
+    def test_llm_emotion_mode_falls_back_to_keywords(self) -> None:
+        unknown_generator = TagGenerator(
+            llm_callable=lambda prompt: '{"emotion":"mystery"}',
+            emotion_mode="llm",
+        )
+        self.assertEqual(
+            unknown_generator.generate_tag("fallback-unknown", "I am so happy today").emotion,
+            "happy",
+        )
+
+        def failing_llm(prompt: str) -> str:
+            raise RuntimeError("llm unavailable")
+
+        failing_generator = TagGenerator(llm_callable=failing_llm, emotion_mode="llm")
+        self.assertEqual(
+            failing_generator.generate_tag("fallback-error", "I am angry about this bug").emotion,
+            "angry",
+        )
+
+    def test_brain_registry_loads_default_personality_state_without_state_file(self) -> None:
+        registry = BrainRegistry(self._tmp_path)
+        components = registry.create_brain("state-default", name="StateDefault")
+
+        self.assertIsInstance(components.persona.state, PersonalityState)
+        self.assertEqual(components.persona.state.mood, "neutral")
+        self.assertFalse((self._tmp_path / "state-default" / "persona" / "state.json").exists())
+
+    def test_personality_state_persists_separately_from_profile(self) -> None:
+        manager, registry = self._build_session_manager(assistant_reply="我会继续支持你。")
+
+        manager.send_message_sync("谢谢你一直支持我")
+
+        state_path = self._tmp_path / "testbrain" / "persona" / "state.json"
+        profile_path = self._tmp_path / "testbrain" / "persona" / "profile.json"
+        state_data = json.loads(state_path.read_text(encoding="utf-8"))
+        profile_data = json.loads(profile_path.read_text(encoding="utf-8"))
+
+        self.assertGreater(state_data["affinity"], 0.0)
+        self.assertIn(state_data["mood"], ["warm", "focused", "neutral"])
+        self.assertNotIn("personality_state", profile_data)
+
+        reloaded = BrainRegistry(self._tmp_path)
+        reloaded.load_all()
+        reloaded.switch("testbrain")
+        self.assertEqual(
+            reloaded.current().persona.state.to_dict()["affinity"],
+            registry.current().persona.state.to_dict()["affinity"],
+        )
+
+    def test_personality_state_section_is_injected_before_memory(self) -> None:
+        persona = Persona(PersonaProfile(name="state-prompt"))
+        persona.state = PersonalityState(mood="warm", affinity=15.0, current_focus="延续积极互动")
+        persona.add_memory("用户喜欢稳定的陪伴感", memory_type="preference", importance=1.5)
+
+        builder = PromptBuilder(persona=persona, history=MessageHistory(), config=AgentConfig())
+        prompt = builder.build_system_prompt()
+
+        self.assertIn("## 当前人格状态", prompt)
+        self.assertIn("当前心境：温和亲近", prompt)
+        self.assertLess(prompt.index("## 当前人格状态"), prompt.index("## 近期记忆"))
+
+    def test_personality_state_updates_for_negative_input(self) -> None:
+        persona = Persona(PersonaProfile(name="negative-state"))
+
+        persona.update_personality_state("你这样很烦，我讨厌这个回答", role="user", emotion="angry")
+
+        self.assertGreater(persona.state.tension, 0.0)
+        self.assertEqual(persona.state.mood, "tense")
 
     def test_daily_summarizer_async_writes_structured_json(self) -> None:
         llm_json = """```json

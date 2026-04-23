@@ -64,7 +64,7 @@
     storage.save_all_history(history)
 """
 
-from .brain import Persona, PersonaProfile, MemoryEntry
+from .brain import Persona, PersonaProfile, PersonalityState, MemoryEntry
 from .brain import (
     MessageHistory,
     MessageQueue,
@@ -143,6 +143,7 @@ __all__ = [
     # 人格模块
     "Persona",
     "PersonaProfile",
+    "PersonalityState",
     "MemoryEntry",
     # 历史消息模块
     "MessageHistory",

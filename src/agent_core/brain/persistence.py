@@ -180,6 +180,16 @@ class PersonaStorage(FileStorage):
         path = self.base_dir / "persona" / "memories.json"
         return self._read_json(path)
 
+    def save_state(self, persona: Persona) -> bool:
+        """保存运行时人格状态。"""
+        path = self.base_dir / "persona" / "state.json"
+        return self._write_json(path, persona.state.to_dict())
+
+    def load_state(self) -> Optional[dict]:
+        """加载运行时人格状态字典。"""
+        path = self.base_dir / "persona" / "state.json"
+        return self._read_json(path)
+
     def save_full(self, persona: Persona) -> bool:
         """保存完整的人格数据。
 
@@ -189,7 +199,7 @@ class PersonaStorage(FileStorage):
         Returns:
             是否全部成功
         """
-        return self.save_profile(persona) and self.save_memories(persona)
+        return self.save_profile(persona) and self.save_memories(persona) and self.save_state(persona)
 
     def load_full(self) -> Optional[Persona]:
         """加载完整的人格数据。
@@ -201,10 +211,10 @@ class PersonaStorage(FileStorage):
         if not profile_data:
             return None
 
-        from .persona import Persona, PersonaProfile, MemoryEntry
+        from .persona import Persona, PersonaProfile, MemoryEntry, PersonalityState
 
         profile = PersonaProfile.from_dict(profile_data)
-        persona = Persona(profile)
+        persona = Persona(profile, state=PersonalityState.from_dict(self.load_state()))
 
         memories_data = self.load_memories()
         if memories_data:

@@ -219,6 +219,7 @@ class SessionManager:
         self.storage.add_message("user", user_message)
         self._sync_history_message("user", user_message)
         self._sync_relationship_state("user", user_message)
+        self._sync_personality_state("user", user_message, emotion)
 
         # 3. 构建 Prompt
         system_prompt = self.prompt_builder.build_system_prompt(emotion)
@@ -236,6 +237,7 @@ class SessionManager:
         self.storage.add_message("assistant", assistant_content)
         self._sync_history_message("assistant", assistant_content)
         self._sync_relationship_state("assistant", assistant_content)
+        self._sync_personality_state("assistant", assistant_content, reply_tag.emotion)
 
         # 7. 返回
         return {
@@ -267,6 +269,7 @@ class SessionManager:
         self.storage.add_message("user", user_message)
         self._sync_history_message("user", user_message)
         self._sync_relationship_state("user", user_message)
+        self._sync_personality_state("user", user_message, emotion)
 
         # 构建 Prompt
         system_prompt = self.prompt_builder.build_system_prompt(emotion)
@@ -284,6 +287,7 @@ class SessionManager:
         self.storage.add_message("assistant", assistant_content)
         self._sync_history_message("assistant", assistant_content)
         self._sync_relationship_state("assistant", assistant_content)
+        self._sync_personality_state("assistant", assistant_content, reply_tag.emotion)
 
         return {
             "content": assistant_content,
@@ -713,6 +717,14 @@ class SessionManager:
         with open(profile_path, "w", encoding="utf-8") as f:
             json.dump(components.persona.profile.to_dict(), f, ensure_ascii=False, indent=2)
 
+    def _save_persona_state(self) -> None:
+        """持久化当前 Brain 的运行时人格状态。"""
+        components = self.brain_registry.current()
+        state_path = self.brain_registry._base_path / self._current_brain_id / "persona" / "state.json"
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(state_path, "w", encoding="utf-8") as f:
+            json.dump(components.persona.state.to_dict(), f, ensure_ascii=False, indent=2)
+
     def _sync_relationship_state(self, role: str, content: str) -> None:
         """同步更新关系状态机，失败时不影响主流程。"""
         try:
@@ -726,6 +738,27 @@ class SessionManager:
             self._save_persona_profile()
         except Exception as e:
             print(f"Warning: Failed to sync relationship state ({role}): {e}")
+
+    def _sync_personality_state(
+        self,
+        role: str,
+        content: str,
+        emotion: Optional[str] = None,
+    ) -> None:
+        """同步更新运行时人格状态，失败时不影响主流程。"""
+        try:
+            components = self.brain_registry.current()
+            policy = self._relationship_policy_dict()
+            relationship_snapshot = components.persona.get_relationship_snapshot(policy=policy)
+            components.persona.update_personality_state(
+                content=content,
+                role=role,
+                emotion=emotion,
+                relationship_snapshot=relationship_snapshot,
+            )
+            self._save_persona_state()
+        except Exception as e:
+            print(f"Warning: Failed to sync personality state ({role}): {e}")
 
     async def _call_api(
         self,

@@ -14,7 +14,7 @@
 
 公共入口：`from agent_core.brain import ...`
 
-- Persona：`PersonaProfile`、`MemoryEntry`、`Persona`
+- Persona：`PersonaProfile`、`PersonalityState`、`MemoryEntry`、`Persona`
 - History：`MessageRole`、`Message`、`DailySummary`、`MessageQueue`、`DailyHistory`、`MessageHistory`
 - Summary：`SummaryGenerator`、`AsyncSummaryGenerator`、`generate_summary_with_llm()`、`generate_daily_summaries_with_llm()`
 - Tags：`ReplyTag`、`TagGenerator`、`TagCache`
@@ -39,9 +39,14 @@ data/
 ```text
 data/{brain_id}/
   persona/
+    profile.json
+    memories.json
+    state.json
   history/
   tags/
 ```
+
+`profile.json` 保存 GUI 可编辑的静态人格；`state.json` 保存运行时人格状态，包含当前心境、精力、亲近感、张力、关注点和上一轮情绪信号。
 
 ## 典型用法
 
@@ -72,3 +77,4 @@ system_prompt = builder.build_system_prompt(emotion="happy")
 - Brain 的 `Message` 类型用于历史上下文；API 层的 `Message` 类型用于 Provider 请求。
 - `SummaryGenerator` 可以无 LLM callable 运行，此时使用规则后备。
 - `AgentStorage` 是单 Brain 的基础存储工具；多 Brain 隔离由 Session 层的 `BrainRegistry` 和 `PathResolver` 管理。
+- `PersonalityState` 是运行时状态，不应作为 GUI 静态配置项直接编辑。

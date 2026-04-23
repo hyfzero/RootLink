@@ -10,7 +10,7 @@
 - speaking_style: 说话风格引擎
 """
 
-from .persona import Persona, PersonaProfile, MemoryEntry
+from .persona import Persona, PersonaProfile, PersonalityState, MemoryEntry
 from .history import (
     MessageHistory,
     MessageQueue,
@@ -60,6 +60,7 @@ __all__ = [
     # 人格模块
     "Persona",
     "PersonaProfile",
+    "PersonalityState",
     "MemoryEntry",
     # 历史消息模块
     "MessageHistory",

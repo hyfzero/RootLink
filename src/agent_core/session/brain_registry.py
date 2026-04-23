@@ -10,6 +10,7 @@ from typing import Optional
 from ..brain import (
     Persona,
     PersonaProfile,
+    PersonalityState,
     MessageHistory,
     SpeakingStyleEngine,
     PromptBuilder,
@@ -153,6 +154,7 @@ class BrainRegistry:
         """加载 Persona"""
         profile_path = persona_dir / "profile.json"
         memories_path = persona_dir / "memories.json"
+        state_path = persona_dir / "state.json"
 
         persona_dir.mkdir(parents=True, exist_ok=True)
 
@@ -163,6 +165,7 @@ class BrainRegistry:
             profile = PersonaProfile.from_dict(profile_data)
         else:
             profile = PersonaProfile(name=config.persona.name)
+            profile_data = profile.to_dict()
 
         persona = Persona(profile)
 
@@ -173,6 +176,11 @@ class BrainRegistry:
             persona = Persona.from_dict({"profile": profile_data, **memories_data})
         else:
             persona = Persona(profile)
+
+        if state_path.exists():
+            import json
+            with open(state_path, "r", encoding="utf-8") as f:
+                persona.state = PersonalityState.from_dict(json.load(f))
 
         return persona
 

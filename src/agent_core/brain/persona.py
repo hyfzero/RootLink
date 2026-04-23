@@ -11,6 +11,11 @@ import time
 from typing import Any, Optional
 
 
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    """Clamp a numeric state value into a safe range."""
+    return max(minimum, min(maximum, value))
+
+
 @dataclass
 class PersonaProfile:
     """Agent角色配置。
@@ -73,6 +78,88 @@ class PersonaProfile:
 
 
 @dataclass
+class PersonalityState:
+    """运行时人格状态。
+
+    该状态描述角色当前的互动姿态，不属于 GUI 可编辑的静态人格配置。
+    """
+
+    mood: str = "neutral"
+    energy: float = 0.6
+    affinity: float = 0.0
+    tension: float = 0.0
+    current_focus: Optional[str] = None
+    last_emotion: str = "neutral"
+    updated_at: Optional[float] = None
+
+    def to_dict(self) -> dict:
+        """转换为字典格式。"""
+        return {
+            "mood": self.mood,
+            "energy": _clamp(float(self.energy), 0.0, 1.0),
+            "affinity": _clamp(float(self.affinity), 0.0, 100.0),
+            "tension": _clamp(float(self.tension), 0.0, 100.0),
+            "current_focus": self.current_focus,
+            "last_emotion": self.last_emotion,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "PersonalityState":
+        """从字典创建对象，缺失或异常字段使用默认值。"""
+        if not isinstance(data, dict):
+            return cls()
+
+        return cls(
+            mood=str(data.get("mood", "neutral")),
+            energy=_clamp(float(data.get("energy", 0.6)), 0.0, 1.0),
+            affinity=_clamp(float(data.get("affinity", 0.0)), 0.0, 100.0),
+            tension=_clamp(float(data.get("tension", 0.0)), 0.0, 100.0),
+            current_focus=data.get("current_focus"),
+            last_emotion=str(data.get("last_emotion", "neutral")),
+            updated_at=data.get("updated_at"),
+        )
+
+    def build_prompt_text(self) -> str:
+        """构建用于 Prompt 的简短状态描述。"""
+        mood_map = {
+            "neutral": "平稳",
+            "warm": "温和亲近",
+            "tense": "略有戒备",
+            "concerned": "关切",
+            "focused": "专注思考",
+            "low": "低落克制",
+        }
+        mood_text = mood_map.get(self.mood, self.mood)
+
+        if self.energy < 0.35:
+            energy_text = "偏低，表达应更克制"
+        elif self.energy > 0.75:
+            energy_text = "偏高，回应可以更主动"
+        else:
+            energy_text = "平稳"
+
+        if self.tension >= 12.0:
+            interaction_text = "优先缓和张力，保持边界和耐心"
+        elif self.affinity >= 12.0:
+            interaction_text = "可以保持自然的亲近感和连续性"
+        else:
+            interaction_text = "保持自然、稳定的互动"
+
+        parts = [
+            f"当前心境：{mood_text}",
+            f"精力状态：{energy_text}",
+            f"互动倾向：{interaction_text}",
+        ]
+        if self.last_emotion and self.last_emotion != "neutral":
+            parts.append(f"上一轮情绪信号：{self.last_emotion}")
+        if self.current_focus:
+            parts.append(f"当前关注：{self.current_focus}")
+
+        return "；".join(parts) + "。"
+
+
+@dataclass
 class MemoryEntry:
     """单条记忆条目。
 
@@ -122,13 +209,14 @@ class Persona:
     管理角色的配置和记忆，支持情景记忆、偏好记忆、事实记忆、日终总结和月终总结的存储与检索。
     """
 
-    def __init__(self, profile: PersonaProfile):
+    def __init__(self, profile: PersonaProfile, state: Optional[PersonalityState] = None):
         """初始化人格管理器。
 
         Args:
             profile: 角色配置
         """
         self.profile = profile
+        self.state = state or PersonalityState()
         self.episodic_memories: list[MemoryEntry] = []  # 情景记忆：重要经历
         self.preference_memories: list[MemoryEntry] = []  # 偏好记忆：用户喜好
         self.fact_memories: list[MemoryEntry] = []  # 事实记忆：已知事实
@@ -234,6 +322,88 @@ class Persona:
                 results.append(memory)
 
         return results[:limit]
+
+    def update_personality_state(
+        self,
+        content: str,
+        role: str = "user",
+        emotion: Optional[str] = None,
+        relationship_snapshot: Optional[dict] = None,
+    ) -> PersonalityState:
+        """按固定轻量规则更新运行时人格状态。"""
+        text = (content or "").lower()
+        role_factor = 1.0 if role == "user" else 0.4
+
+        positive_keywords = [
+            "谢谢", "感谢", "喜欢", "支持", "信任", "开心", "关心", "太好",
+            "thanks", "thank you", "love", "trust", "support", "great",
+        ]
+        negative_keywords = [
+            "讨厌", "烦", "生气", "失望", "可恶", "闭嘴", "蠢", "骂",
+            "hate", "annoying", "stupid", "shut up", "mad",
+        ]
+        concern_keywords = [
+            "难过", "伤心", "害怕", "担心", "焦虑", "孤独",
+            "sad", "scared", "worried", "anxious", "lonely",
+        ]
+
+        positive_hits = sum(1 for kw in positive_keywords if kw in text)
+        negative_hits = sum(1 for kw in negative_keywords if kw in text)
+        concern_hits = sum(1 for kw in concern_keywords if kw in text)
+
+        normalized_emotion = (emotion or "neutral").replace("_zh", "")
+        self.state.last_emotion = normalized_emotion or "neutral"
+
+        affinity_delta = role_factor * (positive_hits * 4.0 - negative_hits * 2.0)
+        tension_delta = role_factor * (negative_hits * 6.0 - positive_hits * 2.0)
+        energy_delta = 0.0
+
+        if normalized_emotion == "happy":
+            affinity_delta += role_factor * 2.0
+            tension_delta -= role_factor * 1.0
+            energy_delta += 0.03
+        elif normalized_emotion in ("sad", "scared"):
+            tension_delta += role_factor * 1.0
+            energy_delta -= 0.05
+        elif normalized_emotion == "angry":
+            affinity_delta -= role_factor * 1.0
+            tension_delta += role_factor * 4.0
+            energy_delta += 0.08
+        elif normalized_emotion == "surprised":
+            energy_delta += 0.06
+        elif normalized_emotion in ("thinking", "confused"):
+            energy_delta += 0.02
+
+        if relationship_snapshot:
+            relationship_state = str(relationship_snapshot.get("state", "neutral"))
+            if relationship_state in ("warm", "close"):
+                affinity_delta += role_factor * 1.0
+            elif relationship_state == "cold":
+                tension_delta += role_factor * 1.0
+
+        self.state.affinity = _clamp(self.state.affinity + affinity_delta, 0.0, 100.0)
+        self.state.tension = _clamp(self.state.tension + tension_delta, 0.0, 100.0)
+        self.state.energy = _clamp(self.state.energy + energy_delta, 0.0, 1.0)
+
+        if negative_hits or normalized_emotion == "angry" or self.state.tension >= 12.0:
+            self.state.mood = "tense"
+            self.state.current_focus = "缓和对话张力"
+        elif concern_hits or normalized_emotion in ("sad", "scared"):
+            self.state.mood = "concerned"
+            self.state.current_focus = "理解并安抚用户状态"
+        elif positive_hits or normalized_emotion == "happy" or self.state.affinity >= 12.0:
+            self.state.mood = "warm"
+            self.state.current_focus = "延续积极互动"
+        elif normalized_emotion in ("thinking", "confused") or "?" in (content or "") or "？" in (content or ""):
+            self.state.mood = "focused"
+            self.state.current_focus = "澄清问题并组织思路"
+        elif self.state.energy < 0.35:
+            self.state.mood = "low"
+        elif self.state.tension < 3.0 and self.state.affinity < 3.0:
+            self.state.mood = "neutral"
+
+        self.state.updated_at = time.time()
+        return self.state
 
     def get_relationship_snapshot(self, policy: Optional[dict] = None) -> dict:
         """获取当前关系状态快照。"""
@@ -427,6 +597,7 @@ class Persona:
         """转换为字典格式。"""
         return {
             "profile": self.profile.to_dict(),
+            "state": self.state.to_dict(),
             "episodic_memories": [m.to_dict() for m in self.episodic_memories],
             "preference_memories": [m.to_dict() for m in self.preference_memories],
             "fact_memories": [m.to_dict() for m in self.fact_memories],
@@ -438,7 +609,8 @@ class Persona:
     def from_dict(cls, data: dict) -> "Persona":
         """从字典创建对象。"""
         profile = PersonaProfile.from_dict(data.get("profile", {}))
-        persona = cls(profile)
+        state = PersonalityState.from_dict(data.get("state"))
+        persona = cls(profile, state=state)
 
         for m in data.get("episodic_memories", []):
             persona.episodic_memories.append(MemoryEntry.from_dict(m))
@@ -452,6 +624,10 @@ class Persona:
             persona.monthly_summary_memories.append(MemoryEntry.from_dict(m))
 
         return persona
+
+    def build_personality_state_text(self) -> str:
+        """构建用于 Prompt 的运行时人格状态文本。"""
+        return self.state.build_prompt_text()
 
     def build_persona_text(self) -> str:
         """构建用于Prompt的人格描述文本。

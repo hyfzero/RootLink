@@ -67,8 +67,15 @@ generator = TagGenerator(llm_callable=lambda prompt: '{"emotion":"happy","confid
 generator.set_emotion_mode("llm")
 ```
 
+LLM 模式行为：
+
+- `emotion_mode="llm"` 且存在 `llm_callable` 时，优先调用 LLM 解析情绪。
+- LLM 返回值可以是纯 JSON，也可以包在 Markdown 代码块中。
+- 支持 `confidence` 字段；缺失时按高置信度处理。
+- LLM 返回无效 JSON、未知情绪或抛异常时，会回退到关键词检测，而不是直接失败。
+
 ## 注意事项
 
 - 关键词模式速度快、无需外部调用，但语义细节有限。
-- LLM callable 必须返回可解析的情感结果；失败时实现会回退默认情感。
+- LLM callable 推荐返回 `{"emotion":"happy","confidence":0.9}` 形态；失败时实现会回退关键词检测。
 - `intensity` 会受增强词、弱化词、感叹号和问号影响。
