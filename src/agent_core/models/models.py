@@ -472,8 +472,15 @@ class ModelsJsonConfig:
 class ModelsStorage:
     """模型配置的持久化管理。"""
 
-    def __init__(self, config_dir: str = "./config"):
-        self.config_dir = Path(config_dir)
+    def __init__(self, config_dir: Optional[str | Path] = None):
+        if config_dir is None:
+            from ..session.path_resolver import PathResolver
+
+            resolved_config_dir = PathResolver.get_config_dir()
+        else:
+            resolved_config_dir = Path(config_dir)
+
+        self.config_dir = Path(resolved_config_dir)
         self.models_file = self.config_dir / "models.json"
 
     def load(self) -> ModelsJsonConfig:
@@ -620,7 +627,7 @@ def create_provider_from_catalog(
 def setup_provider(
     name: str,
     api_key: str,
-    config_dir: str = "./config",
+    config_dir: Optional[str | Path] = None,
 ) -> ModelsJsonConfig:
     """快速设置 Provider。"""
     storage = ModelsStorage(config_dir)

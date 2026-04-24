@@ -1,6 +1,6 @@
 # Providers And Models - 模型目录与配置
 
-`agent_core.models` 维护内置模型目录和 `config/models.json` 持久化；`agent_core.api.adapter.ModelConfig` 则是运行时调用 API 的配置对象。
+`agent_core.models` 维护内置模型目录和统一配置目录下的 `models.json` 持久化；`agent_core.api.adapter.ModelConfig` 则是运行时调用 API 的配置对象。
 
 ## 职责边界
 
@@ -30,7 +30,7 @@ API 运行时 Provider：
 ## 数据流/存储
 
 ```text
-config/models.json
+PathResolver.get_config_dir()/models.json
   -> ModelsStorage.load()
   -> ProviderConfig / default provider
   -> 转换或手动创建 ModelConfig
@@ -50,9 +50,9 @@ config/models.json
 ```python
 from agent_core.models import ModelsStorage, setup_provider
 
-setup_provider("minimax", "your-api-key", "./config")
+setup_provider("minimax", "your-api-key")
 
-storage = ModelsStorage("./config")
+storage = ModelsStorage()
 models_config = storage.load()
 storage.set_default("minimax", "MiniMax-M2.5")
 
@@ -70,6 +70,6 @@ agent = manager.get_agent(APIProvider.MINIMAX)
 
 ## 注意事项
 
-- `setup_provider()` 写入的是 `config/models.json`，不是 `data/{brain_id}`。
+- `setup_provider()` 写入的是统一配置目录下的 `models.json`，不是 `data/{brain_id}`。
 - `ModelConfig` 的 `supports_thinking=True` 会让 MiniMax 适配器带上 `reasoning_split`。
 - `create_provider_from_catalog()` 存在于 `agent_core.models.models` 子模块，未从 `agent_core.models` 顶层导出。

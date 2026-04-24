@@ -88,7 +88,7 @@ messages = storage.get_today_messages()
 - `DaySession.messages` 内部保存 dict，`get_messages()` 才转换成 Brain 的 `Message`。
 - `SessionStorage` 的 token 估算策略与当前 Brain 的 `history.token_estimator` 对齐，`compact` 判定会随之变化。
 - `use_msgpack=True` 会使用 `.msgpack` 扩展名。
-- 数据路径优先级为 `AGENT_DATA_DIR`、`FLET_APP_STORAGE_DATA`、Windows AppData、项目默认 `data`；配置路径优先级为 `AGENT_CONFIG_DIR`、项目默认 `config`。
+- 数据路径优先级为 `AGENT_DATA_DIR`、`FLET_APP_STORAGE_DATA`、Windows AppData、项目默认 `data`；配置路径优先级为 `AGENT_CONFIG_DIR`、`FLET_APP_STORAGE_DATA/config`、Windows AppData/`amadues/config`、项目默认 `config`。
 
 ## Token Strategy Alignment
 

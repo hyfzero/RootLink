@@ -4,7 +4,7 @@ Session 示例 - 完整的 Amadues 对话会话
 
 展示:
 1. 使用 Brain 初始化 Amadues
-2. 使用 Model 加载 ./config 的 minimax 模型配置
+2. 使用 Model 加载统一配置目录中的 minimax 模型配置
 3. Session 完整流程:
    - 获取时间
    - 每日更新记忆
@@ -131,8 +131,9 @@ def load_persona_from_path(base_path: str | Path) -> tuple[Optional[Persona], Op
     return persona, style_engine
 
 
-def load_model_from_config(config_dir: str = "./config") -> ModelConfig:
-    """从 config/models.json 加载模型配置"""
+def load_model_from_config(config_dir: str | Path | None = None) -> ModelConfig:
+    """从统一配置目录加载模型配置"""
+    config_dir = Path(config_dir) if config_dir is not None else PathResolver.get_config_dir()
     storage = ModelsStorage(config_dir)
     config = storage.load()
 
@@ -239,7 +240,7 @@ def create_default_brain(
 
 
 def initialize_amadues(
-    config_dir: str = "./config",
+    config_dir: str | Path | None = None,
     brain_id: str = "amadues",
     brain_base_path: Optional[str | Path] = None,
     persona_path: Optional[str | Path] = None,
@@ -461,7 +462,12 @@ def main():
 
     parser = argparse.ArgumentParser(description="Amadues Session 示例")
     parser.add_argument("message", nargs="*", help="直接发送消息（留空进入交互模式）")
-    parser.add_argument("--config-dir", "-c", default="./config", help="配置文件目录")
+    parser.add_argument(
+        "--config-dir",
+        "-c",
+        default=str(PathResolver.get_config_dir()),
+        help="配置文件目录",
+    )
     parser.add_argument("--brain-id", "-b", default="amadues", help="Brain ID")
     parser.add_argument("--persona-path", "-p", default=None, help="Persona 数据路径")
     parser.add_argument("--generate-summary", "-s", metavar="DATE",

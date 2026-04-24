@@ -54,6 +54,25 @@ class PathResolverTests(unittest.TestCase):
     def test_data_dir_falls_back_to_project_data_dir(self) -> None:
         self.assertEqual(PathResolver.get_data_dir(), self._repo_root / "data")
 
+    def test_agent_config_dir_overrides_other_config_locations(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as flet_dir:
+            os.environ[PathResolver.ENV_CONFIG_DIR] = config_dir
+            os.environ[PathResolver.ENV_FLET_DATA_DIR] = flet_dir
+
+            self.assertEqual(PathResolver.get_config_dir(), Path(config_dir))
+
+    def test_flet_data_dir_maps_to_config_subdirectory(self) -> None:
+        with tempfile.TemporaryDirectory() as flet_dir:
+            os.environ[PathResolver.ENV_FLET_DATA_DIR] = flet_dir
+
+            self.assertEqual(
+                PathResolver.get_config_dir(),
+                Path(flet_dir) / PathResolver.DEFAULT_CONFIG_RELATIVE,
+            )
+
+    def test_config_dir_falls_back_to_project_config_dir(self) -> None:
+        self.assertEqual(PathResolver.get_config_dir(), self._repo_root / "config")
+
     @unittest.skipUnless(os.name == "nt", "Windows app data fallback is Windows-only")
     def test_windows_local_appdata_is_used_before_project_data_dir(self) -> None:
         with tempfile.TemporaryDirectory() as appdata_dir:
@@ -62,6 +81,16 @@ class PathResolverTests(unittest.TestCase):
             self.assertEqual(
                 PathResolver.get_data_dir(),
                 Path(appdata_dir) / PathResolver.APP_DIR_NAME / "data",
+            )
+
+    @unittest.skipUnless(os.name == "nt", "Windows app data fallback is Windows-only")
+    def test_windows_local_appdata_is_used_before_project_config_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as appdata_dir:
+            os.environ[PathResolver.ENV_WINDOWS_LOCAL_APPDATA] = appdata_dir
+
+            self.assertEqual(
+                PathResolver.get_config_dir(),
+                Path(appdata_dir) / PathResolver.APP_DIR_NAME / "config",
             )
 
     def test_brain_dir_appends_brain_id_to_data_dir(self) -> None:

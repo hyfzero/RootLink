@@ -9,7 +9,7 @@ amadues 是一个基于 Python 的 AI Agent 框架，核心能力包括角色人
 - `agent_core.brain` 管理人格、记忆、历史、标签、说话风格、Prompt 和基础持久化。
 - `agent_core.session` 编排一次聊天回合，处理跨日归档、摘要、回复标签、记忆回写和多 Brain 切换。
 - `agent_core.api` 提供统一聊天 API、Provider 适配器、工具调用和响应类型。
-- `agent_core.models` 维护模型目录、Provider 配置和 `config/models.json` 持久化。
+- `agent_core.models` 维护模型目录、Provider 配置和统一配置目录下的 `models.json` 持久化。
 - `GUI` 提供 Flet Galgame 风格界面组件和 Control 层回调接口。
 
 ## 文档地图

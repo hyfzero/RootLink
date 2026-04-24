@@ -14,6 +14,10 @@ class PathResolver:
 
     Data directory priority:
     AGENT_DATA_DIR > FLET_APP_STORAGE_DATA > Windows app data > project_root/data.
+
+    Config directory priority:
+    AGENT_CONFIG_DIR > FLET_APP_STORAGE_DATA/config >
+    Windows app data/amadues/config > project_root/config.
     """
 
     ENV_DATA_DIR = "AGENT_DATA_DIR"
@@ -27,34 +31,22 @@ class PathResolver:
     DEFAULT_CONFIG_RELATIVE = "config"
 
     def __init__(self, base_path: Optional[Path] = None):
-        """初始化路径解析器。
-
-        Args:
-            base_path: 项目根目录，不指定时自动查找
-        """
         self._base_path = base_path or self._find_project_root()
 
     @classmethod
     def _find_project_root(cls) -> Path:
-        """自动查找项目根目录。
-
-        向上查找 Python 项目标记文件。
-        """
         current = Path.cwd()
 
-        # 向上查找项目标记文件
         markers = ["pyproject.toml", "setup.py", ".git"]
         for parent in [current] + list(current.parents):
             for marker in markers:
                 if (parent / marker).exists():
                     return parent
 
-        # 没找到则使用当前目录
         return current
 
     @classmethod
     def get_project_root(cls) -> Path:
-        """获取项目根目录（向上查找 pyproject.toml / setup.py / .git）"""
         return cls()._base_path
 
     @classmethod
@@ -65,7 +57,7 @@ class PathResolver:
         return Path(env_path).expanduser()
 
     @classmethod
-    def _windows_data_dir(cls) -> Optional[Path]:
+    def _windows_app_dir(cls) -> Optional[Path]:
         if os.name != "nt":
             return None
 
@@ -75,14 +67,24 @@ class PathResolver:
         if appdata_root is None:
             return None
 
-        return appdata_root / cls.APP_DIR_NAME / cls.DEFAULT_DATA_RELATIVE
+        return appdata_root / cls.APP_DIR_NAME
+
+    @classmethod
+    def _windows_data_dir(cls) -> Optional[Path]:
+        app_dir = cls._windows_app_dir()
+        if app_dir is None:
+            return None
+        return app_dir / cls.DEFAULT_DATA_RELATIVE
+
+    @classmethod
+    def _windows_config_dir(cls) -> Optional[Path]:
+        app_dir = cls._windows_app_dir()
+        if app_dir is None:
+            return None
+        return app_dir / cls.DEFAULT_CONFIG_RELATIVE
 
     @classmethod
     def get_data_dir(cls) -> Path:
-        """获取数据目录。
-
-        优先级: AGENT_DATA_DIR > FLET_APP_STORAGE_DATA > Windows AppData > 项目根/data
-        """
         if data_dir := cls._env_path(cls.ENV_DATA_DIR):
             return data_dir
 
@@ -92,60 +94,38 @@ class PathResolver:
         if windows_data_dir := cls._windows_data_dir():
             return windows_data_dir
 
-        base = cls()._base_path
-        data_dir = base / cls.DEFAULT_DATA_RELATIVE
-        return data_dir
+        return cls()._base_path / cls.DEFAULT_DATA_RELATIVE
 
     @classmethod
     def get_config_dir(cls) -> Path:
-        """获取配置目录。
-
-        优先级: 环境变量 > 项目根/config > ./config
-        """
         if config_dir := cls._env_path(cls.ENV_CONFIG_DIR):
             return config_dir
 
-        base = cls()._base_path
-        config_dir = base / cls.DEFAULT_CONFIG_RELATIVE
-        return config_dir
+        if flet_data_dir := cls._env_path(cls.ENV_FLET_DATA_DIR):
+            return flet_data_dir / cls.DEFAULT_CONFIG_RELATIVE
+
+        if windows_config_dir := cls._windows_config_dir():
+            return windows_config_dir
+
+        return cls()._base_path / cls.DEFAULT_CONFIG_RELATIVE
 
     @classmethod
     def get_brain_dir(cls, brain_id: str = "default") -> Path:
-        """Brain 模块数据目录: {data_dir}/{brain_id}/"""
         return cls.get_data_dir() / brain_id
 
     @classmethod
     def get_session_dir(cls, brain_id: str = "default") -> Path:
-        """Session 数据目录: {data_dir}/{brain_id}/session/"""
         return cls.get_data_dir() / brain_id / "session"
 
     @classmethod
     def get_tags_dir(cls, brain_id: str = "default") -> Path:
-        """标签目录: {data_dir}/{brain_id}/tags/"""
         return cls.get_data_dir() / brain_id / "tags"
 
     @classmethod
     def resolve(cls, relative_path: str) -> Path:
-        """解析相对路径到绝对路径。
-
-        Args:
-            relative_path: 相对路径
-
-        Returns:
-            绝对路径
-        """
-        base = cls()._base_path
-        return base / relative_path
+        return cls()._base_path / relative_path
 
     @classmethod
     def ensure_dir(cls, path: Path) -> Path:
-        """确保目录存在，不存在则创建。
-
-        Args:
-            path: 目录路径
-
-        Returns:
-            目录路径
-        """
         path.mkdir(parents=True, exist_ok=True)
         return path
