@@ -1,5 +1,4 @@
-def main():
-    print("Hello from amadues!")
+from GUI.app import main
 
 
 if __name__ == "__main__":

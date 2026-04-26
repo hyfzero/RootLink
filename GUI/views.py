@@ -52,11 +52,7 @@ from .theme import (
 )
 
 SETTINGS_PROVIDERS = [
-    ("openai", "OpenAI"),
-    ("anthropic", "Anthropic"),
-    ("google", "Google"),
-    ("deepseek", "DeepSeek"),
-    ("custom", "自定义"),
+    ("minimax", "MiniMax"),
 ]
 
 PORTRAIT_EMOTIONS = [
@@ -1070,7 +1066,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _save_settings(self) -> None:
         self._settings.token_quality = int(self._quality_slider.value or 50)
-        self._settings.model_provider = self._provider_dropdown.value or "openai"
+        self._settings.model_provider = self._provider_dropdown.value or "minimax"
         self._settings.api_key = self._api_key_field.value or ""
         self._settings.user_name = self._settings_name_field.value or "用户"
         self._profile.name = self._settings.user_name
@@ -1177,8 +1173,15 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def set_messages(self, messages: list[ChatMessage]) -> None:
         self._messages = messages
-        message_ids = {message.id for message in messages}
-        self._seen_message_ids.intersection_update(message_ids)
+        self._seen_message_ids = {message.id for message in messages}
+        if not self._refresh_chat_surface():
+            self._safe_update()
+
+    def set_role_messages(self, role_id: str, messages: list[ChatMessage]) -> None:
+        retained = [message for message in self._messages if message.role_id != role_id]
+        self._messages = retained + messages
+        retained_ids = {message.id for message in retained}
+        self._seen_message_ids = retained_ids | {message.id for message in messages}
         if not self._refresh_chat_surface():
             self._safe_update()
 
@@ -1195,6 +1198,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def apply_settings(self, settings: UiSettings) -> None:
         self._settings = settings
         self._is_dark = settings.is_dark
+        self._profile.name = settings.user_name
+        self._profile.avatar_path = settings.user_avatar_path
         self._safe_update()
 
     def show_page(self, page: str) -> None:

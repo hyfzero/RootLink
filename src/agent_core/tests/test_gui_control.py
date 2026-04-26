@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""Tests for the thin GUI control layer."""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+
+TEST_FILE = Path(__file__).resolve()
+SRC_DIR = TEST_FILE.parents[2]
+REPO_ROOT = TEST_FILE.parents[3]
+
+for path in (str(REPO_ROOT), str(SRC_DIR)):
+    if path not in sys.path:
+        sys.path.insert(0, path)
+
+from GUI.control import (
+    AMADUES_BRAIN_ID,
+    AMADUES_UI_ROLE_ID,
+    MINIMAX_MODEL,
+    MINIMAX_PROVIDER,
+    AmaduesController,
+    AmaduesRuntime,
+    UiSettingsStorage,
+    build_amadues_runtime,
+)
+from GUI.interfaces import ChatMessage, CompanionRole, CompanionUIView, UiSettings
+from agent_core.session.path_resolver import PathResolver
+
+
+class StubView(CompanionUIView):
+    def __init__(self) -> None:
+        self.roles: list[CompanionRole] = []
+        self.active_role_id = ""
+        self.messages: list[ChatMessage] = []
+        self.role_messages: dict[str, list[ChatMessage]] = {}
+        self.appended: list[ChatMessage] = []
+        self.typing_states: list[bool] = []
+        self.applied_settings: UiSettings | None = None
+        self.pages: list[str] = []
+
+    def set_roles(self, roles: list[CompanionRole]) -> None:
+        self.roles = roles
+
+    def set_active_role(self, role_id: str) -> None:
+        self.active_role_id = role_id
+
+    def set_messages(self, messages: list[ChatMessage]) -> None:
+        self.messages = list(messages)
+
+    def set_role_messages(self, role_id: str, messages: list[ChatMessage]) -> None:
+        self.role_messages[role_id] = list(messages)
+
+    def append_message(self, message: ChatMessage) -> None:
+        self.appended.append(message)
+
+    def set_typing(self, visible: bool) -> None:
+        self.typing_states.append(visible)
+
+    def apply_settings(self, settings: UiSettings) -> None:
+        self.applied_settings = settings
+
+    def show_page(self, page: str) -> None:
+        self.pages.append(page)
+
+    def clear_chat(self) -> None:
+        self.messages = []
+
+
+class FakeSessionStorage:
+    def __init__(self, messages: list[object] | None = None) -> None:
+        self._messages = messages or []
+
+    def get_today_messages(self) -> list[object]:
+        return list(self._messages)
+
+
+class FakeSessionManager:
+    def __init__(self, messages: list[object] | None = None, reply: dict | None = None) -> None:
+        self.storage = FakeSessionStorage(messages)
+        self.reply = reply or {"message_id": "assistant-1", "content": "stub reply"}
+        self.sent: list[tuple[str, object]] = []
+
+    def send_message_sync(self, user_message: str, emotion: object = None) -> dict:
+        self.sent.append((user_message, emotion))
+        return dict(self.reply)
+
+
+class GuiControlTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._env_backup = {
+            PathResolver.ENV_DATA_DIR: os.environ.get(PathResolver.ENV_DATA_DIR),
+            PathResolver.ENV_CONFIG_DIR: os.environ.get(PathResolver.ENV_CONFIG_DIR),
+            PathResolver.ENV_FLET_DATA_DIR: os.environ.get(PathResolver.ENV_FLET_DATA_DIR),
+        }
+        for env_name in self._env_backup:
+            os.environ.pop(env_name, None)
+
+    def tearDown(self) -> None:
+        for env_name, env_value in self._env_backup.items():
+            if env_value is None:
+                os.environ.pop(env_name, None)
+            else:
+                os.environ[env_name] = env_value
+
+    def test_ui_settings_storage_splits_chat_and_ui_persistence(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir:
+            storage = UiSettingsStorage(config_dir)
+            settings = UiSettings(
+                is_dark=False,
+                token_quality=80,
+                model_provider=MINIMAX_PROVIDER,
+                api_key="test-key",
+                user_name="Tester",
+                user_avatar_path="avatar.png",
+            )
+
+            storage.save_minimax_config(settings.api_key)
+            storage.save_ui_settings(settings)
+
+            chat_config = storage.load_chat_config()
+            provider = chat_config.providers[MINIMAX_PROVIDER]
+            self.assertEqual(chat_config.default_provider, MINIMAX_PROVIDER)
+            self.assertEqual(chat_config.default_model, MINIMAX_MODEL)
+            self.assertEqual(provider.api_key, "test-key")
+            self.assertEqual(provider.api_type, "anthropic-messages")
+            self.assertTrue(provider.auth_header)
+
+            ui_payload = json.loads((Path(config_dir) / "ui_settings.json").read_text(encoding="utf-8"))
+            self.assertNotIn("api_key", ui_payload)
+            self.assertEqual(ui_payload["user_name"], "Tester")
+
+            loaded = storage.load_ui_settings()
+            self.assertFalse(loaded.is_dark)
+            self.assertEqual(loaded.token_quality, 80)
+            self.assertEqual(loaded.model_provider, MINIMAX_PROVIDER)
+            self.assertEqual(loaded.api_key, "test-key")
+            self.assertEqual(loaded.user_name, "Tester")
+            self.assertEqual(loaded.user_avatar_path, "avatar.png")
+
+    def test_build_amadues_runtime_creates_default_data_when_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
+            os.environ[PathResolver.ENV_CONFIG_DIR] = config_dir
+            os.environ[PathResolver.ENV_DATA_DIR] = data_dir
+
+            storage = UiSettingsStorage(config_dir)
+            storage.save_minimax_config("runtime-key")
+
+            runtime = build_amadues_runtime(config_dir=config_dir)
+            brain_dir = PathResolver.get_brain_dir(AMADUES_BRAIN_ID)
+
+            self.assertTrue((brain_dir / "persona" / "profile.json").exists())
+            self.assertTrue((brain_dir / "persona" / "memories.json").exists())
+            self.assertTrue((brain_dir / "persona" / "speaking_style.json").exists())
+            self.assertEqual(runtime.brain_registry.current_brain_id(), AMADUES_BRAIN_ID)
+
+    def test_open_chat_without_api_key_injects_notice_message(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir:
+            controller = AmaduesController(settings_storage=UiSettingsStorage(config_dir))
+            view = StubView()
+            controller.bind_view(view)
+
+            controller.on_open_chat(AMADUES_UI_ROLE_ID)
+
+            self.assertIn(AMADUES_UI_ROLE_ID, view.role_messages)
+            notice = view.role_messages[AMADUES_UI_ROLE_ID][0]
+            self.assertIn("MiniMax", notice.text)
+            self.assertIn("API Key", notice.text)
+
+    def test_open_chat_loads_today_messages(self) -> None:
+        timestamp = 1_700_000_000
+        manager = FakeSessionManager(
+            messages=[
+                SimpleNamespace(id="u1", role="user", content="hello", timestamp=timestamp),
+                SimpleNamespace(id="a1", role="assistant", content="world", timestamp=timestamp + 1),
+            ]
+        )
+        controller = AmaduesController(runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()))
+        view = StubView()
+        controller.bind_view(view)
+
+        controller.on_open_chat(AMADUES_UI_ROLE_ID)
+
+        self.assertEqual(len(view.role_messages[AMADUES_UI_ROLE_ID]), 2)
+        self.assertTrue(view.role_messages[AMADUES_UI_ROLE_ID][0].is_user)
+        self.assertFalse(view.role_messages[AMADUES_UI_ROLE_ID][1].is_user)
+
+    def test_send_message_appends_backend_reply(self) -> None:
+        manager = FakeSessionManager(reply={"message_id": "reply-1", "content": "assistant reply"})
+        controller = AmaduesController(runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()))
+        view = StubView()
+        controller.bind_view(view)
+
+        controller.on_send_message(AMADUES_UI_ROLE_ID, "hi", "normal")
+
+        self.assertEqual(manager.sent, [("hi", None)])
+        self.assertEqual(view.typing_states, [True, False])
+        self.assertEqual(view.appended[-1].id, "reply-1")
+        self.assertEqual(view.appended[-1].text, "assistant reply")
+        self.assertFalse(view.appended[-1].is_user)
+
+    def test_saving_settings_invalidates_cached_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir:
+            calls = {"count": 0}
+
+            def factory() -> AmaduesRuntime:
+                calls["count"] += 1
+                manager = FakeSessionManager()
+                return AmaduesRuntime(manager, SimpleNamespace())
+
+            controller = AmaduesController(
+                settings_storage=UiSettingsStorage(config_dir),
+                runtime_factory=factory,
+            )
+            view = StubView()
+            controller.bind_view(view)
+
+            controller.on_open_chat(AMADUES_UI_ROLE_ID)
+            controller.on_open_chat(AMADUES_UI_ROLE_ID)
+            self.assertEqual(calls["count"], 1)
+
+            controller.on_settings_saved(
+                UiSettings(
+                    is_dark=True,
+                    token_quality=50,
+                    model_provider=MINIMAX_PROVIDER,
+                    api_key="new-key",
+                    user_name="Tester",
+                )
+            )
+            controller.on_open_chat(AMADUES_UI_ROLE_ID)
+
+            self.assertEqual(calls["count"], 2)
+            self.assertEqual(view.applied_settings.api_key, "new-key")
+
+
+if __name__ == "__main__":
+    unittest.main()

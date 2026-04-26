@@ -1,6 +1,16 @@
-"""Figma mobile-first Flet UI package."""
+"""Flet UI package for the Amadues companion app."""
 
-from .app import DemoCallback, run_demo
+from .app import DemoCallback, main, run_app, run_demo
+from .control import (
+    AMADUES_BRAIN_ID,
+    AMADUES_UI_ROLE_ID,
+    MINIMAX_MODEL,
+    MINIMAX_PROVIDER,
+    AmaduesController,
+    ChatConfigurationError,
+    UiSettingsStorage,
+    build_amadues_runtime,
+)
 from .interfaces import (
     CharacterDraft,
     ChatMessage,
@@ -14,7 +24,13 @@ from .interfaces import (
 from .views import CompanionAppView, default_roles
 
 __all__ = [
+    "AMADUES_BRAIN_ID",
+    "AMADUES_UI_ROLE_ID",
+    "MINIMAX_MODEL",
+    "MINIMAX_PROVIDER",
+    "AmaduesController",
     "CharacterDraft",
+    "ChatConfigurationError",
     "ChatMessage",
     "CompanionAppView",
     "CompanionRole",
@@ -23,7 +39,11 @@ __all__ = [
     "DemoCallback",
     "MemoryDraft",
     "UiSettings",
+    "UiSettingsStorage",
     "UserProfile",
+    "build_amadues_runtime",
     "default_roles",
+    "main",
+    "run_app",
     "run_demo",
 ]

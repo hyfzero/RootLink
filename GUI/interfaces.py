@@ -50,7 +50,7 @@ class UiSettings:
 
     is_dark: bool = True
     token_quality: int = 50
-    model_provider: str = "openai"
+    model_provider: str = "minimax"
     api_key: str = ""
     user_name: str = "用户"
     user_avatar_path: Optional[str] = None
@@ -134,6 +134,9 @@ class CompanionUIView(ABC):
         raise NotImplementedError
 
     def set_messages(self, messages: list[ChatMessage]) -> None:
+        raise NotImplementedError
+
+    def set_role_messages(self, role_id: str, messages: list[ChatMessage]) -> None:
         raise NotImplementedError
 
     def append_message(self, message: ChatMessage) -> None:
