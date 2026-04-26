@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -110,7 +111,14 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._chat_entry_seed = 0
         self._chat_list_view: Optional[ft.ListView] = None
         self._immersive_dialogue_text: Optional[ft.Text] = None
+        self._pending_scroll_to_latest = False
+        self._immersive_message_id: Optional[str] = None
+        self._immersive_segments: list[str] = []
+        self._immersive_index = 0
         self._build()
+
+    def did_mount(self) -> None:
+        self._trigger_scroll_to_latest()
 
     @property
     def active_role(self) -> CompanionRole:
@@ -144,14 +152,14 @@ class CompanionAppView(ft.Container, CompanionUIView):
         page_content = self._build_current_page(colors)
         page_content.key = f"page-{self._page_name}-{self._page_seed[self._page_name]}-{self._active_role_id}-{self._chat_mode}-{self._create_step}"
         self.gradient = app_gradient(self._is_dark)
+        content_width = self._content_width()
         self.content = ft.Row(
             expand=True,
             alignment=ft.MainAxisAlignment.CENTER,
             vertical_alignment=ft.CrossAxisAlignment.START,
             controls=[
                 ft.Container(
-                    width=MOBILE_WIDTH,
-                    expand=True,
+                    width=content_width,
                     clip_behavior=ft.ClipBehavior.HARD_EDGE,
                     content=ft.AnimatedSwitcher(
                         content=page_content,
@@ -164,6 +172,19 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 )
             ],
         )
+
+    def _content_width(self) -> int:
+        try:
+            page = self.page
+        except RuntimeError:
+            page = None
+        if page is None:
+            return MOBILE_WIDTH
+        page_width = getattr(page, "width", None) or MOBILE_WIDTH
+        resolved_width = int(page_width)
+        if resolved_width <= 0:
+            return MOBILE_WIDTH
+        return min(MOBILE_WIDTH, resolved_width)
 
     def _safe_update(self) -> None:
         self._build()
@@ -359,6 +380,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 duration_name="normal",
                 key=f"chat-body-{self._chat_mode}-{self._chat_mode_seed}-{self._chat_entry_seed}",
             )
+        body.expand = True
+        if self.motion_enabled:
             header = MotionEntry(
                 content=header,
                 offset=ft.Offset(0, -0.03),
@@ -433,8 +456,102 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _latest_role_reply_text(self, role: CompanionRole) -> str:
         return next((message.text for message in reversed(self._messages) if message.role_id == role.id and not message.is_user), role.status_text)
 
+    def _role_messages(self, role_id: str) -> list[ChatMessage]:
+        return [message for message in self._messages if message.role_id == role_id]
+
+    def _latest_role_reply(self, role: CompanionRole) -> Optional[ChatMessage]:
+        return next((message for message in reversed(self._messages) if message.role_id == role.id and not message.is_user), None)
+
+    def _schedule_scroll_to_latest(self) -> None:
+        self._pending_scroll_to_latest = True
+
+    def _has_normal_chat_content(self, role_id: str) -> bool:
+        return bool(self._role_messages(role_id) or self._typing)
+
+    def _trigger_scroll_to_latest(self) -> None:
+        if not self._pending_scroll_to_latest:
+            return
+        try:
+            page = self.page
+        except RuntimeError:
+            return
+        self._pending_scroll_to_latest = False
+
+        async def _scroll_now() -> None:
+            await self._scroll_chat_to_latest_async()
+
+        async def _after_mount() -> None:
+            await asyncio.sleep(0.05)
+            await self._scroll_chat_to_latest_async()
+
+        page.run_task(_scroll_now)
+        page.run_task(_after_mount)
+
+    async def _scroll_chat_to_latest_async(self) -> None:
+        if self._chat_mode != "normal" or self._chat_list_view is None:
+            return
+        if not self._has_normal_chat_content(self.active_role.id):
+            return
+        try:
+            await self._chat_list_view.scroll_to(offset=0, duration=0)
+            self._chat_list_view.update()
+        except (AssertionError, RuntimeError):
+            pass
+
+    def _split_immersive_sentences(self, value: str) -> list[str]:
+        normalized = value.replace("\r\n", "\n").strip()
+        if not normalized:
+            return []
+        segments: list[str] = []
+        for block in normalized.split("\n"):
+            block = block.strip()
+            if not block:
+                continue
+            parts = re.findall(r".+?(?:[。！？!?]+|$)", block)
+            for part in parts:
+                segment = part.strip()
+                if segment:
+                    segments.append(segment)
+        return segments or [normalized]
+
+    def _reset_immersive_state(self, role: CompanionRole) -> None:
+        latest_message = self._latest_role_reply(role)
+        if latest_message is None:
+            self._immersive_message_id = None
+            self._immersive_segments = []
+            self._immersive_index = 0
+            return
+        if latest_message.id == self._immersive_message_id:
+            return
+        self._immersive_message_id = latest_message.id
+        self._immersive_segments = self._split_immersive_sentences(latest_message.text)
+        self._immersive_index = 0
+
+    def _current_immersive_text(self, role: CompanionRole) -> str:
+        if not self._immersive_segments:
+            latest_reply = self._latest_role_reply(role)
+            if latest_reply is not None:
+                return latest_reply.text
+            return role.status_text
+        return self._immersive_segments[self._immersive_index]
+
+    def _advance_immersive_text(self, _) -> None:
+        if self._chat_mode != "immersive" or not self._immersive_segments:
+            return
+        if self._immersive_index >= len(self._immersive_segments) - 1:
+            return
+        self._immersive_index += 1
+        if self._immersive_dialogue_text is None:
+            self._safe_update()
+            return
+        self._immersive_dialogue_text.value = self._current_immersive_text(self.active_role)
+        try:
+            self._immersive_dialogue_text.update()
+        except (AssertionError, RuntimeError):
+            self._safe_update()
+
     def _build_chat_message_controls(self, colors: dict[str, str], role: CompanionRole) -> list[ft.Control]:
-        chat_messages = [message for message in self._messages if message.role_id == role.id]
+        chat_messages = self._role_messages(role.id)
         controls: list[ft.Control] = []
         for message in chat_messages:
             bubble = MessageBubble(message, role, self._is_dark)
@@ -442,10 +559,13 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 controls.append(MessageBubbleEntry(bubble, key=f"msg-{message.id}"))
                 self._seen_message_ids.add(message.id)
             else:
-                controls.append(bubble)
+                controls.append(ft.Container(content=bubble, key=f"msg-{message.id}"))
         if self._typing:
             controls.append(self._typing_indicator(role, colors))
         return controls
+
+    def _build_normal_chat_controls(self, colors: dict[str, str], role: CompanionRole) -> list[ft.Control]:
+        return list(reversed(self._build_chat_message_controls(colors, role)))
 
     def _refresh_chat_surface(self) -> bool:
         if self._page_name != "chat":
@@ -455,16 +575,18 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if self._chat_mode == "normal":
             if self._chat_list_view is None:
                 return False
-            self._chat_list_view.controls = self._build_chat_message_controls(self._colors(), role)
+            self._chat_list_view.controls = self._build_normal_chat_controls(self._colors(), role)
             try:
                 self._chat_list_view.update()
             except (AssertionError, RuntimeError):
                 return False
+            self._trigger_scroll_to_latest()
             return True
 
         if self._immersive_dialogue_text is None:
             return False
-        self._immersive_dialogue_text.value = self._latest_role_reply_text(role)
+        self._reset_immersive_state(role)
+        self._immersive_dialogue_text.value = self._current_immersive_text(role)
         try:
             self._immersive_dialogue_text.update()
         except (AssertionError, RuntimeError):
@@ -473,12 +595,16 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _build_normal_chat(self, colors: dict[str, str], role: CompanionRole) -> ft.Control:
         self._chat_list_view = ft.ListView(
-            controls=self._build_chat_message_controls(colors, role),
+            controls=self._build_normal_chat_controls(colors, role),
             spacing=12,
-            auto_scroll=True,
+            reverse=True,
             expand=True,
+            auto_scroll=False,
+            build_controls_on_demand=False,
+            padding=0,
         )
         return ft.Container(
+            expand=True,
             padding=ft.padding.symmetric(horizontal=16, vertical=10),
             content=self._chat_list_view,
         )
@@ -500,7 +626,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         )
 
     def _build_immersive_chat(self, colors: dict[str, str], role: CompanionRole) -> ft.Control:
-        self._immersive_dialogue_text = text(self._latest_role_reply_text(role), 15, colors["text_soft"], max_lines=4, overflow=ft.TextOverflow.ELLIPSIS)
+        self._reset_immersive_state(role)
+        self._immersive_dialogue_text = text(self._current_immersive_text(role), 15, colors["text_soft"], max_lines=None)
         portrait: ft.Control = ft.Container(
             alignment=ft.Alignment(0, 1),
             content=ft.Image(src=role.standing_image_path, fit=IMAGE_CONTAIN, width=390, height=520),
@@ -513,6 +640,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
             gradient=glass_gradient(role.accent_color, self._is_dark, strong=True),
             border=ft.border.all(1, hex_with_alpha(role.accent_color, 0x36 if self._is_dark else 0x48)),
             shadow=soft_shadow(self._is_dark, role.accent_color, "card"),
+            ink=True,
+            scale=1.0,
+            animate_scale=animation("fast", phase="press"),
+            on_click=animated_click(self._advance_immersive_text),
             content=ft.Row(
                 spacing=12,
                 vertical_alignment=ft.CrossAxisAlignment.START,
@@ -1057,8 +1188,14 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if self._chat_mode != mode:
             self._chat_mode = mode
             self._chat_mode_seed += 1
+            if mode == "normal":
+                self._schedule_scroll_to_latest()
+            else:
+                self._reset_immersive_state(self.active_role)
             self._callback.on_chat_mode_changed(mode)
             self._safe_update()
+            if mode == "normal":
+                self._trigger_scroll_to_latest()
 
     def _send_message(self, value: str) -> None:
         self.append_message(ChatMessage(f"user-{len(self._messages) + 1}", self._active_role_id, value, True, datetime.now()))
@@ -1169,31 +1306,58 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def set_active_role(self, role_id: str) -> None:
         if any(role.id == role_id for role in self._roles):
             self._active_role_id = role_id
+            if self._chat_mode == "immersive":
+                self._reset_immersive_state(self.active_role)
+            elif self._page_name == "chat":
+                self._schedule_scroll_to_latest()
             self._safe_update()
+            if self._page_name == "chat" and self._chat_mode == "normal":
+                self._trigger_scroll_to_latest()
 
     def set_messages(self, messages: list[ChatMessage]) -> None:
         self._messages = messages
         self._seen_message_ids = {message.id for message in messages}
+        if self._chat_mode == "immersive":
+            self._reset_immersive_state(self.active_role)
+        elif self._page_name == "chat":
+            self._schedule_scroll_to_latest()
         if not self._refresh_chat_surface():
             self._safe_update()
+            self._trigger_scroll_to_latest()
 
     def set_role_messages(self, role_id: str, messages: list[ChatMessage]) -> None:
         retained = [message for message in self._messages if message.role_id != role_id]
         self._messages = retained + messages
         retained_ids = {message.id for message in retained}
         self._seen_message_ids = retained_ids | {message.id for message in messages}
+        if role_id == self._active_role_id:
+            if self._chat_mode == "immersive":
+                self._reset_immersive_state(self.active_role)
+            elif self._page_name == "chat":
+                self._schedule_scroll_to_latest()
         if not self._refresh_chat_surface():
             self._safe_update()
+            self._trigger_scroll_to_latest()
 
     def append_message(self, message: ChatMessage) -> None:
         self._messages.append(message)
+        if message.role_id == self._active_role_id:
+            if self._chat_mode == "immersive" and not message.is_user:
+                self._reset_immersive_state(self.active_role)
+            elif self._page_name == "chat":
+                self._schedule_scroll_to_latest()
         if not self._refresh_chat_surface():
             self._safe_update()
+            self._trigger_scroll_to_latest()
 
     def set_typing(self, visible: bool) -> None:
         self._typing = visible
+        if self._page_name == "chat" and self._chat_mode == "normal":
+            self._schedule_scroll_to_latest()
         if not self._refresh_chat_surface():
             self._safe_update()
+            if self._page_name == "chat" and self._chat_mode == "normal":
+                self._trigger_scroll_to_latest()
 
     def apply_settings(self, settings: UiSettings) -> None:
         self._settings = settings
@@ -1206,12 +1370,22 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if page not in self.VALID_PAGES:
             raise ValueError(f"Unknown page: {page}")
         self._page_name = page
+        if page == "chat":
+            if self._chat_mode == "normal":
+                self._schedule_scroll_to_latest()
+            else:
+                self._reset_immersive_state(self.active_role)
         self._touch_page(page)
         self._safe_update()
+        if page == "chat" and self._chat_mode == "normal":
+            self._trigger_scroll_to_latest()
 
     def clear_chat(self) -> None:
         active_role = self.active_role.id
         self._messages = [message for message in self._messages if message.role_id != active_role]
         self._seen_message_ids = {message.id for message in self._messages}
+        self._immersive_message_id = None
+        self._immersive_segments = []
+        self._immersive_index = 0
         if not self._refresh_chat_surface():
             self._safe_update()

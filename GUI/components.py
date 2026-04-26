@@ -416,10 +416,12 @@ class MessageBubble(ft.Container):
         bubble_bg = hex_with_alpha(role.accent_color, 0x25 if is_dark else 0x30) if is_user else colors["message"]
         time_value = message.timestamp.strftime("%H:%M")
         bubble = ft.Column(
+            expand=True,
             spacing=4,
             horizontal_alignment=ft.CrossAxisAlignment.END if is_user else ft.CrossAxisAlignment.START,
             controls=[
                 ft.Container(
+                    expand=True,
                     padding=ft.padding.symmetric(horizontal=14, vertical=10),
                     border_radius=ft.border_radius.only(top_left=16 if is_user else 5, top_right=5 if is_user else 16, bottom_left=16, bottom_right=16),
                     bgcolor=bubble_bg,
@@ -430,16 +432,24 @@ class MessageBubble(ft.Container):
                 text(time_value, 10, colors["text_tertiary"]),
             ],
         )
-        row_controls: list[ft.Control] = [bubble]
+        row_controls: list[ft.Control] = [
+            ft.Container(
+                expand=True,
+                alignment=ft.Alignment(1, 0) if is_user else ft.Alignment(-1, 0),
+                content=bubble,
+            )
+        ]
         if not is_user:
-            row_controls.insert(0, avatar(role.avatar_path, 32, colors["card_border"]))
+            row_controls.insert(0, ft.Container(width=32, content=avatar(role.avatar_path, 32, colors["card_border"])))
         super().__init__(
             alignment=ft.Alignment(1, 0) if is_user else ft.Alignment(-1, 0),
+            expand=True,
             content=ft.Row(
+                expand=True,
                 alignment=ft.MainAxisAlignment.END if is_user else ft.MainAxisAlignment.START,
                 vertical_alignment=ft.CrossAxisAlignment.START,
                 spacing=8,
-                controls=[ft.Container(width=300, content=ft.Row(alignment=ft.MainAxisAlignment.END if is_user else ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.START, spacing=8, controls=row_controls))],
+                controls=row_controls,
             ),
         )
 
