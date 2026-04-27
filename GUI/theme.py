@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import flet as ft
 
 MOBILE_WIDTH = 428
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-RESOURCE_DIR = PROJECT_ROOT / "resource"
 
 MOTION = {
     "fast": 180,
@@ -25,10 +21,6 @@ MOTION_CURVES = {
     "exit": ft.AnimationCurve.EASE_IN_OUT,
     "press": ft.AnimationCurve.EASE_OUT,
 }
-
-
-def resource_path(name: str) -> str:
-    return (RESOURCE_DIR / name).as_posix()
 
 
 def hex_with_alpha(hex_color: str, alpha: int) -> str:
@@ -118,48 +110,6 @@ def soft_shadow(is_dark: bool, accent_color: str | None = None, level: str = "ca
     y = 8 if level == "button" else 5
     return [ft.BoxShadow(spread_radius=0, blur_radius=blur, color=color, offset=ft.Offset(0, y))]
 
-
-DEFAULT_ROLE_DATA = [
-    {
-        "id": "amadeus",
-        "name": "Amadeus",
-        "type": "理性记忆型",
-        "tags": ["理性", "克制", "聪明"],
-        "intro": "像从记忆深处被重新唤醒的她，冷静、准确，也带着一点无法触碰的距离感。",
-        "status_text": "记得你上次停下来的地方",
-        "accent_color": "#B6A8C9",
-        "avatar_path": resource_path("amadues.png"),
-        "standing_image_path": resource_path("amadues_Full_profile.png"),
-        "last_message": "今天实验进展如何？",
-        "last_time": "2小时前",
-    },
-    {
-        "id": "shinji",
-        "name": "碇真嗣",
-        "type": "内向倾听型",
-        "tags": ["敏感", "克制", "共情"],
-        "intro": "不太会热闹地安慰你，但会认真听你说完。",
-        "status_text": "会安静地等你说下去",
-        "accent_color": "#AEB8C7",
-        "avatar_path": resource_path("Shinji.png"),
-        "standing_image_path": resource_path("Shinji_Ikari_full_profile.png"),
-        "last_message": "嗯...我明白那种感觉。",
-        "last_time": "昨天",
-    },
-    {
-        "id": "asuka",
-        "name": "明日香",
-        "type": "锋利陪伴型",
-        "tags": ["自信", "外放", "直接"],
-        "intro": "会吐槽你，也会在你快撑不住时把你拽起来。",
-        "status_text": "已经准备好接住你的情绪",
-        "accent_color": "#D99A96",
-        "avatar_path": resource_path("Asuka.png"),
-        "standing_image_path": resource_path("Asuka_full_profile.png"),
-        "last_message": "别一个人待着了，说话！",
-        "last_time": "3天前",
-    },
-]
 
 PROVIDERS = [
     ("openai", "OpenAI", "GPT 系列"),

@@ -85,10 +85,31 @@ class FakeSessionManager:
         self.storage = FakeSessionStorage(messages)
         self.reply = reply or {"message_id": "assistant-1", "content": "stub reply"}
         self.sent: list[tuple[str, object]] = []
+        self.switched: list[str] = []
 
     def send_message_sync(self, user_message: str, emotion: object = None) -> dict:
         self.sent.append((user_message, emotion))
         return dict(self.reply)
+
+    def switch_brain(self, brain_id: str) -> None:
+        self.switched.append(brain_id)
+
+
+class FakeBrainRegistry:
+    def __init__(self, brain_ids: list[str], current: str = AMADUES_BRAIN_ID) -> None:
+        self._brain_ids = brain_ids
+        self._current = current
+
+    def list_brains(self) -> list[str]:
+        return list(self._brain_ids)
+
+    def current_brain_id(self) -> str:
+        return self._current
+
+    def get_brain_info(self, brain_id: str) -> SimpleNamespace | None:
+        if brain_id not in self._brain_ids:
+            return None
+        return SimpleNamespace(id=brain_id, name=brain_id.title(), description=f"{brain_id} description")
 
 
 class GuiControlTests(unittest.TestCase):
@@ -100,8 +121,11 @@ class GuiControlTests(unittest.TestCase):
         }
         for env_name in self._env_backup:
             os.environ.pop(env_name, None)
+        self._data_tmp = tempfile.TemporaryDirectory()
+        os.environ[PathResolver.ENV_DATA_DIR] = self._data_tmp.name
 
     def tearDown(self) -> None:
+        self._data_tmp.cleanup()
         for env_name, env_value in self._env_backup.items():
             if env_value is None:
                 os.environ.pop(env_name, None)
@@ -157,7 +181,59 @@ class GuiControlTests(unittest.TestCase):
             self.assertTrue((brain_dir / "persona" / "profile.json").exists())
             self.assertTrue((brain_dir / "persona" / "memories.json").exists())
             self.assertTrue((brain_dir / "persona" / "speaking_style.json").exists())
+            self.assertTrue((brain_dir / "ui.json").exists())
             self.assertEqual(runtime.brain_registry.current_brain_id(), AMADUES_BRAIN_ID)
+
+    def test_bind_view_loads_roles_from_data_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
+            os.environ[PathResolver.ENV_CONFIG_DIR] = config_dir
+            os.environ[PathResolver.ENV_DATA_DIR] = data_dir
+
+            for brain_id, name in ((AMADUES_BRAIN_ID, "Amadeus"), ("shinji", "碇真嗣")):
+                brain_dir = Path(data_dir) / brain_id
+                persona_dir = brain_dir / "persona"
+                portrait_dir = brain_dir / "assets" / "portraits"
+                persona_dir.mkdir(parents=True)
+                portrait_dir.mkdir(parents=True)
+                (brain_dir / "assets" / "avatar.png").write_bytes(b"avatar")
+                (portrait_dir / "neutral.png").write_bytes(b"portrait")
+                (persona_dir / "profile.json").write_text(
+                    json.dumps({"name": name, "background": f"{name} background"}, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                (persona_dir / "memories.json").write_text(
+                    json.dumps(
+                        {
+                            "episodic_memories": [],
+                            "preference_memories": [],
+                            "fact_memories": [],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                (brain_dir / "ui.json").write_text(
+                    json.dumps(
+                        {
+                            "type": "test",
+                            "tags": ["data"],
+                            "avatar": "assets/avatar.png",
+                            "portraits": {"neutral": "assets/portraits/neutral.png"},
+                            "accent_color": "#123456",
+                        },
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+
+            controller = AmaduesController(settings_storage=UiSettingsStorage(config_dir))
+            view = StubView()
+            controller.bind_view(view)
+
+            self.assertEqual([role.id for role in view.roles], [AMADUES_BRAIN_ID, "shinji"])
+            shinji = next(role for role in view.roles if role.id == "shinji")
+            self.assertEqual(shinji.name, "碇真嗣")
+            self.assertEqual(shinji.portraits["neutral"], (Path(data_dir) / "shinji" / "assets" / "portraits" / "neutral.png").as_posix())
+            self.assertEqual(shinji.standing_image_path, shinji.portraits["neutral"])
 
     def test_open_chat_without_api_key_injects_notice_message(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir:
@@ -203,6 +279,20 @@ class GuiControlTests(unittest.TestCase):
         self.assertEqual(view.appended[-1].id, "reply-1")
         self.assertEqual(view.appended[-1].text, "assistant reply")
         self.assertFalse(view.appended[-1].is_user)
+
+    def test_send_message_switches_to_data_role_brain(self) -> None:
+        manager = FakeSessionManager(reply={"message_id": "reply-1", "content": "shinji reply"})
+        registry = FakeBrainRegistry([AMADUES_BRAIN_ID, "shinji"], current=AMADUES_BRAIN_ID)
+        controller = AmaduesController(runtime_factory=lambda: AmaduesRuntime(manager, registry))
+        view = StubView()
+        controller.bind_view(view)
+
+        controller.on_send_message("shinji", "hi", "normal")
+
+        self.assertEqual(manager.switched, ["shinji"])
+        self.assertEqual(manager.sent, [("hi", None)])
+        self.assertEqual(view.appended[-1].role_id, "shinji")
+        self.assertEqual(view.appended[-1].text, "shinji reply")
 
     def test_saving_settings_invalidates_cached_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir:

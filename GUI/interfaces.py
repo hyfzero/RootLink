@@ -21,6 +21,7 @@ class CompanionRole:
     accent_color: str
     avatar_path: str
     standing_image_path: str
+    portraits: dict[str, str] = field(default_factory=dict)
     last_message: str = ""
     last_time: str = ""
 

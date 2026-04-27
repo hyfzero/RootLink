@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -31,18 +32,23 @@ from agent_core.session.brain_registry import BrainComponents
 from .interfaces import (
     CharacterDraft,
     ChatMessage,
+    CompanionRole,
     CompanionUICallback,
     CompanionUIView,
     UiSettings,
 )
+from .role_loader import load_roles_from_data, load_roles_from_registry
 
 
 AMADUES_BRAIN_ID = "amadues"
 AMADUES_UI_ROLE_ID = "amadeus"
+SHINJI_BRAIN_ID = "shinji"
 MINIMAX_PROVIDER = "minimax"
 MINIMAX_MODEL = "MiniMax-M2.5"
 DEFAULT_ASSISTANT_NAME = "\u963f\u739b\u8fea\u65af"
 CONFIG_NOTICE = "\u8bf7\u5148\u5728\u8bbe\u7f6e\u9875\u4fdd\u5b58 MiniMax API Key\u3002"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+RESOURCE_DIR = PROJECT_ROOT / "resource"
 
 
 class ChatConfigurationError(RuntimeError):
@@ -124,6 +130,20 @@ def _default_persona_profile() -> PersonaProfile:
     )
 
 
+def _write_json_if_missing(path: Path, payload: dict) -> None:
+    if path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+
+def _copy_asset_if_missing(source: Path, target: Path) -> None:
+    if source.exists() and not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+
+
 def _load_model_config(config_dir: str | Path | None = None) -> ModelConfig:
     storage = ModelsStorage(config_dir)
     config = storage.load()
@@ -152,42 +172,148 @@ def _ensure_default_amadues_data(brain_id: str = AMADUES_BRAIN_ID) -> Path:
     brain_dir = PathResolver.get_brain_dir(brain_id)
     persona_dir = brain_dir / "persona"
     history_dir = brain_dir / "history"
+    assets_dir = brain_dir / "assets"
+    portraits_dir = assets_dir / "portraits"
 
     persona_dir.mkdir(parents=True, exist_ok=True)
     history_dir.mkdir(parents=True, exist_ok=True)
+    portraits_dir.mkdir(parents=True, exist_ok=True)
 
-    profile_path = persona_dir / "profile.json"
-    if not profile_path.exists():
-        with open(profile_path, "w", encoding="utf-8") as handle:
-            json.dump(_default_persona_profile().to_dict(), handle, ensure_ascii=False, indent=2)
-
-    memories_path = persona_dir / "memories.json"
-    if not memories_path.exists():
-        with open(memories_path, "w", encoding="utf-8") as handle:
-            json.dump(
+    _write_json_if_missing(persona_dir / "profile.json", _default_persona_profile().to_dict())
+    _write_json_if_missing(
+        persona_dir / "memories.json",
+        {
+            "episodic_memories": [
                 {
-                    "episodic_memories": [
-                        {
-                            "content": "The user opened the chat for the first time.",
-                            "memory_type": "episodic",
-                            "importance": 1.0,
-                        }
-                    ],
-                    "preference_memories": [],
-                    "fact_memories": [],
-                },
-                handle,
-                ensure_ascii=False,
-                indent=2,
-            )
+                    "content": "The user opened the chat for the first time.",
+                    "memory_type": "episodic",
+                    "importance": 1.0,
+                }
+            ],
+            "preference_memories": [],
+            "fact_memories": [],
+        },
+    )
 
     speaking_style_path = persona_dir / "speaking_style.json"
     if not speaking_style_path.exists():
         style = SpeakingStyleEngine(preset_name="gentle", influence_weight=0.5)
-        with open(speaking_style_path, "w", encoding="utf-8") as handle:
-            json.dump(style.to_dict(), handle, ensure_ascii=False, indent=2)
+        _write_json_if_missing(speaking_style_path, style.to_dict())
+
+    _write_json_if_missing(
+        brain_dir / "ui.json",
+        {
+            "type": "\u7406\u6027\u8bb0\u5fc6\u578b",
+            "tags": ["\u7406\u6027", "\u514b\u5236", "\u806a\u660e"],
+            "intro": "\u50cf\u4ece\u8bb0\u5fc6\u6df1\u5904\u88ab\u91cd\u65b0\u5524\u9192\u7684\u5979\uff0c\u51b7\u9759\u3001\u51c6\u786e\uff0c\u4e5f\u5e26\u7740\u4e00\u70b9\u65e0\u6cd5\u89e6\u78b0\u7684\u8ddd\u79bb\u611f\u3002",
+            "status_text": "\u8bb0\u5f97\u4f60\u4e0a\u6b21\u505c\u4e0b\u6765\u7684\u5730\u65b9\u3002",
+            "accent_color": "#B6A8C9",
+            "avatar": "assets/avatar.png",
+            "portraits": {"neutral": "assets/portraits/neutral.png"},
+            "last_message": "\u4eca\u5929\u5b9e\u9a8c\u8fdb\u5c55\u5982\u4f55\uff1f",
+            "last_time": "",
+        },
+    )
+
+    asset_pairs = (
+        (RESOURCE_DIR / "amadues.png", assets_dir / "avatar.png"),
+        (RESOURCE_DIR / "amadues_Full_profile.png", portraits_dir / "neutral.png"),
+    )
+    for source, target in asset_pairs:
+        _copy_asset_if_missing(source, target)
 
     return brain_dir
+
+
+def _ensure_default_shinji_data(brain_id: str = SHINJI_BRAIN_ID) -> Path:
+    brain_dir = PathResolver.get_brain_dir(brain_id)
+    persona_dir = brain_dir / "persona"
+    history_dir = brain_dir / "history"
+    assets_dir = brain_dir / "assets"
+    portraits_dir = assets_dir / "portraits"
+
+    persona_dir.mkdir(parents=True, exist_ok=True)
+    history_dir.mkdir(parents=True, exist_ok=True)
+    portraits_dir.mkdir(parents=True, exist_ok=True)
+
+    _write_json_if_missing(
+        persona_dir / "profile.json",
+        {
+            "name": "碇真嗣",
+            "age": 14,
+            "gender": "male",
+            "personality_traits": [
+                "敏感",
+                "内向",
+                "谨慎",
+                "共情力强",
+                "不擅表达",
+                "害怕被拒绝",
+                "渴望被理解",
+            ],
+            "background": "第三新东京市的 EVA 驾驶员。习惯把真实想法压低，不主动打扰别人，也不擅长直接说出自己的需要。面对压力时容易退缩，但仍会认真倾听他人的话，并试着用温和、笨拙的方式回应。",
+            "speaking_style": "gentle",
+            "birthday": "6月6日",
+            "interests": ["听音乐", "拉大提琴", "安静的地方", "被需要的感觉"],
+            "relationship_state": "neutral",
+            "relationship_score": 0.0,
+            "relationship_updated_at": None,
+        },
+    )
+    _write_json_if_missing(
+        persona_dir / "memories.json",
+        {
+            "episodic_memories": [],
+            "preference_memories": [],
+            "fact_memories": [
+                {
+                    "content": "碇真嗣习惯先倾听，再用简短、谨慎的话回应。",
+                    "memory_type": "fact",
+                    "importance": 1.0,
+                },
+                {
+                    "content": "碇真嗣在压力下容易退缩，但并不冷漠。",
+                    "memory_type": "fact",
+                    "importance": 1.0,
+                },
+            ],
+        },
+    )
+    speaking_style_path = persona_dir / "speaking_style.json"
+    if not speaking_style_path.exists():
+        style = SpeakingStyleEngine(preset_name="gentle", influence_weight=0.45)
+        _write_json_if_missing(speaking_style_path, style.to_dict())
+
+    _write_json_if_missing(
+        brain_dir / "ui.json",
+        {
+            "type": "内向倾听型",
+            "tags": ["敏感", "克制", "共情"],
+            "intro": "不太会热闹地安慰你，但会认真听你说完。",
+            "status_text": "会安静地等你说下去。",
+            "accent_color": "#AEB8C7",
+            "avatar": "assets/avatar.png",
+            "portraits": {"neutral": "assets/portraits/neutral.png"},
+            "last_message": "嗯...我明白那种感觉。",
+            "last_time": "",
+        },
+    )
+
+    asset_pairs = (
+        (RESOURCE_DIR / "Shinji.png", assets_dir / "avatar.png"),
+        (RESOURCE_DIR / "Shinji_Ikari_full_profile.png", portraits_dir / "neutral.png"),
+    )
+    for source, target in asset_pairs:
+        _copy_asset_if_missing(source, target)
+
+    return brain_dir
+
+
+def _ensure_default_role_data() -> None:
+    """Create bundled default roles in the active data root only."""
+
+    _ensure_default_amadues_data()
+    _ensure_default_shinji_data()
 
 
 def _build_default_brain_components() -> BrainComponents:
@@ -222,7 +348,7 @@ def build_amadues_runtime(
     model_config = _load_model_config(config_dir)
     chat_agent = ChatAgent(config=model_config)
 
-    _ensure_default_amadues_data(brain_id)
+    _ensure_default_role_data()
     brain_registry = BrainRegistry(PathResolver.get_data_dir())
     brain_registry.load_all()
 
@@ -275,6 +401,7 @@ class AmaduesController(CompanionUICallback):
     def bind_view(self, view: CompanionUIView) -> None:
         self.view = view
         self.view.apply_settings(self._settings)
+        self._publish_data_roles()
 
     def _invalidate_runtime(self) -> None:
         self._runtime = None
@@ -282,10 +409,64 @@ class AmaduesController(CompanionUICallback):
     def _get_runtime(self) -> AmaduesRuntime:
         if self._runtime is None:
             self._runtime = self._runtime_factory()
+            self._publish_runtime_roles(self._runtime)
         return self._runtime
 
-    def _is_amadues_role(self, role_id: str) -> bool:
-        return self._role_mapping.get(role_id) == AMADUES_BRAIN_ID
+    def _remember_roles(self, roles: list[CompanionRole]) -> None:
+        for role in roles:
+            self._role_mapping[role.id] = role.id
+        self._role_mapping[AMADUES_UI_ROLE_ID] = AMADUES_BRAIN_ID
+
+    def _publish_data_roles(self) -> None:
+        if self.view is None:
+            return
+        _ensure_default_role_data()
+        roles = load_roles_from_data()
+        if not roles:
+            return
+        self._remember_roles(roles)
+        self.view.set_roles(roles)
+
+    def _publish_runtime_roles(self, runtime: AmaduesRuntime) -> None:
+        if self.view is None:
+            return
+        if not callable(getattr(runtime.brain_registry, "list_brains", None)):
+            return
+        roles = load_roles_from_registry(runtime.brain_registry, PathResolver.get_data_dir())
+        if not roles:
+            return
+        self._remember_roles(roles)
+        self.view.set_roles(roles)
+
+    def _resolve_brain_id(self, role_id: str, runtime: Optional[AmaduesRuntime] = None) -> str:
+        mapped_id = self._role_mapping.get(role_id, role_id)
+        registry = getattr(runtime, "brain_registry", None) if runtime is not None else None
+        list_brains = getattr(registry, "list_brains", None)
+        if callable(list_brains):
+            brain_ids = set(list_brains())
+            if mapped_id in brain_ids:
+                return mapped_id
+            if role_id in brain_ids:
+                return role_id
+        return mapped_id
+
+    def _select_role_runtime(self, role_id: str, runtime: AmaduesRuntime) -> str:
+        brain_id = self._resolve_brain_id(role_id, runtime)
+        registry = getattr(runtime, "brain_registry", None)
+        list_brains = getattr(registry, "list_brains", None)
+        if callable(list_brains) and brain_id not in set(list_brains()):
+            raise KeyError(f"Brain '{brain_id}' not found")
+
+        current_brain_id = None
+        current_method = getattr(registry, "current_brain_id", None)
+        if callable(current_method):
+            current_brain_id = current_method()
+
+        if current_brain_id != brain_id:
+            switch_brain = getattr(runtime.session_manager, "switch_brain", None)
+            if callable(switch_brain):
+                switch_brain(brain_id)
+        return brain_id
 
     def _message_from_storage(self, role_id: str, raw_message: object) -> ChatMessage:
         raw_role = getattr(raw_message, "role", None)
@@ -325,12 +506,9 @@ class AmaduesController(CompanionUICallback):
         self.view.set_messages(messages)
 
     def on_open_chat(self, role_id: str) -> None:
-        if not self._is_amadues_role(role_id):
-            print(f"[ui] open chat demo: {role_id}")
-            return
-
         try:
             runtime = self._get_runtime()
+            self._select_role_runtime(role_id, runtime)
             messages = self._load_today_messages(role_id, runtime)
             self._replace_role_messages(role_id, messages)
         except ChatConfigurationError:
@@ -348,21 +526,10 @@ class AmaduesController(CompanionUICallback):
         if self.view is None:
             return
 
-        if not self._is_amadues_role(role_id):
-            self.view.append_message(
-                ChatMessage(
-                    id=f"demo-{datetime.now().timestamp()}",
-                    role_id=role_id,
-                    text="\u5f53\u524d\u53ea\u6709 Amadeus \u63a5\u5165\u4e86\u771f\u5b9e\u804a\u5929\uff0c\u5176\u4ed6\u89d2\u8272\u4ecd\u4fdd\u6301 demo \u6a21\u5f0f\u3002",
-                    is_user=False,
-                    timestamp=datetime.now(),
-                )
-            )
-            return
-
         self.view.set_typing(True)
         try:
             runtime = self._get_runtime()
+            self._select_role_runtime(role_id, runtime)
             result = runtime.session_manager.send_message_sync(user_message=text, emotion=None)
             self.view.append_message(
                 ChatMessage(

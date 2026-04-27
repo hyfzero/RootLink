@@ -40,7 +40,6 @@ from .interfaces import (
     UserProfile,
 )
 from .theme import (
-    DEFAULT_ROLE_DATA,
     MOBILE_WIDTH,
     MOTION,
     animation,
@@ -51,6 +50,7 @@ from .theme import (
     palette,
     soft_shadow,
 )
+from .role_loader import load_roles_from_data
 
 SETTINGS_PROVIDERS = [
     ("minimax", "MiniMax"),
@@ -68,7 +68,10 @@ CREATE_STEPS = ["基础信息", "立绘", "人格", "记忆", "语言风格"]
 
 
 def default_roles() -> list[CompanionRole]:
-    return [CompanionRole(**item) for item in DEFAULT_ROLE_DATA]
+    from .control import _ensure_default_role_data
+
+    _ensure_default_role_data()
+    return load_roles_from_data()
 
 
 class NoopCallback(CompanionUICallback):
