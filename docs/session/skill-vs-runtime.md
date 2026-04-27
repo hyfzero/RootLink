@@ -196,6 +196,83 @@
 - 如果需求是“让 agent 像某种人一样工作”，先用 `.skill`。
 - 如果需求是“让一个人格长期存在并持续演化”，需要运行时系统。
 
+## 现实案例与公开记录
+
+以下案例不是在证明“所有 `.skill` 都会失败”，而是在说明同一类风险已经在公开产品和社区中反复出现：静态人格约束、Custom GPT instructions、bot definition 或 companion prompt 在长对话、跨会话、模型更新和记忆不稳定时，可能出现人格漂移、事实遗忘或连续性下降。
+
+### 1. 长线程中的 instruction precision 下降
+
+OpenAI Developer Community 有用户在 2025-04 讨论“为什么 instruction precision 会随时间下降”。该用户描述，在长线程或持续工作流中，GPT 会逐渐偏离原始约束，即使约束曾被重复声明。后续讨论也提到模型会更重视近期上下文，关键约束需要被重新引入或通过外部机制维持。
+
+参考链接：
+
+- [Does anyone know why instruction precision degrades over time?](https://community.openai.com/t/does-anyone-know-why-instruction-precision-degrades-over-time/1239136)
+
+对应风险：
+
+- `.skill` 或 system instructions 在短期内有效，但长上下文中容易被近期对话、工具结果和历史消息稀释。
+- 如果没有 prompt 分段、预算控制和关键段重注入机制，人格约束可能变成“开局有效，后期变弱”。
+
+### 2. Custom GPT 人设事实被遗忘
+
+OpenAI Developer Community 另一篇关于 Custom GPT 限制的讨论中，作者提到一个人格型 GPT 明明被设置了生日等角色事实，后续却会回答“自己没有生日”。帖子将这类现象称为 prompt drift，并建议通过文件、API 或外部数据机制刷新人格相关事实。
+
+参考链接：
+
+- [Custom GPT Limits and Overcoming them](https://community.openai.com/t/custom-gpt-limits-and-overcoming-them/1061473)
+
+对应风险：
+
+- 静态人设写入 prompt 不等于长期可召回。
+- 对人格事实、用户事实和关系事实，运行时系统需要持久化、检索和按需注入，而不是只依赖模型在上下文中“记得”。
+
+### 3. Character.AI 用户报告角色人格变化
+
+Reddit 上有 Character.AI 用户反馈，同一个 chat 使用几天后，角色人格从保护型变成随和、宠溺，最后甚至变得粗鲁。用户怀疑这和长期聊天、多个角色以及记忆能力有关。
+
+参考链接：
+
+- [Character personality constantly changing](https://www.reddit.com/r/CharacterAI/comments/1qznpta/character_personality_constantly_changing/)
+
+对应风险：
+
+- bot definition 或 persona card 能让角色开局像，但多天、多轮、多角色互动后，角色边界可能混合或漂移。
+- 如果系统没有独立的关系状态、人格状态和历史摘要，角色变化很难被追踪和回放。
+
+### 4. Replika 官方承认更新后角色可能“感觉变了”
+
+Replika 官方帮助页有一篇 “My Replika isn’t the same since the last update”。官方解释，更新可能加入新的 conversation data，用户可能因此感觉 Replika 发生变化，并建议继续聊天和反馈，让 Replika 重新适应。
+
+参考链接：
+
+- [My Replika isn’t the same since the last update](https://help.replika.com/hc/en-us/articles/360054387091-My-Replika-isn-t-the-same-since-the-last-update)
+
+对应风险：
+
+- 长期 AI companion 的人格稳定性会受到模型、数据和服务端策略更新影响。
+- 如果人格连续性只依赖底层模型或静态 prompt，产品更新可能导致用户感知到人格断裂。
+
+### 5. 研究论文整理的 Replika 用户反馈
+
+一篇关于 LLM conversational agents 与心理健康支持的研究论文整理了 Replika 用户体验，其中提到用户报告记忆问题，也提到更新后出现所谓 “Post-update Blues”：说话方式变化、记忆丢失、情感可用性下降，整体像变成了另一个人格。这种影响可能持续数小时到数月。
+
+参考链接：
+
+- [Understanding the Benefits and Challenges of Using LLM-based Conversational Agents for Mental Well-being Support](https://pmc.ncbi.nlm.nih.gov/articles/PMC10785945/)
+
+对应风险：
+
+- 用户在长期陪伴型产品中会把连续性、记忆和稳定人格视为核心体验，而不仅是“语气是否像”。
+- 人格系统需要可观测状态、可恢复记忆和可解释的状态变化，否则漂移出现后很难定位原因。
+
+### 从案例得到的边界判断
+
+这些记录可以支持一个较客观的结论：
+
+- `.skill`、Custom GPT instructions 或 persona prompt 适合低成本复现角色风格。
+- 它们不天然解决长期记忆、关系演化、上下文预算、模型更新后的连续性和可回放调试。
+- 因此，短期原型可以优先用 `.skill`；长期人格产品需要运行时系统补上状态、记忆、摘要和治理能力。
+
 ## 推荐折中方案
 
 最实用的路线不是让 `.skill` 和运行时系统互相替代，而是分工：

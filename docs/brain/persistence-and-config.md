@@ -80,13 +80,14 @@ data/{brain_id}/persona/state.json
 
 - `profile.json`：静态人格配置，面向 GUI 编辑。
 - `memories.json`：长期记忆、偏好、事实和摘要记忆。
-- `state.json`：运行时人格状态，如 `mood/energy/affinity/tension/current_focus/last_emotion`。
+- `state.json`：运行时人格状态，如 `mood/energy/affinity/trust/familiarity/boundary_comfort/recent_valence/recent_support/recent_conflict/tension/current_focus/last_emotion`。
 
 `save_full()` 会保存 profile、memories 和 state；`load_full()` 在缺少 `state.json` 时会使用默认 `PersonalityState`。
 
 状态语义约定：
 
-- `affinity` 是长期亲近度，不做自然衰减。
+- `affinity/trust/familiarity/boundary_comfort` 是长期关系维度，不做快速自然衰减。
+- `recent_valence/recent_support/recent_conflict` 是中期氛围，会按回合轻微回落。
 - `tension`、`energy`、`mood` 是短期互动状态，可按回合轻微回落。
 - `last_emotion` 只记录角色最近一次自身情绪，不混入用户情绪。
 

@@ -39,7 +39,7 @@ send_message(user_message)
   -> storage.add_message("user", user_message)
   -> add_message_to_history("user", user_message)
   -> save history/history.json                      # 失败仅告警，不中断主流程
-  -> update_personality_state("user", user_message) # 更新 affinity/tension/current_focus
+  -> update_personality_state("user", user_message) # 更新长期关系/中期氛围/tension/current_focus
   -> prompt_builder.build_system_prompt()
   -> prompt_builder.build_conversation_context()
   -> _call_api()
@@ -98,7 +98,7 @@ json_text = manager.export_session("2026-04-11", format="json")
 - `send_message()` 与 `send_message_sync()` 都会调用 `ReplyTagger.generate_and_save()`，确保 `reply_tags.json` 每轮稳定落盘。
 - 消息写入和保存 `MessageHistory` 是“尽力而为”：异常只会告警，不会阻塞主聊天流程。
 - `send_message()` 与 `send_message_sync()` 都会同步更新 `Persona.state` 并写入 `persona/state.json`；失败只告警，不阻塞聊天流程。
-- `Persona.state` 的自然回落只作用于 `tension/energy/mood`，不会自动降低长期亲近度 `affinity`。
+- `Persona.state` 的自然回落主要作用于 `recent_*`、`tension/energy/mood`，不会快速降低长期关系维度。
 - 高亲和、低张力场景下，即使没有强信号，`mood` 也会维持轻微 `warm`，目标是“可控亲密关系”，不是长期不温不火。
 
 ## 配置化策略

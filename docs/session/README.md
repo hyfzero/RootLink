@@ -161,7 +161,8 @@ python src/agent_core/tests/session_example.py "谢谢你，红莉栖，今天�
       {"name": "cold", "min_score": -100.0, "max_score": -25.0, "prompt_hint": "保持克制"},
       {"name": "neutral", "min_score": -25.0, "max_score": 20.0, "prompt_hint": "自然交流"},
       {"name": "warm", "min_score": 20.0, "max_score": 60.0, "prompt_hint": "适度关心"},
-      {"name": "close", "min_score": 60.0, "max_score": 101.0, "prompt_hint": "强化信任连续性"}
+      {"name": "close", "min_score": 60.0, "max_score": 85.0, "prompt_hint": "强化信任连续性"},
+      {"name": "lover", "min_score": 85.0, "max_score": 101.0, "prompt_hint": "以爱人关系的稳定、专一和温柔回应为基调"}
     ]
   }
 }

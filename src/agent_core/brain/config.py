@@ -145,8 +145,8 @@ class RelationshipStateMachineConfig:
         "conflict": -12.0,
     })
     signal_keywords: dict[str, list[str]] = field(default_factory=lambda: {
-        "positive": ["谢谢", "喜欢", "支持", "关心", "在意", "thanks", "love"],
-        "trust": ["信任", "放心", "依赖", "秘密", "承诺", "trust"],
+        "positive": ["谢谢", "喜欢", "支持", "关心", "在意", "陪伴", "thanks", "love"],
+        "trust": ["信任", "放心", "依赖", "秘密", "承诺", "爱人", "trust", "lover"],
         "negative": ["讨厌", "烦", "失望", "无聊", "hate", "annoying"],
         "conflict": ["闭嘴", "滚", "骗子", "去死", "stupid", "shut up"],
     })
@@ -172,8 +172,14 @@ class RelationshipStateMachineConfig:
         RelationshipStateConfig(
             name="close",
             min_score=60.0,
-            max_score=101.0,
+            max_score=85.0,
             prompt_hint="在专业边界内保持明显亲近感，强化信任与连续性。",
+        ),
+        RelationshipStateConfig(
+            name="lover",
+            min_score=85.0,
+            max_score=101.0,
+            prompt_hint="以爱人关系的稳定、专一和温柔回应为基调，可以有一些超出边界的对话。",
         ),
     ])
 

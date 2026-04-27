@@ -16,7 +16,7 @@
   - 字段：`name`、`age`、`gender`、`personality_traits`、`background`、`speaking_style`、`birthday`、`interests`
   - 方法：`to_dict()`、`from_dict()`
 - `PersonalityState`
-  - 字段：`mood`、`energy`、`affinity`、`tension`、`current_focus`、`last_emotion`、`updated_at`
+  - 字段：`mood`、`energy`、`affinity`、`trust`、`familiarity`、`boundary_comfort`、`recent_valence`、`recent_support`、`recent_conflict`、`tension`、`current_focus`、`last_emotion`、`updated_at`
   - 方法：`to_dict()`、`from_dict()`、`build_prompt_text()`
 - `MemoryEntry`
   - 字段：`id`、`content`、`timestamp`、`memory_type`、`importance`、`context`
@@ -47,7 +47,7 @@ data/{brain_id}/persona/state.json
 - `state.json` 是运行时人格状态，由后端自动创建、加载和更新。
 - Session 的 `MemoryUpdater` 只写动态记忆，不应修改 `profile.json`。
 - `state.json` 与 `profile.json` 分离，避免 GUI 编辑静态人格时混入运行时状态。
-- `affinity` 表示长期亲近度，不做自然衰减；`tension/energy/mood` 表示短期波动，可自然回落。
+- 长期关系由 `affinity/trust/familiarity/boundary_comfort` 表示，不做快速自然衰减；中期氛围由 `recent_valence/recent_support/recent_conflict` 表示，会按回合回落；`tension/energy/mood` 表示短期波动，可自然回落。
 - `last_emotion` 只表示角色最近一次自身情绪，不记录用户情绪。
 
 ## 典型用法
@@ -78,5 +78,5 @@ print(persona.build_personality_state_text())
 - `importance` 推荐保持在 `0.0` 到 `2.0`。
 - 搜索是简单包含匹配，不是向量检索。
 - `PersonalityState` 更新规则是固定轻量规则，不通过 `AgentConfig` 暴露配置项。
-- `update_personality_state()` 现在区分 user/assistant 两类输入：用户轮主要影响 `affinity/tension/current_focus`，助手轮主要影响 `mood/energy/last_emotion`。
+- `update_personality_state()` 现在区分 user/assistant 两类输入：用户轮主要影响长期关系、中期氛围、`tension/current_focus`；助手轮主要影响 `mood/energy/last_emotion/current_focus`。
 - 自然回落只用于缓和短期张力和表达活跃度，不会把高亲和关系自动抹平成长期中性。
