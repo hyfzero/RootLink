@@ -35,6 +35,7 @@ class ChatMessage:
     text: str
     is_user: bool
     timestamp: datetime = field(default_factory=datetime.now)
+    is_streaming: bool = False
 
 
 @dataclass(slots=True)
@@ -141,6 +142,9 @@ class CompanionUIView(ABC):
         raise NotImplementedError
 
     def append_message(self, message: ChatMessage) -> None:
+        raise NotImplementedError
+
+    def update_message_text(self, message_id: str, text: str, is_streaming: bool = False) -> None:
         raise NotImplementedError
 
     def set_typing(self, visible: bool) -> None:

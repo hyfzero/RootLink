@@ -40,6 +40,7 @@ class StubView(CompanionUIView):
         self.messages: list[ChatMessage] = []
         self.role_messages: dict[str, list[ChatMessage]] = {}
         self.appended: list[ChatMessage] = []
+        self.updated: list[tuple[str, str, bool]] = []
         self.typing_states: list[bool] = []
         self.applied_settings: UiSettings | None = None
         self.pages: list[str] = []
@@ -58,6 +59,14 @@ class StubView(CompanionUIView):
 
     def append_message(self, message: ChatMessage) -> None:
         self.appended.append(message)
+
+    def update_message_text(self, message_id: str, text: str, is_streaming: bool = False) -> None:
+        self.updated.append((message_id, text, is_streaming))
+        for message in self.appended:
+            if message.id == message_id:
+                message.text = text
+                message.is_streaming = is_streaming
+                break
 
     def set_typing(self, visible: bool) -> None:
         self.typing_states.append(visible)
@@ -81,15 +90,34 @@ class FakeSessionStorage:
 
 
 class FakeSessionManager:
-    def __init__(self, messages: list[object] | None = None, reply: dict | None = None) -> None:
+    def __init__(
+        self,
+        messages: list[object] | None = None,
+        reply: dict | None = None,
+        stream_deltas: list[str] | None = None,
+    ) -> None:
         self.storage = FakeSessionStorage(messages)
         self.reply = reply or {"message_id": "assistant-1", "content": "stub reply"}
+        self.stream_deltas = stream_deltas
         self.sent: list[tuple[str, object]] = []
         self.switched: list[str] = []
 
     def send_message_sync(self, user_message: str, emotion: object = None) -> dict:
         self.sent.append((user_message, emotion))
         return dict(self.reply)
+
+    def send_message_stream(self, user_message: str, emotion: object = None):
+        self.sent.append((user_message, emotion))
+        content = str(self.reply.get("content", ""))
+        if self.stream_deltas is None:
+            midpoint = max(1, len(content) // 2)
+            deltas = [content[:midpoint], content[midpoint:]]
+        else:
+            deltas = self.stream_deltas
+        for delta in deltas:
+            if delta:
+                yield {"type": "delta", "delta": delta}
+        yield {"type": "done", **dict(self.reply)}
 
     def switch_brain(self, brain_id: str) -> None:
         self.switched.append(brain_id)
@@ -275,31 +303,123 @@ class GuiControlTests(unittest.TestCase):
 
     def test_send_message_appends_backend_reply(self) -> None:
         manager = FakeSessionManager(reply={"message_id": "reply-1", "content": "assistant reply"})
-        controller = AmaduesController(runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()))
+        controller = AmaduesController(
+            runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
+            normal_sentence_delay=0,
+        )
         view = StubView()
         controller.bind_view(view)
 
         controller.on_send_message(AMADUES_UI_ROLE_ID, "hi", "normal")
+        controller.wait_for_streams()
 
         self.assertEqual(manager.sent, [("hi", None)])
         self.assertEqual(view.typing_states, [True, False])
-        self.assertEqual(view.appended[-1].id, "reply-1")
         self.assertEqual(view.appended[-1].text, "assistant reply")
         self.assertFalse(view.appended[-1].is_user)
+        self.assertEqual(view.updated[-1][2], False)
 
     def test_send_message_switches_to_data_role_brain(self) -> None:
         manager = FakeSessionManager(reply={"message_id": "reply-1", "content": "shinji reply"})
         registry = FakeBrainRegistry([AMADUES_BRAIN_ID, "shinji"], current=AMADUES_BRAIN_ID)
-        controller = AmaduesController(runtime_factory=lambda: AmaduesRuntime(manager, registry))
+        controller = AmaduesController(
+            runtime_factory=lambda: AmaduesRuntime(manager, registry),
+            normal_sentence_delay=0,
+        )
         view = StubView()
         controller.bind_view(view)
 
         controller.on_send_message("shinji", "hi", "normal")
+        controller.wait_for_streams()
 
         self.assertEqual(manager.switched, ["shinji"])
         self.assertEqual(manager.sent, [("hi", None)])
         self.assertEqual(view.appended[-1].role_id, "shinji")
         self.assertEqual(view.appended[-1].text, "shinji reply")
+
+    def test_send_message_splits_streamed_reply_into_sentence_bubbles(self) -> None:
+        manager = FakeSessionManager(reply={"message_id": "reply-1", "content": "第一句。第二句！"})
+        controller = AmaduesController(
+            runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
+            normal_sentence_delay=0,
+        )
+        view = StubView()
+        controller.bind_view(view)
+
+        controller.on_send_message(AMADUES_UI_ROLE_ID, "hi", "normal")
+        controller.wait_for_streams()
+
+        self.assertEqual([message.text for message in view.appended[-2:]], ["第一句。", "第二句！"])
+        self.assertFalse(view.appended[-1].is_streaming)
+
+    def test_streamed_reply_does_not_create_blank_first_assistant_bubble(self) -> None:
+        manager = FakeSessionManager(
+            reply={"message_id": "reply-1", "content": "第一"},
+            stream_deltas=["第一"],
+        )
+        controller = AmaduesController(
+            runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
+            normal_sentence_delay=0,
+        )
+        view = StubView()
+        controller.bind_view(view)
+
+        controller.on_send_message(AMADUES_UI_ROLE_ID, "hi", "normal")
+        controller.wait_for_streams()
+
+        self.assertEqual([message.text for message in view.appended], ["第一"])
+        self.assertNotIn("", [message.text for message in view.appended])
+        self.assertFalse(view.appended[0].is_streaming)
+
+    def test_single_delta_with_multiple_sentences_creates_multiple_bubbles(self) -> None:
+        manager = FakeSessionManager(
+            reply={"message_id": "reply-1", "content": "第一句。第二句！"},
+            stream_deltas=["第一句。第二句！"],
+        )
+        controller = AmaduesController(
+            runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
+            normal_sentence_delay=0,
+        )
+        view = StubView()
+        controller.bind_view(view)
+
+        controller.on_send_message(AMADUES_UI_ROLE_ID, "hi", "normal")
+        controller.wait_for_streams()
+
+        self.assertEqual([message.text for message in view.appended], ["第一句。", "第二句！"])
+        self.assertEqual([message.is_streaming for message in view.appended], [False, False])
+
+    def test_unfinished_stream_tail_finishes_current_bubble_only(self) -> None:
+        manager = FakeSessionManager(
+            reply={"message_id": "reply-1", "content": "还没说完"},
+            stream_deltas=["还没说完"],
+        )
+        controller = AmaduesController(
+            runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
+            normal_sentence_delay=0,
+        )
+        view = StubView()
+        controller.bind_view(view)
+
+        controller.on_send_message(AMADUES_UI_ROLE_ID, "hi", "normal")
+        controller.wait_for_streams()
+
+        self.assertEqual(len(view.appended), 1)
+        self.assertEqual(view.appended[0].text, "还没说完")
+        self.assertFalse(view.appended[0].is_streaming)
+
+    def test_send_message_updates_single_immersive_message_while_streaming(self) -> None:
+        manager = FakeSessionManager(reply={"message_id": "reply-1", "content": "第一句。第二句！"})
+        controller = AmaduesController(runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()))
+        view = StubView()
+        controller.bind_view(view)
+
+        controller.on_send_message(AMADUES_UI_ROLE_ID, "hi", "immersive")
+        controller.wait_for_streams()
+
+        self.assertEqual(len(view.appended), 1)
+        self.assertEqual(view.appended[0].text, "第一句。第二句！")
+        self.assertFalse(view.appended[0].is_streaming)
 
     def test_saving_settings_invalidates_cached_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir:

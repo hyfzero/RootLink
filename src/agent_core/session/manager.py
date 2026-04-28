@@ -8,7 +8,7 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional, Any, Iterator
 
 from ..api.client import ChatAgent
 from ..api.adapter import ModelConfig
@@ -297,6 +297,53 @@ class SessionManager:
             "message_id": message_id,
             "brain_id": self._current_brain_id,
         }
+
+    def send_message_stream(
+        self,
+        user_message: str,
+        emotion: Optional[str] = None,
+    ) -> Iterator[dict]:
+        """同步生成器版本的消息发送，逐步产出流式事件。
+
+        事件格式:
+        - {"type": "delta", "delta": "..."}
+        - {"type": "done", "content": "...", "message_id": "...", "tag": ReplyTag, "brain_id": "..."}
+        - {"type": "error", "error": "..."}
+        """
+        try:
+            self._check_and_handle_day_change_sync()
+            self._sync_tokenizer_runtime()
+
+            self.storage.add_message("user", user_message)
+            self._sync_history_message("user", user_message)
+            self._sync_relationship_state("user", user_message)
+            self._sync_personality_state("user", user_message, emotion)
+
+            system_prompt = self.prompt_builder.build_system_prompt(emotion)
+            context = self.prompt_builder.build_conversation_context(user_message)
+            messages = self._build_api_messages(system_prompt, context)
+
+            assistant_content = ""
+            try:
+                for chunk in self.chat_agent.stream_chat(messages):
+                    delta = getattr(chunk, "delta", "") or ""
+                    if not delta:
+                        continue
+                    assistant_content += delta
+                    yield {"type": "delta", "delta": delta}
+            except Exception as stream_error:
+                if assistant_content:
+                    yield {"type": "error", "error": str(stream_error)}
+                    return
+                response = self._call_api_sync(system_prompt, context)
+                assistant_content = response.get("content", "")
+                for delta in self._iter_simulated_deltas(assistant_content):
+                    yield {"type": "delta", "delta": delta}
+
+            result = self._finalize_assistant_message(assistant_content)
+            yield {"type": "done", **result}
+        except Exception as exc:
+            yield {"type": "error", "error": str(exc)}
 
     # === 日期切换处理 ===
 
@@ -666,6 +713,39 @@ class SessionManager:
         """生成消息 ID"""
         return f"msg_{int(time.time() * 1000)}"
 
+    def _build_api_messages(self, system_prompt: str, context: str) -> list[ApiMessage]:
+        return [
+            ApiMessage(role=ApiMessageRole.SYSTEM, content=system_prompt),
+            ApiMessage(role=ApiMessageRole.USER, content=context),
+        ]
+
+    def _iter_simulated_deltas(self, content: str) -> Iterator[str]:
+        """在 provider 不支持流式时，按句模拟前端可消费的增量。"""
+        pending = ""
+        for char in content:
+            pending += char
+            if char in "。！？!?\n":
+                yield pending
+                pending = ""
+        if pending:
+            yield pending
+
+    def _finalize_assistant_message(self, assistant_content: str) -> dict:
+        message_id = self._generate_message_id()
+        reply_tag = self.tagger.generate_and_save(message_id, assistant_content)
+
+        self.storage.add_message("assistant", assistant_content)
+        self._sync_history_message("assistant", assistant_content)
+        self._sync_relationship_state("assistant", assistant_content)
+        self._sync_personality_state("assistant", assistant_content, reply_tag.emotion)
+
+        return {
+            "content": assistant_content,
+            "tag": reply_tag,
+            "message_id": message_id,
+            "brain_id": self._current_brain_id,
+        }
+
     def _sync_tokenizer_runtime(self) -> None:
         """Sync runtime model tokenizer strategy into history/storage chain."""
         try:
@@ -826,10 +906,7 @@ class SessionManager:
     ) -> dict:
         """调用 API（异步）"""
         # 使用 api.message.Message 而不是 brain.Message
-        messages = [
-            ApiMessage(role=ApiMessageRole.SYSTEM, content=system_prompt),
-            ApiMessage(role=ApiMessageRole.USER, content=context),
-        ]
+        messages = self._build_api_messages(system_prompt, context)
 
         response = self.chat_agent.chat(messages, stream=stream)
 
@@ -843,10 +920,7 @@ class SessionManager:
     def _call_api_sync(self, system_prompt: str, context: str) -> dict:
         """调用 API（同步）"""
         # 使用 api.message.Message 而不是 brain.Message
-        messages = [
-            ApiMessage(role=ApiMessageRole.SYSTEM, content=system_prompt),
-            ApiMessage(role=ApiMessageRole.USER, content=context),
-        ]
+        messages = self._build_api_messages(system_prompt, context)
 
         response = self.chat_agent.chat(messages, stream=False)
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import flet as ft
 
 MOBILE_WIDTH = 428
+UI_FONT_FAMILY = "Microsoft YaHei UI"
 
 MOTION = {
     "fast": 180,
@@ -29,7 +30,7 @@ def hex_with_alpha(hex_color: str, alpha: int) -> str:
 
 
 def app_gradient(is_dark: bool) -> ft.LinearGradient:
-    colors = ["#1A1625", "#1E1A2E", "#2A2438"] if is_dark else ["#E8E6F0", "#EBE9F3", "#EFEDF7"]
+    colors = ["#302B39", "#352F40", "#3B3548"] if is_dark else ["#E9E6EF", "#EDEAF2", "#F1EEF5"]
     return ft.LinearGradient(colors=colors, begin=ft.Alignment(0, -1), end=ft.Alignment(0, 1))
 
 
@@ -40,53 +41,61 @@ def animation(name: str = "normal", curve: ft.AnimationCurve | None = None, phas
 def character_chat_gradient(role_id: str, is_dark: bool) -> ft.LinearGradient:
     if not is_dark:
         if role_id == "shinji":
-            colors = ["#DFE3E9", "#E3E7ED", "#E8ECF2"]
+            colors = ["#E3E7ED", "#E8EBF1", "#EEF1F5"]
         elif role_id == "asuka":
-            colors = ["#F0E6E8", "#F3E9EB", "#F7EDEF"]
+            colors = ["#F0E6EA", "#F4ECEF", "#F7F1F3"]
         else:
-            colors = ["#E8E6F0", "#EBE9F3", "#EFEDF7"]
+            colors = ["#E9E6EF", "#EDEAF2", "#F1EEF5"]
     else:
         if role_id == "shinji":
-            colors = ["#1E2430", "#1A1E28", "#16181F"]
+            colors = ["#38404C", "#333B47", "#2F3642"]
         elif role_id == "asuka":
-            colors = ["#2E2228", "#251E22", "#1D181C"]
+            colors = ["#453941", "#3F343B", "#383038"]
         else:
-            colors = ["#2A2438", "#1E1A2E", "#1A1625"]
+            colors = ["#3B3548", "#352F40", "#302B39"]
     return ft.LinearGradient(colors=colors, begin=ft.Alignment(0, -1), end=ft.Alignment(0, 1))
 
 
 def palette(is_dark: bool) -> dict[str, str]:
     if is_dark:
         return {
-            "text": "#FFFFFF",
-            "text_soft": hex_with_alpha("#FFFFFF", 0xE6),
-            "text_secondary": hex_with_alpha("#FFFFFF", 0x80),
-            "text_tertiary": hex_with_alpha("#FFFFFF", 0x66),
-            "card": hex_with_alpha("#FFFFFF", 0x0D),
-            "card_strong": hex_with_alpha("#FFFFFF", 0x14),
-            "card_border": hex_with_alpha("#FFFFFF", 0x0D),
-            "input": hex_with_alpha("#FFFFFF", 0x14),
-            "input_border": hex_with_alpha("#FFFFFF", 0x1A),
-            "muted": hex_with_alpha("#FFFFFF", 0x0D),
-            "message": hex_with_alpha("#FFFFFF", 0x14),
-            "message_border": hex_with_alpha("#FFFFFF", 0x0D),
+            "text": "#F0EAF5",
+            "text_soft": hex_with_alpha("#F0EAF5", 0xDC),
+            "text_secondary": hex_with_alpha("#F0EAF5", 0x8A),
+            "text_tertiary": hex_with_alpha("#F0EAF5", 0x6C),
+            "card": hex_with_alpha("#FFFFFF", 0x12),
+            "card_strong": hex_with_alpha("#FFFFFF", 0x1A),
+            "card_border": hex_with_alpha("#FFFFFF", 0x16),
+            "input": hex_with_alpha("#FFFFFF", 0x1A),
+            "input_bar": hex_with_alpha("#26212F", 0x8A),
+            "input_button": hex_with_alpha("#FFFFFF", 0x18),
+            "input_border": hex_with_alpha("#FFFFFF", 0x20),
+            "muted": hex_with_alpha("#FFFFFF", 0x12),
+            "message": hex_with_alpha("#FFFFFF", 0x18),
+            "message_border": hex_with_alpha("#FFFFFF", 0x12),
             "button_text_dark": "#1A1625",
         }
     return {
-        "text": "#1F1B2E",
-        "text_soft": hex_with_alpha("#1F1B2E", 0xE6),
-        "text_secondary": hex_with_alpha("#1F1B2E", 0xA6),
-        "text_tertiary": hex_with_alpha("#1F1B2E", 0x73),
-        "card": hex_with_alpha("#FFFFFF", 0xCC),
-        "card_strong": hex_with_alpha("#FFFFFF", 0xE6),
-        "card_border": hex_with_alpha("#1F1B2E", 0x14),
-        "input": hex_with_alpha("#FFFFFF", 0xE6),
-        "input_border": hex_with_alpha("#1F1B2E", 0x26),
-        "muted": hex_with_alpha("#1F1B2E", 0x0D),
-        "message": hex_with_alpha("#FFFFFF", 0xE6),
-        "message_border": hex_with_alpha("#1F1B2E", 0x1A),
+        "text": "#363040",
+        "text_soft": hex_with_alpha("#363040", 0xDC),
+        "text_secondary": hex_with_alpha("#363040", 0x92),
+        "text_tertiary": hex_with_alpha("#363040", 0x70),
+        "card": hex_with_alpha("#FFFFFF", 0xA8),
+        "card_strong": hex_with_alpha("#FFFFFF", 0xC8),
+        "card_border": hex_with_alpha("#3B334A", 0x14),
+        "input": hex_with_alpha("#FFFFFF", 0xC8),
+        "input_bar": hex_with_alpha("#EDEAF2", 0xD8),
+        "input_button": hex_with_alpha("#FFFFFF", 0xC8),
+        "input_border": hex_with_alpha("#3B334A", 0x18),
+        "muted": hex_with_alpha("#3B334A", 0x0E),
+        "message": hex_with_alpha("#FFFFFF", 0xC8),
+        "message_border": hex_with_alpha("#3B334A", 0x16),
         "button_text_dark": "#FFFFFF",
     }
+
+
+def is_dark_palette(colors: dict[str, str]) -> bool:
+    return colors.get("button_text_dark") == "#1A1625"
 
 
 def glass_gradient(accent_color: str, is_dark: bool, strong: bool = False) -> ft.LinearGradient:
@@ -103,9 +112,9 @@ def glass_gradient(accent_color: str, is_dark: bool, strong: bool = False) -> ft
 
 def soft_shadow(is_dark: bool, accent_color: str | None = None, level: str = "card") -> list[ft.BoxShadow]:
     if accent_color:
-        color = hex_with_alpha(accent_color, 0x24 if is_dark else 0x34)
+        color = hex_with_alpha(accent_color, 0x20 if is_dark else 0x2A)
     else:
-        color = hex_with_alpha("#000000", 0x33) if is_dark else hex_with_alpha("#1F1B2E", 0x1A)
+        color = hex_with_alpha("#000000", 0x24) if is_dark else hex_with_alpha("#2E2938", 0x12)
     blur = 24 if level == "button" else 18
     y = 8 if level == "button" else 5
     return [ft.BoxShadow(spread_radius=0, blur_radius=blur, color=color, offset=ft.Offset(0, y))]

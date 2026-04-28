@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -24,6 +26,11 @@ from agent_core.brain import (
 from agent_core.models import ModelsJsonConfig, ModelsStorage, ProviderConfig, get_model_catalog
 from agent_core.session import BrainRegistry, PathResolver, SessionConfig, SessionManager
 
+from .chat_text import (
+    NORMAL_SENTENCE_DELAY_SECONDS,
+    consume_complete_sentence,
+    split_display_sentences,
+)
 from .interfaces import (
     CharacterDraft,
     ChatMessage,
@@ -48,6 +55,91 @@ RESOURCE_DIR = PROJECT_ROOT / "resource"
 
 class ChatConfigurationError(RuntimeError):
     """Raised when the persisted chat configuration is incomplete."""
+
+
+class _NormalMessageStreamer:
+    """Buffers assistant deltas into sentence-sized UI bubbles."""
+
+    def __init__(
+        self,
+        view: CompanionUIView,
+        role_id: str,
+        base_id: str,
+        sentence_delay: float = NORMAL_SENTENCE_DELAY_SECONDS,
+    ) -> None:
+        self._view = view
+        self._role_id = role_id
+        self._base_id = base_id
+        self._pending = ""
+        self._index = 0
+        self._current_id: str | None = None
+        self._sentence_delay = sentence_delay
+        self._has_emitted_sentence = False
+
+    def push(self, delta: str) -> None:
+        if not delta:
+            return
+        self._pending += delta
+        if self._current_id is None:
+            self._pending = self._pending.lstrip()
+        if not self._pending.strip():
+            return
+
+        while self._pending:
+            sentence, rest = consume_complete_sentence(self._pending)
+            if sentence is None:
+                self._show_current(self._pending, is_streaming=True)
+                break
+            self._show_current(sentence, is_streaming=False)
+            self._pending = rest
+            self._current_id = None
+            self._index += 1
+            self._has_emitted_sentence = True
+            if self._pending.strip():
+                time.sleep(self._sentence_delay)
+            else:
+                self._pending = ""
+                break
+
+    def finish(self, content: str | None = None) -> None:
+        if content and not self._current_id and not self._pending:
+            for sentence in split_display_sentences(content):
+                self._pace_after_previous_sentence()
+                self._show_current(sentence, is_streaming=False)
+                self._current_id = None
+                self._index += 1
+                self._has_emitted_sentence = True
+            return
+        if self._current_id is not None:
+            final_text = self._pending.strip()
+            if final_text:
+                self._view.update_message_text(self._current_id, final_text, is_streaming=False)
+            self._current_id = None
+            self._pending = ""
+
+    def _pace_after_previous_sentence(self) -> None:
+        if self._has_emitted_sentence:
+            time.sleep(self._sentence_delay)
+
+    def _show_current(self, text: str, is_streaming: bool) -> None:
+        visible_text = text.strip()
+        if not visible_text:
+            return
+        if self._current_id is not None:
+            self._view.update_message_text(self._current_id, visible_text, is_streaming=is_streaming)
+            return
+        message_id = f"{self._base_id}-{self._index}"
+        self._current_id = message_id
+        self._view.append_message(
+            ChatMessage(
+                id=message_id,
+                role_id=self._role_id,
+                text=visible_text,
+                is_user=False,
+                timestamp=datetime.now(),
+                is_streaming=is_streaming,
+            )
+        )
 
 
 @dataclass(slots=True)
@@ -345,6 +437,7 @@ class AmaduesController(CompanionUICallback):
         view: Optional[CompanionUIView] = None,
         settings_storage: Optional[UiSettingsStorage] = None,
         runtime_factory: Optional[Callable[[], AmaduesRuntime]] = None,
+        normal_sentence_delay: float = NORMAL_SENTENCE_DELAY_SECONDS,
     ) -> None:
         self.view = view
         self.settings_storage = settings_storage or UiSettingsStorage()
@@ -357,6 +450,8 @@ class AmaduesController(CompanionUICallback):
         self._runtime: Optional[AmaduesRuntime] = None
         self._settings = self.settings_storage.load_ui_settings()
         self._role_mapping: dict[str, str] = {}
+        self._stream_threads: list[threading.Thread] = []
+        self._normal_sentence_delay = normal_sentence_delay
 
     @property
     def initial_settings(self) -> UiSettings:
@@ -485,19 +580,77 @@ class AmaduesController(CompanionUICallback):
             return
 
         self.view.set_typing(True)
+        thread = threading.Thread(
+            target=self._send_message_worker,
+            args=(role_id, text, mode),
+            daemon=True,
+        )
+        self._stream_threads.append(thread)
+        thread.start()
+
+    def wait_for_streams(self, timeout: float | None = None) -> None:
+        """Wait for active message workers; used by tests and diagnostics."""
+        for thread in list(self._stream_threads):
+            thread.join(timeout=timeout)
+            if not thread.is_alive():
+                self._stream_threads.remove(thread)
+
+    def _send_message_worker(self, role_id: str, text: str, mode: str) -> None:
+        if self.view is None:
+            return
+        assistant_id = f"assistant-{datetime.now().timestamp()}"
+        normal_streamer: _NormalMessageStreamer | None = None
+        immersive_started = False
+        accumulated = ""
         try:
             runtime = self._get_runtime()
             self._select_role_runtime(role_id, runtime)
-            result = runtime.session_manager.send_message_sync(user_message=text, emotion=None)
-            self.view.append_message(
-                ChatMessage(
-                    id=str(result.get("message_id", f"assistant-{datetime.now().timestamp()}")),
-                    role_id=role_id,
-                    text=str(result.get("content", "")),
-                    is_user=False,
-                    timestamp=datetime.now(),
+            stream_method = getattr(runtime.session_manager, "send_message_stream", None)
+            if not callable(stream_method):
+                result = runtime.session_manager.send_message_sync(user_message=text, emotion=None)
+                self._append_finished_reply(role_id, mode, assistant_id, str(result.get("content", "")))
+                return
+
+            if mode == "normal":
+                normal_streamer = _NormalMessageStreamer(
+                    self.view,
+                    role_id,
+                    assistant_id,
+                    sentence_delay=self._normal_sentence_delay,
                 )
-            )
+            else:
+                self.view.append_message(
+                    ChatMessage(
+                        id=assistant_id,
+                        role_id=role_id,
+                        text="",
+                        is_user=False,
+                        timestamp=datetime.now(),
+                        is_streaming=True,
+                    )
+                )
+                immersive_started = True
+
+            for event in stream_method(user_message=text, emotion=None):
+                event_type = event.get("type")
+                if event_type == "delta":
+                    delta = str(event.get("delta", ""))
+                    if not delta:
+                        continue
+                    accumulated += delta
+                    if normal_streamer is not None:
+                        normal_streamer.push(delta)
+                    else:
+                        self.view.update_message_text(assistant_id, accumulated, is_streaming=True)
+                elif event_type == "done":
+                    content = str(event.get("content", accumulated))
+                    if normal_streamer is not None:
+                        normal_streamer.finish(content if not accumulated else None)
+                    else:
+                        self.view.update_message_text(assistant_id, content, is_streaming=False)
+                    return
+                elif event_type == "error":
+                    raise RuntimeError(str(event.get("error", "unknown streaming error")))
         except ChatConfigurationError:
             self.view.append_message(
                 self._notice(role_id, f"MiniMax \u5c1a\u672a\u914d\u7f6e\u3002{CONFIG_NOTICE}")
@@ -505,7 +658,36 @@ class AmaduesController(CompanionUICallback):
         except Exception as exc:
             self.view.append_message(self._notice(role_id, f"\u6d88\u606f\u53d1\u9001\u5931\u8d25\uff1a{exc}"))
         finally:
+            if normal_streamer is not None:
+                normal_streamer.finish()
+            elif immersive_started:
+                self.view.update_message_text(assistant_id, accumulated, is_streaming=False)
             self.view.set_typing(False)
+
+    def _append_finished_reply(self, role_id: str, mode: str, assistant_id: str, content: str) -> None:
+        if self.view is None:
+            return
+        if mode == "normal":
+            for index, sentence in enumerate(split_display_sentences(content) or [content]):
+                self.view.append_message(
+                    ChatMessage(
+                        id=f"{assistant_id}-{index}",
+                        role_id=role_id,
+                        text=sentence,
+                        is_user=False,
+                        timestamp=datetime.now(),
+                    )
+                )
+            return
+        self.view.append_message(
+            ChatMessage(
+                id=assistant_id,
+                role_id=role_id,
+                text=content,
+                is_user=False,
+                timestamp=datetime.now(),
+            )
+        )
 
     def on_chat_mode_changed(self, mode: str) -> None:
         print(f"[ui] chat mode: {mode}")

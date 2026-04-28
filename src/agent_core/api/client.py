@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterator, Optional
 
 import requests
 
@@ -107,6 +107,24 @@ class ChatAgent:
             return self._stream(request)
         return self._send(request)
 
+    def stream_chat(
+        self,
+        messages: list[Message | dict],
+        tools: Optional[list[ToolDefinition]] = None,
+        **kwargs,
+    ) -> Iterator[StreamChunk]:
+        """发送聊天请求并逐块返回 provider 的流式增量。"""
+        request = ChatCompletionRequest(
+            model=self.config.name,
+            messages=messages,
+            temperature=kwargs.get("temperature", self.config.temperature),
+            max_tokens=kwargs.get("max_tokens", self.config.max_tokens),
+            tools=tools,
+            stream=True,
+            reasoning_split=getattr(self.config, "supports_thinking", False),
+        )
+        yield from self._iter_stream(request)
+
     def _send(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         """发送同步请求。"""
         url = f"{self.config.resolved_base_url}/chat/completions"
@@ -157,7 +175,19 @@ class ChatAgent:
         return response
 
     def _stream(self, request: ChatCompletionRequest) -> StreamChunk:
-        """发送流式请求。"""
+        """发送流式请求，并兼容旧接口返回聚合后的完整块。"""
+        accumulated = ""
+        final_chunk: Optional[StreamChunk] = None
+        for chunk in self._iter_stream(request):
+            accumulated += chunk.delta
+            final_chunk = chunk
+
+        is_complete = final_chunk.is_complete if final_chunk else True
+        reasoning = final_chunk.reasoning if final_chunk else None
+        return StreamChunk(delta=accumulated, is_complete=is_complete, reasoning=reasoning)
+
+    def _iter_stream(self, request: ChatCompletionRequest) -> Iterator[StreamChunk]:
+        """发送流式请求并逐个产出解析后的增量块。"""
         url = f"{self.config.resolved_base_url}/chat/completions"
 
         headers = self.adapter.build_headers(self.config)
@@ -165,39 +195,30 @@ class ChatAgent:
 
         logger.debug(f"Streaming request to {url}")
 
-        response = requests.post(url, headers=headers, json=data, stream=True, timeout=120)
-        response.raise_for_status()
+        with requests.post(url, headers=headers, json=data, stream=True, timeout=120) as response:
+            response.raise_for_status()
 
-        accumulated = ""
-        final_chunk: Optional[StreamChunk] = None
+            for line in response.iter_lines():
+                if not line:
+                    continue
 
-        for line in response.iter_lines():
-            if not line:
-                continue
+                line_text = line.decode("utf-8")
+                if line_text.startswith("data: "):
+                    line_text = line_text[6:]
 
-            line_text = line.decode("utf-8")
-            if line_text.startswith("data: "):
-                line_text = line_text[6:]
+                if line_text == "[DONE]":
+                    break
 
-            if line_text == "[DONE]":
-                break
+                try:
+                    chunk_data = json.loads(line_text)
+                except json.JSONDecodeError:
+                    continue
 
-            try:
-                chunk_data = json.loads(line_text)
                 chunk = self.adapter.parse_stream_chunk(chunk_data)
-                accumulated += chunk.delta
-                final_chunk = chunk
+                yield chunk
 
                 if chunk.is_complete:
                     break
-
-            except json.JSONDecodeError:
-                continue
-
-        # 构建完整的响应
-        is_complete = final_chunk.is_complete if final_chunk else True
-        reasoning = final_chunk.reasoning if final_chunk else None
-        return StreamChunk(delta=accumulated, is_complete=is_complete, reasoning=reasoning)
 
     @property
     def provider(self) -> APIProvider:

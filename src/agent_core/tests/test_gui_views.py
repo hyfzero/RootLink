@@ -124,6 +124,40 @@ class GuiViewTests(unittest.TestCase):
         view._advance_immersive_text(None)
         self.assertEqual(view._current_immersive_text(role), "第三句？")
 
+    def test_immersive_click_completes_current_sentence_before_advancing(self) -> None:
+        role = make_role()
+        view = CompanionAppView(roles=[role])
+        view._active_role_id = role.id
+        view._chat_mode = "immersive"
+        view._messages = [
+            ChatMessage("assistant-1", role.id, "第一句。第二句！", False, datetime.now()),
+        ]
+        view._immersive_dialogue_text = ft.Text("")
+        view._reset_immersive_state(role)
+        view._immersive_display_text = "第一"
+
+        view._advance_immersive_text(None)
+
+        self.assertEqual(view._immersive_index, 0)
+        self.assertEqual(view._immersive_display_text, "第一句。")
+
+        view._advance_immersive_text(None)
+
+        self.assertEqual(view._immersive_index, 1)
+
+    def test_update_message_text_refreshes_streaming_message(self) -> None:
+        role = make_role()
+        view = CompanionAppView(roles=[role])
+        view._active_role_id = role.id
+        view._messages = [
+            ChatMessage("assistant-1", role.id, "旧", False, datetime.now(), is_streaming=True),
+        ]
+
+        view.update_message_text("assistant-1", "新内容", is_streaming=False)
+
+        self.assertEqual(view._messages[0].text, "新内容")
+        self.assertFalse(view._messages[0].is_streaming)
+
     def test_new_assistant_message_resets_immersive_state(self) -> None:
         role = make_role()
         view = CompanionAppView(roles=[role])
@@ -238,6 +272,49 @@ class GuiViewTests(unittest.TestCase):
         self.assertEqual(getattr(controls[0], "key", None), None)
         self.assertEqual(getattr(controls[1], "key", None), "msg-assistant-2")
         self.assertEqual(getattr(controls[2], "key", None), "msg-assistant-1")
+
+    def test_normal_renderer_splits_complete_assistant_message_into_virtual_bubbles(self) -> None:
+        role = make_role()
+        view = CompanionAppView(roles=[role])
+        view._messages = [
+            ChatMessage("assistant-1", role.id, "第一句。第二句！", False, datetime.now()),
+        ]
+
+        controls = view._build_chat_message_controls(view._colors(), role)
+
+        self.assertEqual(
+            [getattr(control, "key", None) for control in controls],
+            ["msg-assistant-1-display-0", "msg-assistant-1-display-1"],
+        )
+        self.assertEqual(len(view._messages), 1)
+
+    def test_normal_renderer_does_not_split_streaming_assistant_message(self) -> None:
+        role = make_role()
+        view = CompanionAppView(roles=[role])
+        view._messages = [
+            ChatMessage("assistant-1", role.id, "第一句。第二句！", False, datetime.now(), is_streaming=True),
+        ]
+
+        controls = view._build_chat_message_controls(view._colors(), role)
+
+        self.assertEqual([getattr(control, "key", None) for control in controls], ["msg-assistant-1"])
+
+    def test_switching_from_immersive_to_normal_shows_virtual_sentence_bubbles(self) -> None:
+        role = make_role()
+        view = TrackingCompanionAppView(page=FakePage())
+        view._active_role_id = role.id
+        view._chat_mode = "immersive"
+        view._messages = [
+            ChatMessage("assistant-1", role.id, "第一句。第二句！", False, datetime.now()),
+        ]
+
+        view._set_chat_mode("normal")
+        controls = view._build_chat_message_controls(view._colors(), role)
+
+        self.assertEqual(
+            [getattr(control, "key", None) for control in controls],
+            ["msg-assistant-1-display-0", "msg-assistant-1-display-1"],
+        )
 
     def test_message_bubble_layout_is_responsive(self) -> None:
         role = make_role()
