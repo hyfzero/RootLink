@@ -17,17 +17,12 @@ if str(SRC_DIR) not in sys.path:
 from agent_core.api import ChatAgent
 from agent_core.api.adapter import APIProvider, ModelConfig
 from agent_core.brain import (
-    AgentConfig,
-    MessageHistory,
-    Persona,
     PersonaProfile,
-    PromptBuilder,
     SpeakingStyleEngine,
     TagGenerator,
 )
 from agent_core.models import ModelsJsonConfig, ModelsStorage, ProviderConfig, get_model_catalog
 from agent_core.session import BrainRegistry, PathResolver, SessionConfig, SessionManager
-from agent_core.session.brain_registry import BrainComponents
 
 from .interfaces import (
     CharacterDraft,
@@ -41,7 +36,7 @@ from .role_loader import load_roles_from_data, load_roles_from_registry
 
 
 AMADUES_BRAIN_ID = "amadues"
-AMADUES_UI_ROLE_ID = "amadeus"
+AMADUES_UI_ROLE_ID = AMADUES_BRAIN_ID
 SHINJI_BRAIN_ID = "shinji"
 MINIMAX_PROVIDER = "minimax"
 MINIMAX_MODEL = "MiniMax-M2.5"
@@ -309,38 +304,6 @@ def _ensure_default_shinji_data(brain_id: str = SHINJI_BRAIN_ID) -> Path:
     return brain_dir
 
 
-def _ensure_default_role_data() -> None:
-    """Create bundled default roles in the active data root only."""
-
-    _ensure_default_amadues_data()
-    _ensure_default_shinji_data()
-
-
-def _build_default_brain_components() -> BrainComponents:
-    profile = _default_persona_profile()
-    persona = Persona(profile)
-    history = MessageHistory(
-        max_context_tokens=4000,
-        token_reserved=1000,
-        retention_days=30,
-    )
-    style_engine = SpeakingStyleEngine(preset_name="gentle", influence_weight=0.5)
-    config = AgentConfig()
-    prompt_builder = PromptBuilder(
-        persona=persona,
-        history=history,
-        style_engine=style_engine,
-        config=config,
-    )
-    return BrainComponents(
-        persona=persona,
-        history=history,
-        style_engine=style_engine,
-        prompt_builder=prompt_builder,
-        config=config,
-    )
-
-
 def build_amadues_runtime(
     config_dir: str | Path | None = None,
     brain_id: str = AMADUES_BRAIN_ID,
@@ -348,14 +311,15 @@ def build_amadues_runtime(
     model_config = _load_model_config(config_dir)
     chat_agent = ChatAgent(config=model_config)
 
-    _ensure_default_role_data()
     brain_registry = BrainRegistry(PathResolver.get_data_dir())
     brain_registry.load_all()
 
-    if brain_id not in brain_registry.list_brains():
-        brain_registry.register(brain_id, _build_default_brain_components())
+    loaded_brains = brain_registry.list_brains()
+    if not loaded_brains:
+        raise RuntimeError("No brains found in the data directory.")
 
-    brain_registry.switch(brain_id)
+    selected_brain_id = brain_id if brain_id in loaded_brains else loaded_brains[0]
+    brain_registry.switch(selected_brain_id)
     session_config = SessionConfig(
         model_config=model_config,
         max_messages_per_day=500,
@@ -392,7 +356,7 @@ class AmaduesController(CompanionUICallback):
             self._runtime_factory = runtime_factory
         self._runtime: Optional[AmaduesRuntime] = None
         self._settings = self.settings_storage.load_ui_settings()
-        self._role_mapping = {AMADUES_UI_ROLE_ID: AMADUES_BRAIN_ID}
+        self._role_mapping: dict[str, str] = {}
 
     @property
     def initial_settings(self) -> UiSettings:
@@ -415,15 +379,11 @@ class AmaduesController(CompanionUICallback):
     def _remember_roles(self, roles: list[CompanionRole]) -> None:
         for role in roles:
             self._role_mapping[role.id] = role.id
-        self._role_mapping[AMADUES_UI_ROLE_ID] = AMADUES_BRAIN_ID
 
     def _publish_data_roles(self) -> None:
         if self.view is None:
             return
-        _ensure_default_role_data()
         roles = load_roles_from_data()
-        if not roles:
-            return
         self._remember_roles(roles)
         self.view.set_roles(roles)
 
@@ -433,8 +393,6 @@ class AmaduesController(CompanionUICallback):
         if not callable(getattr(runtime.brain_registry, "list_brains", None)):
             return
         roles = load_roles_from_registry(runtime.brain_registry, PathResolver.get_data_dir())
-        if not roles:
-            return
         self._remember_roles(roles)
         self.view.set_roles(roles)
 

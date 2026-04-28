@@ -52,6 +52,18 @@ from .theme import (
 )
 from .role_loader import load_roles_from_data
 
+EMPTY_ROLE = CompanionRole(
+    id="",
+    name="未创建角色",
+    type="Empty",
+    tags=[],
+    intro="当前还没有可用角色。",
+    status_text="请先创建角色。",
+    accent_color="#B6A8C9",
+    avatar_path="",
+    standing_image_path="",
+)
+
 SETTINGS_PROVIDERS = [
     ("minimax", "MiniMax"),
 ]
@@ -68,9 +80,6 @@ CREATE_STEPS = ["基础信息", "立绘", "人格", "记忆", "语言风格"]
 
 
 def default_roles() -> list[CompanionRole]:
-    from .control import _ensure_default_role_data
-
-    _ensure_default_role_data()
     return load_roles_from_data()
 
 
@@ -89,13 +98,13 @@ class CompanionAppView(ft.Container, CompanionUIView):
     ) -> None:
         super().__init__(expand=True)
         self._callback = callback or NoopCallback()
-        self._roles = roles or default_roles()
+        self._roles = default_roles() if roles is None else roles
         self._active_role_id = self._roles[0].id if self._roles else ""
         self._page_name = "home"
         self._is_dark = is_dark
         self._chat_mode = "normal"
         self._chat_mode_seed = 0
-        self._messages = self._seed_messages(self.active_role)
+        self._messages = self._seed_messages(self.active_role) if self._roles else []
         self._seen_message_ids = {message.id for message in self._messages}
         self._typing = False
         self._settings = UiSettings(is_dark=is_dark)
@@ -128,7 +137,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
         for role in self._roles:
             if role.id == self._active_role_id:
                 return role
-        return self._roles[0]
+        if self._roles:
+            return self._roles[0]
+        return EMPTY_ROLE
 
     def _seed_messages(self, role: CompanionRole) -> list[ChatMessage]:
         seed = {
@@ -236,6 +247,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         return self._build_home_page(colors)
 
     def _build_home_page(self, colors: dict[str, str]) -> ft.Control:
+        if not self._roles:
+            return self._build_empty_home_page(colors)
         selected = self.active_role
         role_cards = [RoleSelectorCard(role, role.id == selected.id, self._is_dark, self.set_active_role) for role in self._roles]
         role_cards.append(self._create_selector_card(colors))
@@ -322,6 +335,88 @@ class CompanionAppView(ft.Container, CompanionUIView):
         ]
         return self._page_column([ft.Container(padding=ft.padding.only(left=20, right=20, top=32, bottom=20), content=ft.Column(spacing=28, controls=controls))])
 
+    def _build_empty_home_page(self, colors: dict[str, str]) -> ft.Control:
+        controls = [
+            self._stagger(
+                "home",
+                0,
+                ft.Container(
+                    padding=ft.padding.only(bottom=2),
+                    content=ft.Row(
+                        alignment=ft.MainAxisAlignment.END,
+                        spacing=12,
+                        controls=[
+                            ft.Container(expand=True),
+                            ft.Container(
+                                padding=ft.padding.symmetric(horizontal=15, vertical=10),
+                                border_radius=22,
+                                bgcolor=colors["card"],
+                                border=ft.border.all(1, colors["card_border"]),
+                                ink=True,
+                                scale=1.0,
+                                animate_scale=animation("fast", phase="press"),
+                                on_click=animated_click(lambda _: self._toggle_theme()),
+                                content=ft.Row(
+                                    spacing=8,
+                                    controls=[
+                                        ft.Icon(ft.Icons.DARK_MODE if self._is_dark else ft.Icons.LIGHT_MODE, size=17, color=colors["text"]),
+                                        text("澶滄櫄" if self._is_dark else "鐧藉ぉ", 12, colors["text"]),
+                                    ],
+                                ),
+                            ),
+                            round_icon_button(ft.Icons.SETTINGS_OUTLINED, colors, lambda _: self.show_page("settings")),
+                        ],
+                    ),
+                ),
+            ),
+            self._stagger(
+                "home",
+                1,
+                ft.Column(
+                    spacing=10,
+                    controls=[
+                        text("还没有角色", 28, colors["text"], ft.FontWeight.W_500),
+                        text("当前会按 data 目录动态加载 brain。现在 data 下还没有可用 brain。", 15, colors["text_secondary"]),
+                    ],
+                ),
+            ),
+            self._stagger(
+                "home",
+                2,
+                section_card(
+                    ft.Column(
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=10,
+                        controls=[
+                            ft.Icon(ft.Icons.PSYCHOLOGY_ALT_OUTLINED, size=28, color=colors["text_tertiary"]),
+                            text("暂无可显示角色", 16, colors["text"], ft.FontWeight.W_500, text_align=ft.TextAlign.CENTER),
+                            text("创建角色流程暂未实现。后续创建完成后，这里会自动显示 data 中扫描到的 brain。", 12, colors["text_secondary"], text_align=ft.TextAlign.CENTER),
+                        ],
+                    ),
+                    colors,
+                ),
+                scale_from=0.98,
+            ),
+            self._stagger(
+                "home",
+                3,
+                ft.Container(
+                    height=148,
+                    content=ft.Row(spacing=12, scroll=ft.ScrollMode.AUTO, controls=[self._create_selector_card(colors)]),
+                ),
+            ),
+            self._stagger(
+                "home",
+                4,
+                ft.Container(
+                    expand=False,
+                    content=QuickAction("创建角色", "功能暂未实现", ft.Icons.ADD, colors, lambda _: self.show_page("create")),
+                ),
+            ),
+            ft.Container(height=28),
+        ]
+        return self._page_column([ft.Container(padding=ft.padding.only(left=20, right=20, top=32, bottom=20), content=ft.Column(spacing=28, controls=controls))])
+
     def _create_selector_card(self, colors: dict[str, str]) -> ft.Container:
         return ft.Container(
             width=140,
@@ -346,6 +441,44 @@ class CompanionAppView(ft.Container, CompanionUIView):
         )
 
     def _build_chat_page(self, colors: dict[str, str]) -> ft.Control:
+        if not self._roles:
+            return ft.Container(
+                gradient=character_chat_gradient("", self._is_dark),
+                content=ft.Column(
+                    expand=True,
+                    spacing=0,
+                    controls=[
+                        ft.Container(
+                            padding=ft.padding.only(left=16, right=16, top=26, bottom=12),
+                            border=ft.border.only(bottom=ft.BorderSide(1, colors["card_border"])),
+                            content=ft.Row(
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                controls=[
+                                    round_icon_button(ft.Icons.ARROW_BACK, colors, lambda _: self.show_page("home"), 36),
+                                    ft.Container(expand=True, alignment=ft.alignment.center, content=text("暂无角色", 15, colors["text"], ft.FontWeight.W_500)),
+                                    ft.Container(width=36),
+                                ],
+                            ),
+                        ),
+                        ft.Container(
+                            expand=True,
+                            padding=ft.padding.symmetric(horizontal=16, vertical=20),
+                            content=section_card(
+                                ft.Column(
+                                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                    spacing=10,
+                                    controls=[
+                                        ft.Icon(ft.Icons.CHAT_BUBBLE_OUTLINE, size=28, color=colors["text_tertiary"]),
+                                        text("当前没有可聊天角色", 16, colors["text"], ft.FontWeight.W_500, text_align=ft.TextAlign.CENTER),
+                                        text("请先在 data 目录准备 brain。创建角色功能暂未实现。", 12, colors["text_secondary"], text_align=ft.TextAlign.CENTER),
+                                    ],
+                                ),
+                                colors,
+                            ),
+                        ),
+                    ],
+                ),
+            )
         role = self.active_role
         header = ft.Container(
             padding=ft.padding.only(left=16, right=16, top=26, bottom=12),
@@ -401,7 +534,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 key=f"chat-input-{self._chat_entry_seed}-{self._chat_mode_seed}",
             )
         return ft.Container(
-            gradient=character_chat_gradient(role.id if self._chat_mode == "immersive" else "amadeus", self._is_dark),
+            gradient=character_chat_gradient(role.id if self._chat_mode == "immersive" else "", self._is_dark),
             content=ft.Column(
                 expand=True,
                 spacing=0,
@@ -572,6 +705,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _refresh_chat_surface(self) -> bool:
         if self._page_name != "chat":
+            return False
+        if not self._roles:
             return False
 
         role = self.active_role
@@ -1144,6 +1279,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._safe_update()
 
     def _prepare_chat(self, role_id: str) -> None:
+        if not any(role.id == role_id for role in self._roles):
+            return
         self._active_role_id = role_id
         if not any(message.role_id == role_id for message in self._messages):
             seeded = self._seed_messages(self.active_role)
@@ -1201,6 +1338,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 self._trigger_scroll_to_latest()
 
     def _send_message(self, value: str) -> None:
+        if not self._active_role_id:
+            return
         self.append_message(ChatMessage(f"user-{len(self._messages) + 1}", self._active_role_id, value, True, datetime.now()))
         self._callback.on_send_message(self._active_role_id, value, self._chat_mode)
 
@@ -1302,7 +1441,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def set_roles(self, roles: list[CompanionRole]) -> None:
         self._roles = roles
-        if roles and self._active_role_id not in [role.id for role in roles]:
+        if not roles:
+            self._active_role_id = ""
+        elif self._active_role_id not in [role.id for role in roles]:
             self._active_role_id = roles[0].id
         self._safe_update()
 
@@ -1374,7 +1515,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
             raise ValueError(f"Unknown page: {page}")
         self._page_name = page
         if page == "chat":
-            if self._chat_mode == "normal":
+            if not self._roles:
+                self._chat_mode = "normal"
+            elif self._chat_mode == "normal":
                 self._schedule_scroll_to_latest()
             else:
                 self._reset_immersive_state(self.active_role)
@@ -1384,6 +1527,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._trigger_scroll_to_latest()
 
     def clear_chat(self) -> None:
+        if not self._active_role_id:
+            return
         active_role = self.active_role.id
         self._messages = [message for message in self._messages if message.role_id != active_role]
         self._seen_message_ids = {message.id for message in self._messages}

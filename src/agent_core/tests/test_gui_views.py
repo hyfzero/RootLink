@@ -81,6 +81,13 @@ class FakeListView:
 
 
 class GuiViewTests(unittest.TestCase):
+    def test_view_supports_empty_role_list(self) -> None:
+        view = CompanionAppView(roles=[])
+
+        self.assertEqual(view._roles, [])
+        self.assertEqual(view.active_role.id, "")
+        self.assertEqual(view._messages, [])
+
     def test_split_immersive_sentences_handles_punctuation_and_newlines(self) -> None:
         view = CompanionAppView(roles=[make_role()])
 

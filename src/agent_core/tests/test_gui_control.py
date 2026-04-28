@@ -167,7 +167,7 @@ class GuiControlTests(unittest.TestCase):
             self.assertEqual(loaded.user_name, "Tester")
             self.assertEqual(loaded.user_avatar_path, "avatar.png")
 
-    def test_build_amadues_runtime_creates_default_data_when_missing(self) -> None:
+    def test_build_amadues_runtime_raises_when_no_brain_exists(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
             os.environ[PathResolver.ENV_CONFIG_DIR] = config_dir
             os.environ[PathResolver.ENV_DATA_DIR] = data_dir
@@ -175,14 +175,21 @@ class GuiControlTests(unittest.TestCase):
             storage = UiSettingsStorage(config_dir)
             storage.save_minimax_config("runtime-key")
 
-            runtime = build_amadues_runtime(config_dir=config_dir)
-            brain_dir = PathResolver.get_brain_dir(AMADUES_BRAIN_ID)
+            with self.assertRaisesRegex(RuntimeError, "No brains found"):
+                build_amadues_runtime(config_dir=config_dir)
 
-            self.assertTrue((brain_dir / "persona" / "profile.json").exists())
-            self.assertTrue((brain_dir / "persona" / "memories.json").exists())
-            self.assertTrue((brain_dir / "persona" / "speaking_style.json").exists())
-            self.assertTrue((brain_dir / "ui.json").exists())
-            self.assertEqual(runtime.brain_registry.current_brain_id(), AMADUES_BRAIN_ID)
+            self.assertEqual(list(Path(data_dir).iterdir()), [])
+
+    def test_bind_view_keeps_roles_empty_when_data_directory_has_no_brain(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
+            os.environ[PathResolver.ENV_CONFIG_DIR] = config_dir
+            os.environ[PathResolver.ENV_DATA_DIR] = data_dir
+
+            controller = AmaduesController(settings_storage=UiSettingsStorage(config_dir))
+            view = StubView()
+            controller.bind_view(view)
+
+            self.assertEqual(view.roles, [])
 
     def test_bind_view_loads_roles_from_data_directory(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
