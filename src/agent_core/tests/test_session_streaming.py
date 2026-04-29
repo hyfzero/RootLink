@@ -128,7 +128,7 @@ class SessionStreamingTests(unittest.TestCase):
         self.assertEqual(manager.storage.messages, [("user", "hi"), ("assistant", "兜底回复。")])
 
 
-    def test_send_message_stream_passes_max_tokens_without_trimming_reply(self) -> None:
+    def test_send_message_stream_limits_reply_to_max_sentences(self) -> None:
         chat_agent = FakeChatAgent(["one. two. three."])
         manager = make_manager(
             chat_agent,
@@ -139,11 +139,11 @@ class SessionStreamingTests(unittest.TestCase):
 
         self.assertEqual(chat_agent.stream_kwargs, [{"max_tokens": 123}])
         self.assertEqual([event["type"] for event in events], ["delta", "done"])
-        self.assertEqual(events[0]["delta"], "one. two. three.")
-        self.assertEqual(events[-1]["content"], "one. two. three.")
-        self.assertEqual(manager.storage.messages, [("user", "hi"), ("assistant", "one. two. three.")])
+        self.assertEqual(events[0]["delta"], "one. two.")
+        self.assertEqual(events[-1]["content"], "one. two.")
+        self.assertEqual(manager.storage.messages, [("user", "hi"), ("assistant", "one. two.")])
 
-    def test_send_message_sync_passes_max_tokens_without_trimming_reply(self) -> None:
+    def test_send_message_sync_limits_reply_to_max_sentences(self) -> None:
         chat_agent = FakeChatAgent([], fallback="one. two. three.")
         manager = make_manager(
             chat_agent,
@@ -153,8 +153,8 @@ class SessionStreamingTests(unittest.TestCase):
         response = manager.send_message_sync("hi")
 
         self.assertEqual(chat_agent.chat_kwargs, [{"stream": False, "max_tokens": 321}])
-        self.assertEqual(response["content"], "one. two. three.")
-        self.assertEqual(manager.storage.messages, [("user", "hi"), ("assistant", "one. two. three.")])
+        self.assertEqual(response["content"], "one.")
+        self.assertEqual(manager.storage.messages, [("user", "hi"), ("assistant", "one.")])
 
 
 if __name__ == "__main__":

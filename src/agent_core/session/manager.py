@@ -39,6 +39,8 @@ from .prompt_builder import SessionPromptBuilder
 from .reply_tagger import ReplyTagger, MemoryUpdater
 from .summarizer import DailySummarizer, MonthlySummarizer
 
+SENTENCE_DELIMITERS = ".!?。！？\n"
+
 
 class SessionManager:
     """Session 管理器 - 核心调度类。
@@ -325,12 +327,22 @@ class SessionManager:
 
             assistant_content = ""
             try:
+                max_sentences = self._chat_response_sentence_limit()
                 for chunk in self.chat_agent.stream_chat(messages, **self._chat_response_kwargs()):
                     delta = getattr(chunk, "delta", "") or ""
                     if not delta:
                         continue
+                    delta = self._delta_within_sentence_limit(
+                        assistant_content,
+                        delta,
+                        max_sentences,
+                    )
+                    if not delta:
+                        break
                     assistant_content += delta
                     yield {"type": "delta", "delta": delta}
+                    if self._has_reached_sentence_limit(assistant_content, max_sentences):
+                        break
             except Exception as stream_error:
                 if assistant_content:
                     yield {"type": "error", "error": str(stream_error)}
@@ -731,6 +743,7 @@ class SessionManager:
             yield pending
 
     def _finalize_assistant_message(self, assistant_content: str) -> dict:
+        assistant_content = self._apply_response_sentence_limit(assistant_content)
         message_id = self._generate_message_id()
         reply_tag = self.tagger.generate_and_save(message_id, assistant_content)
 
@@ -924,6 +937,64 @@ class SessionManager:
         max_tokens = self._positive_int_or_none(getattr(response_config, "max_tokens", None))
         return {"max_tokens": max_tokens} if max_tokens is not None else {}
 
+    def _chat_response_sentence_limit(self) -> Optional[int]:
+        response_config = self._current_response_config()
+        return self._positive_int_or_none(getattr(response_config, "max_sentences", None))
+
+    def _apply_response_sentence_limit(self, content: str) -> str:
+        max_sentences = self._chat_response_sentence_limit()
+        if max_sentences is None:
+            return content
+        return self._trim_to_sentence_limit(content, max_sentences)
+
+    def _trim_to_sentence_limit(self, content: str, max_sentences: int) -> str:
+        if max_sentences <= 0:
+            return content
+
+        seen = 0
+        for index, char in enumerate(content):
+            if char not in SENTENCE_DELIMITERS:
+                continue
+            seen += 1
+            if seen >= max_sentences:
+                return content[: index + 1].strip()
+        return content
+
+    def _delta_within_sentence_limit(
+        self,
+        current_content: str,
+        delta: str,
+        max_sentences: Optional[int],
+    ) -> str:
+        if max_sentences is None:
+            return delta
+
+        current_count = self._count_complete_sentences(current_content)
+        if current_count >= max_sentences:
+            return ""
+
+        remaining = max_sentences - current_count
+        seen = 0
+        for index, char in enumerate(delta):
+            if char not in SENTENCE_DELIMITERS:
+                continue
+            seen += 1
+            if seen >= remaining:
+                return delta[: index + 1]
+        return delta
+
+    def _has_reached_sentence_limit(
+        self,
+        content: str,
+        max_sentences: Optional[int],
+    ) -> bool:
+        if max_sentences is None:
+            return False
+        return self._count_complete_sentences(content) >= max_sentences
+
+    def _count_complete_sentences(self, content: str) -> int:
+        return sum(1 for char in content if char in SENTENCE_DELIMITERS)
+
     async def _call_api(
         self,
         system_prompt: str,
@@ -937,11 +1008,12 @@ class SessionManager:
         response = self.chat_agent.chat(messages, stream=stream, **self._chat_response_kwargs())
 
         if hasattr(response, 'content'):
-            return {"content": response.content}
+            content = response.content
         elif hasattr(response, 'delta'):
-            return {"content": response.delta}
+            content = response.delta
         else:
-            return {"content": str(response)}
+            content = str(response)
+        return {"content": self._apply_response_sentence_limit(content)}
 
     def _call_api_sync(self, system_prompt: str, context: str) -> dict:
         """调用 API（同步）"""
@@ -951,9 +1023,10 @@ class SessionManager:
         response = self.chat_agent.chat(messages, stream=False, **self._chat_response_kwargs())
 
         if hasattr(response, 'content'):
-            return {"content": response.content}
+            content = response.content
         else:
-            return {"content": str(response)}
+            content = str(response)
+        return {"content": self._apply_response_sentence_limit(content)}
 
     def get_conversation_history(self, days: int = 7) -> list[DaySession]:
         """获取最近 N 天的会话历史。
