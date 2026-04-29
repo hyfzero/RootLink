@@ -199,7 +199,7 @@ class UiSettingsStorage:
         config.providers[MINIMAX_PROVIDER] = ProviderConfig(
             base_url="https://api.minimaxi.com/v1",
             api_key=api_key.strip(),
-            api_type="anthropic-messages",
+            api_type="openai",
             auth_header=True,
         )
         config.default_provider = MINIMAX_PROVIDER
@@ -272,7 +272,7 @@ def _load_model_config(config_dir: str | Path | None = None) -> ModelConfig:
         base_url=provider_config.base_url,
         max_tokens=model_info.max_tokens if model_info else 8192,
         temperature=0.7,
-        supports_thinking=True,
+        supports_thinking=bool(model_info.reasoning) if model_info else True,
         supports_function_calling=True,
         tokenizer_mode=model_info.tokenizer_mode if model_info else "auto",
         tokenizer_fallback=model_info.tokenizer_fallback if model_info else "hybrid_v1",

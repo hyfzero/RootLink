@@ -11,5 +11,5 @@
 }
 ```
 
-- `max_tokens`: passed to the model request for this brain. Use `null` or remove it to keep the model default.
-- `max_sentences`: trims the assistant reply after this many sentence endings. Use `null`, `0`, or remove it to disable sentence trimming.
+- `max_tokens`: passed to the model request for this brain as the provider-side output cap. Use `null` or remove it to keep the model default. If this value is too small, the provider can still cut the answer mid-reply.
+- `max_sentences`: added to the system prompt as soft guidance so the model naturally replies shorter. It no longer trims generated text after the fact. Use `null`, `0`, or remove it to disable this guidance.

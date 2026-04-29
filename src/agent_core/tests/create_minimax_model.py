@@ -24,7 +24,7 @@ def build_minimax_provider() -> ProviderConfig:
     return ProviderConfig(
         base_url="https://api.minimaxi.com/v1",
         api_key=MINIMAX_API_KEY,
-        api_type="anthropic-messages",
+        api_type="openai",
         auth_header=True,
     )
 

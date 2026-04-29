@@ -81,15 +81,15 @@ CREATE_STEPS = ["基础信息", "立绘", "人格", "记忆", "语言风格"]
 
 TYPING_STATUS_TEXT = "\u6b63\u5728\u8f93\u5165\u4e2d"
 REPLY_EMOTION_STATUS = {
-    "neutral": "\u5e73\u9759",
-    "happy": "\u5f00\u5fc3",
-    "sad": "\u96be\u8fc7",
-    "angry": "\u751f\u6c14",
-    "surprised": "\u60ca\u8bb6",
-    "thinking": "\u601d\u8003\u4e2d",
-    "confused": "\u56f0\u60d1",
-    "scared": "\u5bb3\u6015",
-    "embarrassed": "\u5bb3\u7f9e",
+    "neutral": "\u5e73\u9759 \U0001f610",
+    "happy": "\u5f00\u5fc3 \U0001f60a",
+    "sad": "\u96be\u8fc7 \U0001f622",
+    "angry": "\u751f\u6c14 \U0001f620",
+    "surprised": "\u60ca\u8bb6 \U0001f62e",
+    "thinking": "\u601d\u8003\u4e2d \U0001f914",
+    "confused": "\u56f0\u60d1 \U0001f615",
+    "scared": "\u5bb3\u6015 \U0001f628",
+    "embarrassed": "\u5bb3\u7f9e \U0001f633",
 }
 
 
@@ -627,7 +627,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         emotion = self._normalize_emotion(self._reply_emotions.get(role.id, ""))
         if emotion:
             return REPLY_EMOTION_STATUS.get(emotion, emotion)
-        return role.status_text
+        return ""
 
     def _refresh_chat_status(self) -> bool:
         if self._page_name != "chat" or self._chat_status_text is None or not self._roles:

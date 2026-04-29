@@ -82,6 +82,7 @@ class BaseAdapter(ABC):
     """API 适配器基类，定义各 Provider 的适配接口。"""
 
     provider: APIProvider
+    cumulative_stream_content = False
 
     @abstractmethod
     def build_request(self, request: "ChatCompletionRequest", config: ModelConfig) -> dict:

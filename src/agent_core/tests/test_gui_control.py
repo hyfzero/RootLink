@@ -189,7 +189,7 @@ class GuiControlTests(unittest.TestCase):
             self.assertEqual(chat_config.default_provider, MINIMAX_PROVIDER)
             self.assertEqual(chat_config.default_model, MINIMAX_MODEL)
             self.assertEqual(provider.api_key, "test-key")
-            self.assertEqual(provider.api_type, "anthropic-messages")
+            self.assertEqual(provider.api_type, "openai")
             self.assertTrue(provider.auth_header)
 
             ui_payload = json.loads((Path(config_dir) / "ui_settings.json").read_text(encoding="utf-8"))

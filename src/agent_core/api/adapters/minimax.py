@@ -15,6 +15,7 @@ class MiniMaxAdapter(BaseAdapter):
     """MiniMax API 适配器。"""
 
     provider = APIProvider.MINIMAX
+    cumulative_stream_content = True
 
     def build_headers(self, config: ModelConfig) -> dict:
         return {
@@ -24,9 +25,12 @@ class MiniMaxAdapter(BaseAdapter):
 
     def build_request(self, request: ChatCompletionRequest, config: ModelConfig) -> dict:
         data = request.to_dict()
+        max_tokens = data.pop("max_tokens", None)
+        if max_tokens is not None:
+            data["max_completion_tokens"] = max_tokens
 
-        # MiniMax M2/M2.5 支持 reasoning_split
-        if config.supports_thinking:
+        # MiniMax M2/M2.5 supports splitting reasoning from visible content.
+        if request.reasoning_split:
             data["reasoning_split"] = True
 
         return data
@@ -49,6 +53,7 @@ class MiniMaxAdapter(BaseAdapter):
         reasoning_tokens = (
             usage_data.get("reasoning_tokens")
             or usage_data.get("thinking_tokens")
+            or (usage_data.get("completion_tokens_details") or {}).get("reasoning_tokens")
             or 0
         )
         total_tokens = (
@@ -76,12 +81,24 @@ class MiniMaxAdapter(BaseAdapter):
         finish_reason = None
         tool_calls = None
 
-        if "choices" in chunk_data:
+        if chunk_data.get("choices"):
             choice = chunk_data["choices"][0]
             delta_data = choice.get("delta", {})
 
             if isinstance(delta_data, dict):
                 delta = delta_data.get("content", "") or delta_data.get("text", "") or ""
+                reasoning = (
+                    delta_data.get("reasoning_content")
+                    or delta_data.get("reasoning")
+                    or delta_data.get("thinking")
+                )
+                if reasoning is None and isinstance(delta_data.get("reasoning_details"), list):
+                    reasoning_parts = [
+                        str(item.get("text", ""))
+                        for item in delta_data["reasoning_details"]
+                        if isinstance(item, dict) and item.get("text")
+                    ]
+                    reasoning = "".join(reasoning_parts) or None
                 if "tool_calls" in delta_data:
                     from ..message import ToolCall
                     tool_calls = [ToolCall.from_dict(tc) for tc in delta_data["tool_calls"]]
@@ -90,7 +107,7 @@ class MiniMaxAdapter(BaseAdapter):
                 delta = delta_data
 
             finish_reason = choice.get("finish_reason")
-            is_complete = finish_reason in ("stop", "eos")
+            is_complete = finish_reason in ("stop", "eos", "tool_calls")
 
         # MiniMax M2.5 reasoning
         if "thinking" in chunk_data:

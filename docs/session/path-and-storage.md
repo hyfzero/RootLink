@@ -21,6 +21,8 @@
 - `get_brain_dir(brain_id)` -> `data/{brain_id}`
 - `get_session_dir(brain_id)` -> `data/{brain_id}/session`
 - `get_tags_dir(brain_id)` -> `data/{brain_id}/tags`
+- `configure_app_storage_root(root)` -> 将 GUI 启动解析出的 app storage root 注入运行时
+- `migrate_legacy_app_storage(root)` -> 从旧 Windows 目录只读复制缺失的 `data/`、`config/`
 - `resolve(relative_path)`
 - `ensure_dir(path)`
 
@@ -88,7 +90,8 @@ messages = storage.get_today_messages()
 - `DaySession.messages` 内部保存 dict，`get_messages()` 才转换成 Brain 的 `Message`。
 - `SessionStorage` 的 token 估算策略与当前 Brain 的 `history.token_estimator` 对齐，`compact` 判定会随之变化。
 - `use_msgpack=True` 会使用 `.msgpack` 扩展名。
-- 数据路径优先级为 `AGENT_DATA_DIR`、`FLET_APP_STORAGE_DATA`、Windows AppData、项目默认 `data`；配置路径优先级为 `AGENT_CONFIG_DIR`、`FLET_APP_STORAGE_DATA/config`、Windows AppData/`amadues/config`、项目默认 `config`。
+- GUI 启动时优先从 Flet `page.storage_paths.get_application_support_directory()` 配置 app storage root；数据目录为 `<app_root>/data`，配置目录为 `<app_root>/config`。
+- `AGENT_DATA_DIR` / `AGENT_CONFIG_DIR` 仍是最高优先级覆盖项；`FLET_APP_STORAGE_DATA` 作为 app storage root 兼容项，而不是直接的数据目录。
 
 ## Token Strategy Alignment
 

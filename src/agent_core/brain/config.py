@@ -55,7 +55,7 @@ class PersonaConfig:
 
 @dataclass
 class ResponseConfig:
-    """Per-brain assistant response limits."""
+    """Per-brain assistant response controls."""
 
     max_tokens: Optional[int] = None
     max_sentences: Optional[int] = None

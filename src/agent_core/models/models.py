@@ -119,8 +119,8 @@ MINIMAX_MODELS = ProviderCatalog(
             name="MiniMax M2.5",
             reasoning=True,
             input_types=["text"],
-            context_window=1000000,
-            max_tokens=65536,
+            context_window=204800,
+            max_tokens=2048,
             cost=ModelCost(input=0.3, output=1.2, cache_read=0.03, cache_write=0.12),
         ),
         ModelInfo(
@@ -128,8 +128,8 @@ MINIMAX_MODELS = ProviderCatalog(
             name="MiniMax M2.5 Highspeed",
             reasoning=True,
             input_types=["text"],
-            context_window=1000000,
-            max_tokens=65536,
+            context_window=204800,
+            max_tokens=2048,
             cost=ModelCost(input=0.5, output=2.0, cache_read=0.05, cache_write=0.2),
         ),
         ModelInfo(
@@ -608,7 +608,7 @@ def create_provider_from_catalog(
     provider = ProviderConfig(
         base_url=base_url or default_urls.get(provider_name, ""),
         api_key=api_key,
-        api_type="openai" if provider_name not in ("anthropic", "minimax") else "anthropic-messages",
+        api_type="anthropic-messages" if provider_name == "anthropic" else "openai",
         headers=headers or {},
     )
 

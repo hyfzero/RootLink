@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -19,10 +20,12 @@ if __package__ in (None, ""):
     from GUI.control import AmaduesController
     from GUI.interfaces import CharacterDraft, ChatMessage, CompanionUICallback, UiSettings
     from GUI.views import CompanionAppView
+    from agent_core.session import PathResolver
 else:
     from .control import AmaduesController
     from .interfaces import CharacterDraft, ChatMessage, CompanionUICallback, UiSettings
     from .views import CompanionAppView
+    from agent_core.session import PathResolver
 
 
 def _configure_page(page: ft.Page, *, is_dark: bool) -> None:
@@ -80,7 +83,33 @@ class DemoCallback(CompanionUICallback):
         print(f"[ui] portrait upload requested: {emotion_id}")
 
 
-def run_demo(page: ft.Page) -> None:
+async def _resolve_app_storage_root(page: ft.Page) -> Path | None:
+    storage_paths = getattr(page, "storage_paths", None)
+    get_support_dir = getattr(storage_paths, "get_application_support_directory", None)
+    if callable(get_support_dir):
+        try:
+            support_dir = await get_support_dir()
+        except Exception:
+            support_dir = None
+        if support_dir:
+            return Path(str(support_dir))
+
+    flet_data_dir = os.environ.get(PathResolver.ENV_FLET_DATA_DIR)
+    if flet_data_dir:
+        return Path(flet_data_dir).expanduser()
+    return None
+
+
+async def _bootstrap_app_storage(page: ft.Page) -> None:
+    app_root = await _resolve_app_storage_root(page)
+    if app_root is None:
+        return
+    PathResolver.configure_app_storage_root(app_root)
+    PathResolver.migrate_legacy_app_storage(app_root)
+
+
+async def run_demo(page: ft.Page) -> None:
+    await _bootstrap_app_storage(page)
     _configure_page(page, is_dark=True)
     callback = DemoCallback()
     view = CompanionAppView(callback=callback, is_dark=True)
@@ -88,7 +117,8 @@ def run_demo(page: ft.Page) -> None:
     page.add(view)
 
 
-def run_app(page: ft.Page) -> None:
+async def run_app(page: ft.Page) -> None:
+    await _bootstrap_app_storage(page)
     controller = AmaduesController()
     _configure_page(page, is_dark=controller.initial_settings.is_dark)
     view = CompanionAppView(callback=controller, is_dark=controller.initial_settings.is_dark)

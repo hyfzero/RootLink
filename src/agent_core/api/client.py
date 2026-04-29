@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterator, Optional
 
 import requests
@@ -197,14 +197,15 @@ class ChatAgent:
 
         with requests.post(url, headers=headers, json=data, stream=True, timeout=120) as response:
             response.raise_for_status()
+            accumulated_content = ""
 
             for line in response.iter_lines():
                 if not line:
                     continue
 
                 line_text = line.decode("utf-8")
-                if line_text.startswith("data: "):
-                    line_text = line_text[6:]
+                if line_text.startswith("data:"):
+                    line_text = line_text[5:].strip()
 
                 if line_text == "[DONE]":
                     break
@@ -215,6 +216,14 @@ class ChatAgent:
                     continue
 
                 chunk = self.adapter.parse_stream_chunk(chunk_data)
+                if chunk.delta and getattr(self.adapter, "cumulative_stream_content", False):
+                    delta = chunk.delta
+                    if accumulated_content and delta.startswith(accumulated_content):
+                        delta = delta[len(accumulated_content):]
+                    accumulated_content = chunk.delta
+                    chunk = replace(chunk, delta=delta)
+                elif chunk.delta:
+                    accumulated_content += chunk.delta
                 yield chunk
 
                 if chunk.is_complete:

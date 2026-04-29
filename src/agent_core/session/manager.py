@@ -40,9 +40,6 @@ from .reply_tagger import ReplyTagger, MemoryUpdater
 from .summarizer import DailySummarizer, MonthlySummarizer
 
 
-RESPONSE_SENTENCE_DELIMITERS = ".!?\n\u3002\uff01\uff1f銆傦紒锛?"
-
-
 class SessionManager:
     """Session 管理器 - 核心调度类。
 
@@ -332,14 +329,8 @@ class SessionManager:
                     delta = getattr(chunk, "delta", "") or ""
                     if not delta:
                         continue
-                    candidate_content = assistant_content + delta
-                    limited_content = self._limit_assistant_content(candidate_content)
-                    visible_delta = limited_content[len(assistant_content):]
-                    if visible_delta:
-                        assistant_content = limited_content
-                        yield {"type": "delta", "delta": visible_delta}
-                    if limited_content != candidate_content:
-                        break
+                    assistant_content += delta
+                    yield {"type": "delta", "delta": delta}
             except Exception as stream_error:
                 if assistant_content:
                     yield {"type": "error", "error": str(stream_error)}
@@ -740,7 +731,6 @@ class SessionManager:
             yield pending
 
     def _finalize_assistant_message(self, assistant_content: str) -> dict:
-        assistant_content = self._limit_assistant_content(assistant_content)
         message_id = self._generate_message_id()
         reply_tag = self.tagger.generate_and_save(message_id, assistant_content)
 
@@ -934,23 +924,6 @@ class SessionManager:
         max_tokens = self._positive_int_or_none(getattr(response_config, "max_tokens", None))
         return {"max_tokens": max_tokens} if max_tokens is not None else {}
 
-    def _max_response_sentences(self) -> Optional[int]:
-        response_config = self._current_response_config()
-        return self._positive_int_or_none(getattr(response_config, "max_sentences", None))
-
-    def _limit_assistant_content(self, content: str) -> str:
-        max_sentences = self._max_response_sentences()
-        if max_sentences is None or not content:
-            return content
-
-        sentence_count = 0
-        for index, char in enumerate(content):
-            if char in RESPONSE_SENTENCE_DELIMITERS:
-                sentence_count += 1
-                if sentence_count >= max_sentences:
-                    return content[: index + 1].rstrip()
-        return content
-
     async def _call_api(
         self,
         system_prompt: str,
@@ -964,11 +937,11 @@ class SessionManager:
         response = self.chat_agent.chat(messages, stream=stream, **self._chat_response_kwargs())
 
         if hasattr(response, 'content'):
-            return {"content": self._limit_assistant_content(response.content)}
+            return {"content": response.content}
         elif hasattr(response, 'delta'):
-            return {"content": self._limit_assistant_content(response.delta)}
+            return {"content": response.delta}
         else:
-            return {"content": self._limit_assistant_content(str(response))}
+            return {"content": str(response)}
 
     def _call_api_sync(self, system_prompt: str, context: str) -> dict:
         """调用 API（同步）"""
@@ -978,9 +951,9 @@ class SessionManager:
         response = self.chat_agent.chat(messages, stream=False, **self._chat_response_kwargs())
 
         if hasattr(response, 'content'):
-            return {"content": self._limit_assistant_content(response.content)}
+            return {"content": response.content}
         else:
-            return {"content": self._limit_assistant_content(str(response))}
+            return {"content": str(response)}
 
     def get_conversation_history(self, days: int = 7) -> list[DaySession]:
         """获取最近 N 天的会话历史。

@@ -309,6 +309,25 @@ class PromptBuilder:
         parts.append(style_prompt)
         return "\n".join(parts)
 
+    def build_response_guidance_section(self) -> str:
+        """Build soft guidance for natural reply length."""
+        response_cfg = getattr(self.config, "response", None)
+        max_sentences = getattr(response_cfg, "max_sentences", None)
+        try:
+            max_sentences = int(max_sentences)
+        except (TypeError, ValueError):
+            max_sentences = None
+
+        if max_sentences is None or max_sentences <= 0:
+            return ""
+
+        return "\n".join([
+            "## 回复长度",
+            f"默认自然控制在 {max_sentences} 句以内。",
+            "如果问题复杂，先给最短可用答案，不要主动展开列表；等用户追问再补充。",
+            "不要因为长度限制把一句话说到一半。",
+        ])
+
     def build_memory_section(self, limit: int = 5) -> str:
         """构建近期记忆段落。
 
@@ -490,6 +509,7 @@ class PromptBuilder:
         sections: list[tuple[str, str]] = [
             ("identity", self.build_identity_section()),
             ("style", self.build_style_section(emotion=emotion)),
+            ("response_guidance", self.build_response_guidance_section()),
             ("relationship", self.build_relationship_section()),
             ("personality_state", self.build_personality_state_section()),
             ("memory", self.build_memory_section()),
@@ -520,6 +540,7 @@ class PromptBuilder:
         sections: list[tuple[str, str]] = [
             ("identity", self.build_identity_section()),
             ("style", self.build_style_section(emotion=emotion)),
+            ("response_guidance", self.build_response_guidance_section()),
             ("relationship", self.build_relationship_section()),
             ("personality_state", self.build_personality_state_section()),
         ]

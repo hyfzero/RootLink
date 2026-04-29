@@ -41,7 +41,7 @@ src/
 
 ## 数据流/存储
 
-实际路径由 `PathResolver` 决定。数据目录优先级为 `AGENT_DATA_DIR`、`FLET_APP_STORAGE_DATA`、Windows AppData、项目下的 `data/`；因此 Windows 桌面运行时可能默认写入 `%LOCALAPPDATA%/amadues/data`，而不是仓库内 `data/`。
+实际路径由 `PathResolver` 决定。GUI 启动时优先使用 Flet `page.storage_paths.get_application_support_directory()` 解析出的 app storage root；数据目录为 `<app_root>/data`，配置目录为 `<app_root>/config`。`AGENT_DATA_DIR` / `AGENT_CONFIG_DIR` 仍可覆盖该路径，便于本地测试和诊断。
 
 ```text
 data/
