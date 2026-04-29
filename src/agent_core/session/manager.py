@@ -40,6 +40,9 @@ from .reply_tagger import ReplyTagger, MemoryUpdater
 from .summarizer import DailySummarizer, MonthlySummarizer
 
 
+RESPONSE_SENTENCE_DELIMITERS = ".!?\n\u3002\uff01\uff1f銆傦紒锛?"
+
+
 class SessionManager:
     """Session 管理器 - 核心调度类。
 
@@ -325,12 +328,18 @@ class SessionManager:
 
             assistant_content = ""
             try:
-                for chunk in self.chat_agent.stream_chat(messages):
+                for chunk in self.chat_agent.stream_chat(messages, **self._chat_response_kwargs()):
                     delta = getattr(chunk, "delta", "") or ""
                     if not delta:
                         continue
-                    assistant_content += delta
-                    yield {"type": "delta", "delta": delta}
+                    candidate_content = assistant_content + delta
+                    limited_content = self._limit_assistant_content(candidate_content)
+                    visible_delta = limited_content[len(assistant_content):]
+                    if visible_delta:
+                        assistant_content = limited_content
+                        yield {"type": "delta", "delta": visible_delta}
+                    if limited_content != candidate_content:
+                        break
             except Exception as stream_error:
                 if assistant_content:
                     yield {"type": "error", "error": str(stream_error)}
@@ -731,6 +740,7 @@ class SessionManager:
             yield pending
 
     def _finalize_assistant_message(self, assistant_content: str) -> dict:
+        assistant_content = self._limit_assistant_content(assistant_content)
         message_id = self._generate_message_id()
         reply_tag = self.tagger.generate_and_save(message_id, assistant_content)
 
@@ -898,6 +908,49 @@ class SessionManager:
         except Exception as e:
             print(f"Warning: Failed to sync personality state ({role}): {e}")
 
+    def _current_response_config(self) -> Any:
+        registry = getattr(self, "brain_registry", None)
+        current = getattr(registry, "current", None)
+        if not callable(current):
+            return None
+        try:
+            components = current()
+        except Exception:
+            return None
+        config = getattr(components, "config", None)
+        return getattr(config, "response", None)
+
+    def _positive_int_or_none(self, value: Any) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed > 0 else None
+
+    def _chat_response_kwargs(self) -> dict[str, int]:
+        response_config = self._current_response_config()
+        max_tokens = self._positive_int_or_none(getattr(response_config, "max_tokens", None))
+        return {"max_tokens": max_tokens} if max_tokens is not None else {}
+
+    def _max_response_sentences(self) -> Optional[int]:
+        response_config = self._current_response_config()
+        return self._positive_int_or_none(getattr(response_config, "max_sentences", None))
+
+    def _limit_assistant_content(self, content: str) -> str:
+        max_sentences = self._max_response_sentences()
+        if max_sentences is None or not content:
+            return content
+
+        sentence_count = 0
+        for index, char in enumerate(content):
+            if char in RESPONSE_SENTENCE_DELIMITERS:
+                sentence_count += 1
+                if sentence_count >= max_sentences:
+                    return content[: index + 1].rstrip()
+        return content
+
     async def _call_api(
         self,
         system_prompt: str,
@@ -908,26 +961,26 @@ class SessionManager:
         # 使用 api.message.Message 而不是 brain.Message
         messages = self._build_api_messages(system_prompt, context)
 
-        response = self.chat_agent.chat(messages, stream=stream)
+        response = self.chat_agent.chat(messages, stream=stream, **self._chat_response_kwargs())
 
         if hasattr(response, 'content'):
-            return {"content": response.content}
+            return {"content": self._limit_assistant_content(response.content)}
         elif hasattr(response, 'delta'):
-            return {"content": response.delta}
+            return {"content": self._limit_assistant_content(response.delta)}
         else:
-            return {"content": str(response)}
+            return {"content": self._limit_assistant_content(str(response))}
 
     def _call_api_sync(self, system_prompt: str, context: str) -> dict:
         """调用 API（同步）"""
         # 使用 api.message.Message 而不是 brain.Message
         messages = self._build_api_messages(system_prompt, context)
 
-        response = self.chat_agent.chat(messages, stream=False)
+        response = self.chat_agent.chat(messages, stream=False, **self._chat_response_kwargs())
 
         if hasattr(response, 'content'):
-            return {"content": response.content}
+            return {"content": self._limit_assistant_content(response.content)}
         else:
-            return {"content": str(response)}
+            return {"content": self._limit_assistant_content(str(response))}
 
     def get_conversation_history(self, days: int = 7) -> list[DaySession]:
         """获取最近 N 天的会话历史。

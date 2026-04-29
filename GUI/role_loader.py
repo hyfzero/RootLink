@@ -100,6 +100,8 @@ def load_roles_from_registry(registry: BrainRegistry, data_dir: Optional[Path] =
 
 
 def _load_roles_from_root(root: Path) -> list[CompanionRole]:
+    if not root.exists():
+        return []
     registry = BrainRegistry(root)
     registry.load_all()
     return load_roles_from_registry(registry, root)

@@ -52,14 +52,18 @@ class FakeChatAgent:
         self.chunks = chunks
         self.fallback = fallback
         self.fail_stream = fail_stream
+        self.stream_kwargs: list[dict] = []
+        self.chat_kwargs: list[dict] = []
 
-    def stream_chat(self, messages):
+    def stream_chat(self, messages, **kwargs):
+        self.stream_kwargs.append(kwargs)
         if self.fail_stream:
             raise RuntimeError("stream unavailable")
         for chunk in self.chunks:
             yield StreamChunk(delta=chunk)
 
-    def chat(self, messages, stream: bool = False):
+    def chat(self, messages, stream: bool = False, **kwargs):
+        self.chat_kwargs.append({"stream": stream, **kwargs})
         return SimpleNamespace(content=self.fallback)
 
 
@@ -87,13 +91,18 @@ class TestSessionManager(SessionManager):
         return "assistant-1"
 
 
-def make_manager(chat_agent: FakeChatAgent) -> TestSessionManager:
+def make_manager(chat_agent: FakeChatAgent, response_config: object | None = None) -> TestSessionManager:
     manager = TestSessionManager.__new__(TestSessionManager)
     manager._storage = FakeStorage()
     manager.chat_agent = chat_agent
     manager.tagger = FakeTagger()
     manager.fake_prompt_builder = FakePromptBuilder()
     manager._current_brain_id = "test-brain"
+    manager.brain_registry = SimpleNamespace(
+        current=lambda: SimpleNamespace(
+            config=SimpleNamespace(response=response_config or SimpleNamespace())
+        )
+    )
     return manager
 
 
@@ -117,6 +126,35 @@ class SessionStreamingTests(unittest.TestCase):
         self.assertEqual(events[0]["delta"], "兜底回复。")
         self.assertEqual(events[-1]["content"], "兜底回复。")
         self.assertEqual(manager.storage.messages, [("user", "hi"), ("assistant", "兜底回复。")])
+
+
+    def test_send_message_stream_applies_brain_response_limits(self) -> None:
+        chat_agent = FakeChatAgent(["one. two. three."])
+        manager = make_manager(
+            chat_agent,
+            response_config=SimpleNamespace(max_tokens=123, max_sentences=2),
+        )
+
+        events = list(manager.send_message_stream("hi"))
+
+        self.assertEqual(chat_agent.stream_kwargs, [{"max_tokens": 123}])
+        self.assertEqual([event["type"] for event in events], ["delta", "done"])
+        self.assertEqual(events[0]["delta"], "one. two.")
+        self.assertEqual(events[-1]["content"], "one. two.")
+        self.assertEqual(manager.storage.messages, [("user", "hi"), ("assistant", "one. two.")])
+
+    def test_send_message_sync_applies_brain_response_limits(self) -> None:
+        chat_agent = FakeChatAgent([], fallback="one. two. three.")
+        manager = make_manager(
+            chat_agent,
+            response_config=SimpleNamespace(max_tokens=321, max_sentences=1),
+        )
+
+        response = manager.send_message_sync("hi")
+
+        self.assertEqual(chat_agent.chat_kwargs, [{"stream": False, "max_tokens": 321}])
+        self.assertEqual(response["content"], "one.")
+        self.assertEqual(manager.storage.messages, [("user", "hi"), ("assistant", "one.")])
 
 
 if __name__ == "__main__":

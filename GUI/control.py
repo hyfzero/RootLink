@@ -51,6 +51,7 @@ DEFAULT_ASSISTANT_NAME = "\u963f\u739b\u8fea\u65af"
 CONFIG_NOTICE = "\u8bf7\u5148\u5728\u8bbe\u7f6e\u9875\u4fdd\u5b58 MiniMax API Key\u3002"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RESOURCE_DIR = PROJECT_ROOT / "resource"
+DEFAULT_RESPONSE_LIMITS = {"max_tokens": 2000, "max_sentences": 5}
 
 
 class ChatConfigurationError(RuntimeError):
@@ -225,6 +226,21 @@ def _write_json_if_missing(path: Path, payload: dict) -> None:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
 
 
+def _ensure_response_config(path: Path, response_limits: dict[str, int]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload: dict = {}
+    if path.exists():
+        with open(path, "r", encoding="utf-8") as handle:
+            loaded = json.load(handle)
+        if isinstance(loaded, dict):
+            payload = loaded
+    if isinstance(payload.get("response"), dict):
+        return
+    payload["response"] = response_limits
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+
 def _copy_asset_if_missing(source: Path, target: Path) -> None:
     if source.exists() and not target.exists():
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -267,6 +283,7 @@ def _ensure_default_amadues_data(brain_id: str = AMADUES_BRAIN_ID) -> Path:
     portraits_dir.mkdir(parents=True, exist_ok=True)
 
     _write_json_if_missing(persona_dir / "profile.json", _default_persona_profile().to_dict())
+    _ensure_response_config(brain_dir / "config.json", DEFAULT_RESPONSE_LIMITS)
     _write_json_if_missing(
         persona_dir / "memories.json",
         {
@@ -347,6 +364,7 @@ def _ensure_default_shinji_data(brain_id: str = SHINJI_BRAIN_ID) -> Path:
             "relationship_updated_at": None,
         },
     )
+    _ensure_response_config(brain_dir / "config.json", DEFAULT_RESPONSE_LIMITS)
     _write_json_if_missing(
         persona_dir / "memories.json",
         {

@@ -54,6 +54,14 @@ class PersonaConfig:
 
 
 @dataclass
+class ResponseConfig:
+    """Per-brain assistant response limits."""
+
+    max_tokens: Optional[int] = None
+    max_sentences: Optional[int] = None
+
+
+@dataclass
 class MemoryInjectionConfig:
     """记忆注入策略配置。"""
 
@@ -218,6 +226,7 @@ class AgentConfig:
     memory_injection: MemoryInjectionConfig = field(default_factory=MemoryInjectionConfig)
     prompt_budget: PromptBudgetConfig = field(default_factory=PromptBudgetConfig)
     relationship_state_machine: RelationshipStateMachineConfig = field(default_factory=RelationshipStateMachineConfig)
+    response: ResponseConfig = field(default_factory=ResponseConfig)
 
     def __post_init__(self):
         """将字典类型的输入转换为正确的 dataclass 类型。"""
@@ -235,6 +244,8 @@ class AgentConfig:
             self.prompt_budget = PromptBudgetConfig(**self.prompt_budget)
         if isinstance(self.relationship_state_machine, dict):
             self.relationship_state_machine = RelationshipStateMachineConfig(**self.relationship_state_machine)
+        if isinstance(self.response, dict):
+            self.response = ResponseConfig(**self.response)
 
     @classmethod
     def from_dict(cls, data: dict) -> "AgentConfig":
@@ -253,6 +264,7 @@ class AgentConfig:
         memory_injection_data = data.get("memory_injection", {})
         prompt_budget_data = data.get("prompt_budget", {})
         relationship_state_machine_data = data.get("relationship_state_machine", {})
+        response_data = data.get("response") or {}
 
         return cls(
             persona=PersonaConfig(**persona_data),
@@ -262,6 +274,7 @@ class AgentConfig:
             memory_injection=MemoryInjectionConfig(**memory_injection_data),
             prompt_budget=PromptBudgetConfig(**prompt_budget_data),
             relationship_state_machine=RelationshipStateMachineConfig(**relationship_state_machine_data),
+            response=ResponseConfig(**response_data),
         )
 
     def to_dict(self) -> dict:
@@ -312,4 +325,8 @@ class AgentConfig:
                 "section_tokens": self.prompt_budget.section_tokens,
             },
             "relationship_state_machine": self.relationship_state_machine.to_dict(),
+            "response": {
+                "max_tokens": self.response.max_tokens,
+                "max_sentences": self.response.max_sentences,
+            },
         }

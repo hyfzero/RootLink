@@ -30,6 +30,7 @@ from GUI.control import (
     build_amadues_runtime,
 )
 from GUI.interfaces import ChatMessage, CompanionRole, CompanionUIView, UiSettings
+from GUI.role_loader import load_roles_from_data
 from agent_core.session.path_resolver import PathResolver
 
 
@@ -218,6 +219,15 @@ class GuiControlTests(unittest.TestCase):
             controller.bind_view(view)
 
             self.assertEqual(view.roles, [])
+
+    def test_loading_roles_does_not_create_missing_data_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as parent_dir:
+            data_dir = Path(parent_dir) / "missing-data"
+
+            roles = load_roles_from_data(data_dir)
+
+            self.assertEqual(roles, [])
+            self.assertFalse(data_dir.exists())
 
     def test_bind_view_loads_roles_from_data_directory(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
