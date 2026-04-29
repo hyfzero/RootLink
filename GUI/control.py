@@ -247,6 +247,14 @@ def _copy_asset_if_missing(source: Path, target: Path) -> None:
         shutil.copyfile(source, target)
 
 
+def _reply_tag_emotion(tag: object) -> str:
+    if tag is None:
+        return ""
+    if isinstance(tag, dict):
+        return str(tag.get("emotion") or "")
+    return str(getattr(tag, "emotion", "") or "")
+
+
 def _load_model_config(config_dir: str | Path | None = None) -> ModelConfig:
     storage = ModelsStorage(config_dir)
     config = storage.load()
@@ -620,12 +628,14 @@ class AmaduesController(CompanionUICallback):
         normal_streamer: _NormalMessageStreamer | None = None
         immersive_started = False
         accumulated = ""
+        final_emotion = ""
         try:
             runtime = self._get_runtime()
             self._select_role_runtime(role_id, runtime)
             stream_method = getattr(runtime.session_manager, "send_message_stream", None)
             if not callable(stream_method):
                 result = runtime.session_manager.send_message_sync(user_message=text, emotion=None)
+                final_emotion = _reply_tag_emotion(result.get("tag"))
                 self._append_finished_reply(role_id, mode, assistant_id, str(result.get("content", "")))
                 return
 
@@ -662,6 +672,7 @@ class AmaduesController(CompanionUICallback):
                         self.view.update_message_text(assistant_id, accumulated, is_streaming=True)
                 elif event_type == "done":
                     content = str(event.get("content", accumulated))
+                    final_emotion = _reply_tag_emotion(event.get("tag"))
                     if normal_streamer is not None:
                         normal_streamer.finish(content if not accumulated else None)
                     else:
@@ -681,6 +692,8 @@ class AmaduesController(CompanionUICallback):
             elif immersive_started:
                 self.view.update_message_text(assistant_id, accumulated, is_streaming=False)
             self.view.set_typing(False)
+            if final_emotion and callable(getattr(self.view, "set_reply_emotion", None)):
+                self.view.set_reply_emotion(role_id, final_emotion)
 
     def _append_finished_reply(self, role_id: str, mode: str, assistant_id: str, content: str) -> None:
         if self.view is None:

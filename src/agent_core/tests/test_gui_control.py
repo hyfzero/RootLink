@@ -43,6 +43,7 @@ class StubView(CompanionUIView):
         self.appended: list[ChatMessage] = []
         self.updated: list[tuple[str, str, bool]] = []
         self.typing_states: list[bool] = []
+        self.reply_emotions: list[tuple[str, str]] = []
         self.applied_settings: UiSettings | None = None
         self.pages: list[str] = []
 
@@ -72,6 +73,9 @@ class StubView(CompanionUIView):
     def set_typing(self, visible: bool) -> None:
         self.typing_states.append(visible)
 
+    def set_reply_emotion(self, role_id: str, emotion: str) -> None:
+        self.reply_emotions.append((role_id, emotion))
+
     def apply_settings(self, settings: UiSettings) -> None:
         self.applied_settings = settings
 
@@ -98,7 +102,11 @@ class FakeSessionManager:
         stream_deltas: list[str] | None = None,
     ) -> None:
         self.storage = FakeSessionStorage(messages)
-        self.reply = reply or {"message_id": "assistant-1", "content": "stub reply"}
+        self.reply = reply or {
+            "message_id": "assistant-1",
+            "content": "stub reply",
+            "tag": SimpleNamespace(emotion="neutral"),
+        }
         self.stream_deltas = stream_deltas
         self.sent: list[tuple[str, object]] = []
         self.switched: list[str] = []
@@ -328,6 +336,26 @@ class GuiControlTests(unittest.TestCase):
         self.assertEqual(view.appended[-1].text, "assistant reply")
         self.assertFalse(view.appended[-1].is_user)
         self.assertEqual(view.updated[-1][2], False)
+
+    def test_send_message_publishes_reply_emotion(self) -> None:
+        manager = FakeSessionManager(
+            reply={
+                "message_id": "reply-1",
+                "content": "assistant reply",
+                "tag": SimpleNamespace(emotion="happy"),
+            }
+        )
+        controller = AmaduesController(
+            runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
+            normal_sentence_delay=0,
+        )
+        view = StubView()
+        controller.bind_view(view)
+
+        controller.on_send_message(AMADUES_UI_ROLE_ID, "hi", "normal")
+        controller.wait_for_streams()
+
+        self.assertEqual(view.reply_emotions, [(AMADUES_UI_ROLE_ID, "happy")])
 
     def test_send_message_switches_to_data_role_brain(self) -> None:
         manager = FakeSessionManager(reply={"message_id": "reply-1", "content": "shinji reply"})

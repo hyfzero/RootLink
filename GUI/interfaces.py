@@ -150,6 +150,9 @@ class CompanionUIView(ABC):
     def set_typing(self, visible: bool) -> None:
         raise NotImplementedError
 
+    def set_reply_emotion(self, role_id: str, emotion: str) -> None:
+        raise NotImplementedError
+
     def apply_settings(self, settings: UiSettings) -> None:
         raise NotImplementedError
 

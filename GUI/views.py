@@ -79,6 +79,20 @@ PORTRAIT_EMOTIONS = [
 CREATE_STEPS = ["基础信息", "立绘", "人格", "记忆", "语言风格"]
 
 
+TYPING_STATUS_TEXT = "\u6b63\u5728\u8f93\u5165\u4e2d"
+REPLY_EMOTION_STATUS = {
+    "neutral": "\u5e73\u9759",
+    "happy": "\u5f00\u5fc3",
+    "sad": "\u96be\u8fc7",
+    "angry": "\u751f\u6c14",
+    "surprised": "\u60ca\u8bb6",
+    "thinking": "\u601d\u8003\u4e2d",
+    "confused": "\u56f0\u60d1",
+    "scared": "\u5bb3\u6015",
+    "embarrassed": "\u5bb3\u7f9e",
+}
+
+
 def default_roles() -> list[CompanionRole]:
     return load_roles_from_data()
 
@@ -107,6 +121,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._messages = self._seed_messages(self.active_role) if self._roles else []
         self._seen_message_ids = {message.id for message in self._messages}
         self._typing = False
+        self._reply_emotions: dict[str, str] = {}
         self._settings = UiSettings(is_dark=is_dark)
         self._profile = UserProfile(name=self._settings.user_name)
         self._draft = CharacterDraft()
@@ -122,6 +137,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._chat_launching_role_id: Optional[str] = None
         self._chat_entry_seed = 0
         self._chat_list_view: Optional[ft.ListView] = None
+        self._chat_status_text: Optional[ft.Text] = None
         self._immersive_dialogue_text: Optional[ft.Text] = None
         self._pending_scroll_to_latest = False
         self._immersive_message_id: Optional[str] = None
@@ -483,6 +499,13 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 ),
             )
         role = self.active_role
+        self._chat_status_text = text(
+            self._chat_status_value(role),
+            11,
+            colors["text_secondary"],
+            max_lines=1,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        )
         header = ft.Container(
             padding=ft.padding.only(left=16, right=16, top=26, bottom=12),
             border=ft.border.only(bottom=ft.BorderSide(1, colors["card_border"])),
@@ -500,7 +523,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                                 spacing=2,
                                 controls=[
                                     text(role.name, 15, colors["text"], ft.FontWeight.W_500),
-                                    text(role.status_text, 11, colors["text_secondary"], max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                                    self._chat_status_text,
                                 ],
                             ),
                         ],
@@ -594,6 +617,27 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _latest_role_reply_text(self, role: CompanionRole) -> str:
         return next((message.text for message in reversed(self._messages) if message.role_id == role.id and not message.is_user), role.status_text)
+
+    def _normalize_emotion(self, emotion: str) -> str:
+        return str(emotion or "").strip().replace("_zh", "").lower()
+
+    def _chat_status_value(self, role: CompanionRole) -> str:
+        if self._typing:
+            return TYPING_STATUS_TEXT
+        emotion = self._normalize_emotion(self._reply_emotions.get(role.id, ""))
+        if emotion:
+            return REPLY_EMOTION_STATUS.get(emotion, emotion)
+        return role.status_text
+
+    def _refresh_chat_status(self) -> bool:
+        if self._page_name != "chat" or self._chat_status_text is None or not self._roles:
+            return False
+        self._chat_status_text.value = self._chat_status_value(self.active_role)
+        try:
+            self._chat_status_text.update()
+        except (AssertionError, RuntimeError):
+            return False
+        return True
 
     def _role_messages(self, role_id: str) -> list[ChatMessage]:
         return [message for message in self._messages if message.role_id == role_id]
@@ -1591,12 +1635,20 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def set_typing(self, visible: bool) -> None:
         self._typing = visible
+        self._refresh_chat_status()
         if self._page_name == "chat" and self._chat_mode == "normal":
             self._schedule_scroll_to_latest()
         if not self._refresh_chat_surface():
             self._safe_update()
             if self._page_name == "chat" and self._chat_mode == "normal":
                 self._trigger_scroll_to_latest()
+
+    def set_reply_emotion(self, role_id: str, emotion: str) -> None:
+        normalized = self._normalize_emotion(emotion)
+        if normalized:
+            self._reply_emotions[role_id] = normalized
+        if role_id == self._active_role_id and not self._refresh_chat_status():
+            self._safe_update()
 
     def apply_settings(self, settings: UiSettings) -> None:
         self._settings = settings

@@ -88,6 +88,21 @@ class GuiViewTests(unittest.TestCase):
         self.assertEqual(view.active_role.id, "")
         self.assertEqual(view._messages, [])
 
+    def test_chat_status_uses_typing_and_reply_emotion(self) -> None:
+        role = make_role()
+        view = CompanionAppView(roles=[role])
+
+        self.assertEqual(view._chat_status_value(role), "status")
+
+        view.set_reply_emotion(role.id, "happy")
+        self.assertEqual(view._chat_status_value(role), "\u5f00\u5fc3")
+
+        view.set_typing(True)
+        self.assertEqual(view._chat_status_value(role), "\u6b63\u5728\u8f93\u5165\u4e2d")
+
+        view.set_typing(False)
+        self.assertEqual(view._chat_status_value(role), "\u5f00\u5fc3")
+
     def test_split_immersive_sentences_handles_punctuation_and_newlines(self) -> None:
         view = CompanionAppView(roles=[make_role()])
 
