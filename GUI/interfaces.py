@@ -76,6 +76,7 @@ class CharacterDraft:
     template: str = "default"
     name: str = ""
     description: str = ""
+    avatar_path: str = ""
     portraits: dict[str, str] = field(default_factory=dict)
     age: str = ""
     gender: str = "unknown"
@@ -161,3 +162,6 @@ class CompanionUIView(ABC):
 
     def clear_chat(self) -> None:
         raise NotImplementedError
+
+    def show_notice(self, message: str, is_error: bool = False) -> None:
+        pass

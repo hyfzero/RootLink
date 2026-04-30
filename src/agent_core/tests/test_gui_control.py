@@ -29,7 +29,7 @@ from GUI.control import (
     UiSettingsStorage,
     build_amadues_runtime,
 )
-from GUI.interfaces import ChatMessage, CompanionRole, CompanionUIView, UiSettings
+from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUIView, UiSettings
 from GUI.role_loader import load_roles_from_data
 from agent_core.session.path_resolver import PathResolver
 
@@ -46,6 +46,7 @@ class StubView(CompanionUIView):
         self.reply_emotions: list[tuple[str, str]] = []
         self.applied_settings: UiSettings | None = None
         self.pages: list[str] = []
+        self.notices: list[tuple[str, bool]] = []
 
     def set_roles(self, roles: list[CompanionRole]) -> None:
         self.roles = roles
@@ -84,6 +85,9 @@ class StubView(CompanionUIView):
 
     def clear_chat(self) -> None:
         self.messages = []
+
+    def show_notice(self, message: str, is_error: bool = False) -> None:
+        self.notices.append((message, is_error))
 
 
 class FakeSessionStorage:
@@ -287,6 +291,49 @@ class GuiControlTests(unittest.TestCase):
             self.assertEqual(shinji.name, "碇真嗣")
             self.assertEqual(shinji.portraits["neutral"], (Path(data_dir) / "shinji" / "assets" / "portraits" / "neutral.png").as_posix())
             self.assertEqual(shinji.standing_image_path, shinji.portraits["neutral"])
+
+    def test_character_create_writes_data_refreshes_roles_and_selects_new_role(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
+            os.environ[PathResolver.ENV_CONFIG_DIR] = config_dir
+            os.environ[PathResolver.ENV_DATA_DIR] = data_dir
+
+            controller = AmaduesController(settings_storage=UiSettingsStorage(config_dir))
+            controller._runtime = object()
+            view = StubView()
+            controller.bind_view(view)
+
+            draft = CharacterDraft(
+                brain_id="new_role",
+                name="New Role",
+                description="A newly created role.",
+            )
+            controller.on_character_create_requested(draft)
+
+            self.assertTrue((Path(data_dir) / "new_role" / "ui.json").exists())
+            self.assertIn("new_role", [role.id for role in view.roles])
+            self.assertEqual(view.active_role_id, "new_role")
+            self.assertIsNone(controller._runtime)
+            self.assertEqual(view.pages[-1], "home")
+            self.assertTrue(view.notices)
+            self.assertFalse(view.notices[-1][1])
+
+    def test_character_create_validation_failure_keeps_runtime_and_reports_notice(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
+            os.environ[PathResolver.ENV_CONFIG_DIR] = config_dir
+            os.environ[PathResolver.ENV_DATA_DIR] = data_dir
+
+            controller = AmaduesController(settings_storage=UiSettingsStorage(config_dir))
+            runtime = object()
+            controller._runtime = runtime
+            view = StubView()
+            controller.bind_view(view)
+
+            controller.on_character_create_requested(CharacterDraft(brain_id="../bad", name="Bad"))
+
+            self.assertIs(controller._runtime, runtime)
+            self.assertEqual(view.pages, [])
+            self.assertTrue(view.notices[-1][1])
+            self.assertFalse(any(Path(data_dir).iterdir()))
 
     def test_open_chat_without_api_key_injects_notice_message(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir:

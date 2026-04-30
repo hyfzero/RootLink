@@ -31,6 +31,7 @@ from .chat_text import (
     consume_complete_sentence,
     split_display_sentences,
 )
+from .character_creator import CharacterCreationError, CharacterCreator
 from .interfaces import (
     CharacterDraft,
     ChatMessage,
@@ -733,7 +734,21 @@ class AmaduesController(CompanionUICallback):
             self.view.apply_settings(self._settings)
 
     def on_character_create_requested(self, draft: CharacterDraft) -> None:
-        print(f"[ui] create character demo: id={draft.brain_id} name={draft.name}")
+        try:
+            result = CharacterCreator(PathResolver.get_data_dir()).create(draft)
+        except CharacterCreationError as exc:
+            if self.view is not None:
+                self.view.show_notice(str(exc), is_error=True)
+            else:
+                print(f"[ui] create character failed: {exc}")
+            return
+
+        self._invalidate_runtime()
+        if self.view is not None:
+            self._publish_data_roles()
+            self.view.set_active_role(result.brain_id)
+            self.view.show_notice(f"Created character: {draft.name.strip()}")
+            self.view.show_page("home")
 
     def on_theme_toggled(self, is_dark: bool) -> None:
         self._settings.is_dark = is_dark

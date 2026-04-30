@@ -69,6 +69,8 @@ class DemoCallback(CompanionUICallback):
 
     def on_character_create_requested(self, draft: CharacterDraft) -> None:
         print(f"[ui] create character: id={draft.brain_id} name={draft.name}")
+        if self.view:
+            self.view.show_page("home")
 
     def on_theme_toggled(self, is_dark: bool) -> None:
         print(f"[ui] theme: {'dark' if is_dark else 'light'}")

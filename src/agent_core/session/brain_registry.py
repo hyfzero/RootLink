@@ -116,13 +116,7 @@ class BrainRegistry:
         history = self._load_history(history_dir, config)
 
         # 加载或创建 Style Engine
-        speaking_style_str = persona.profile.speaking_style
-        # 检查是否是预设风格
-        if speaking_style_str in PRESET_STYLES:
-            style_engine = SpeakingStyleEngine(preset_name=speaking_style_str)
-        else:
-            # 使用默认风格，可通过配置自定义
-            style_engine = SpeakingStyleEngine(preset_name="gentle")
+        style_engine = self._load_speaking_style(persona_dir, persona.profile.speaking_style)
 
         # 创建 PromptBuilder
         prompt_builder = PromptBuilder(
@@ -139,6 +133,20 @@ class BrainRegistry:
             prompt_builder=prompt_builder,
             config=config,
         )
+
+    def _load_speaking_style(self, persona_dir: Path, speaking_style: str) -> Optional[SpeakingStyleEngine]:
+        """Load detailed speaking style first, then fall back to profile preset."""
+        style_path = persona_dir / "speaking_style.json"
+        if style_path.exists():
+            import json
+            with open(style_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return SpeakingStyleEngine.from_dict(data)
+
+        if speaking_style in PRESET_STYLES:
+            return SpeakingStyleEngine(preset_name=speaking_style)
+        return SpeakingStyleEngine(preset_name="gentle")
 
     def _load_config(self, brain_dir: Path) -> AgentConfig:
         """加载 Brain 配置"""

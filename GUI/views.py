@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import flet as ft
@@ -13,6 +14,7 @@ from .components import (
     ChatInputBar,
     FormField,
     IMAGE_CONTAIN,
+    IMAGE_COVER,
     MemoryEditor,
     MessageBubble,
     MessageBubbleEntry,
@@ -129,6 +131,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._create_step_seed = 0
         self._create_step_direction = 1
         self._emotion_id = "neutral"
+        self._file_picker: Optional[ft.FilePicker] = None
+        self._file_picker_target: tuple[str, str] | None = None
         self._trait_field: Optional[ft.TextField] = None
         self._interest_field: Optional[ft.TextField] = None
         self._memory_editors: list[MemoryEditor] = []
@@ -149,6 +153,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._build()
 
     def did_mount(self) -> None:
+        self._ensure_file_picker()
         self._trigger_scroll_to_latest()
 
     @property
@@ -225,6 +230,76 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self.update()
         except (AssertionError, RuntimeError):
             pass
+
+    def _ensure_file_picker(self) -> ft.FilePicker | None:
+        if self._file_picker is None:
+            self._file_picker = ft.FilePicker()
+        try:
+            page = self.page
+        except RuntimeError:
+            return None
+        if hasattr(page, "services"):
+            return self._file_picker
+        overlay = getattr(page, "overlay", None)
+        if overlay is None:
+            return None
+        if self._file_picker not in overlay:
+            overlay.append(self._file_picker)
+            try:
+                page.update()
+            except Exception:
+                pass
+        return self._file_picker
+
+    def _open_image_picker(self, target: str, emotion_id: str = "") -> None:
+        picker = self._ensure_file_picker()
+        if picker is None:
+            self.show_notice("File picker is unavailable before the page is mounted.", is_error=True)
+            return
+        self._file_picker_target = (target, emotion_id)
+        try:
+            page = self.page
+        except RuntimeError:
+            page = None
+        if page is None:
+            self.show_notice("File picker is unavailable before the page is mounted.", is_error=True)
+            return
+        page.run_task(self._pick_image_file, picker)
+
+    async def _pick_image_file(self, picker: ft.FilePicker) -> None:
+        try:
+            files = await picker.pick_files(
+                allow_multiple=False,
+                file_type=ft.FilePickerFileType.CUSTOM,
+                allowed_extensions=["png", "jpg", "jpeg", "webp"],
+            )
+        except Exception:
+            self._file_picker_target = None
+            self.show_notice("Could not open the file picker.", is_error=True)
+            return
+        self._handle_image_pick(files)
+
+    def _handle_image_pick(self, files: object) -> None:
+        target = self._file_picker_target
+        self._file_picker_target = None
+        selected_files = getattr(files, "files", files)
+        if target is None or not selected_files:
+            return
+
+        file_path = getattr(selected_files[0], "path", "") or ""
+        if not file_path:
+            self.show_notice("Could not read selected file path.", is_error=True)
+            return
+        if Path(file_path).suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+            self.show_notice("Images must be PNG, JPG, JPEG, or WebP.", is_error=True)
+            return
+
+        kind, emotion_id = target
+        if kind == "avatar":
+            self._draft.avatar_path = file_path
+        elif kind == "portrait" and emotion_id:
+            self._draft.portraits[emotion_id] = file_path
+        self._safe_update()
 
     def _stagger(
         self,
@@ -1154,6 +1229,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     content=text(label, 11, colors["text"] if selected else colors["text_secondary"]),
                 )
             )
+        avatar_path = self._draft.avatar_path or self.active_role.avatar_path
         preview_path = self._draft.portraits.get(self._emotion_id) or self.active_role.standing_image_path
         return section_card(
             ft.Column(
@@ -1161,6 +1237,39 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 controls=[
                     text("立绘设置", 18, colors["text"], ft.FontWeight.W_500),
                     text("选择情绪并上传对应立绘。", 12, colors["text_secondary"]),
+                    ft.Row(
+                        spacing=12,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Container(
+                                width=82,
+                                height=82,
+                                border_radius=41,
+                                clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+                                bgcolor=colors["muted"],
+                                border=ft.border.all(1, colors["card_border"]),
+                                content=ft.Image(src=avatar_path, fit=IMAGE_COVER)
+                                if avatar_path
+                                else ft.Icon(ft.Icons.PERSON, size=28, color=colors["text_tertiary"]),
+                            ),
+                            ft.Container(
+                                expand=True,
+                                content=ft.Column(
+                                    spacing=8,
+                                    controls=[
+                                        text("Avatar", 13, colors["text"], ft.FontWeight.W_500),
+                                        ft.Row(
+                                            spacing=8,
+                                            controls=[
+                                                ft.Container(expand=True, content=self._secondary_button("Replace", colors, lambda _: self._upload_create_avatar())),
+                                                ft.Container(expand=True, content=self._secondary_button("Remove", colors, lambda _: self._remove_create_avatar())),
+                                            ],
+                                        ),
+                                    ],
+                                ),
+                            ),
+                        ],
+                    ),
                     ft.Row(spacing=8, wrap=True, controls=chips),
                     ft.Container(
                         height=260,
@@ -1170,7 +1279,28 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         border=ft.border.all(1, colors["card_border"]),
                         content=ft.Image(src=preview_path, fit=IMAGE_CONTAIN),
                     ),
-                    self._primary_button(f"上传{self._current_emotion_label()}立绘", self.active_role.accent_color, lambda _: self._upload_portrait()),
+                    ft.Row(
+                        spacing=10,
+                        controls=[
+                            ft.Container(expand=True, content=self._primary_button("Replace portrait", self.active_role.accent_color, lambda _: self._upload_portrait())),
+                            ft.Container(expand=True, content=self._secondary_button("Remove", colors, lambda _: self._remove_portrait())),
+                        ],
+                    ),
+                    ft.Container(
+                        height=44,
+                        border_radius=14,
+                        bgcolor=hex_with_alpha(self.active_role.accent_color, 36),
+                        border=ft.border.all(1, hex_with_alpha(self.active_role.accent_color, 70)),
+                        alignment=ft.Alignment(0, 0),
+                        content=ft.Row(
+                            alignment=ft.MainAxisAlignment.CENTER,
+                            spacing=8,
+                            controls=[
+                                ft.Icon(ft.Icons.CONTENT_CUT, size=16, color=colors["text_secondary"]),
+                                text("Background cutout: planned", 12, colors["text_secondary"]),
+                            ],
+                        ),
+                    ),
                 ],
             ),
             colors,
@@ -1515,7 +1645,6 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._safe_update()
             return
         self._callback.on_character_create_requested(self._draft)
-        self.show_page("home")
 
     def _previous_step(self) -> None:
         self._persist_current_step()
@@ -1526,7 +1655,18 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._safe_update()
 
     def _upload_portrait(self) -> None:
-        self._callback.on_portrait_upload_requested(self._emotion_id)
+        self._open_image_picker("portrait", self._emotion_id)
+
+    def _remove_portrait(self) -> None:
+        self._draft.portraits.pop(self._emotion_id, None)
+        self._safe_update()
+
+    def _upload_create_avatar(self) -> None:
+        self._open_image_picker("avatar")
+
+    def _remove_create_avatar(self) -> None:
+        self._draft.avatar_path = ""
+        self._safe_update()
 
     def _add_trait(self) -> None:
         value = (self._trait_field.value if self._trait_field else "").strip()
@@ -1687,3 +1827,16 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._immersive_typewriter_generation += 1
         if not self._refresh_chat_surface():
             self._safe_update()
+
+    def show_notice(self, message: str, is_error: bool = False) -> None:
+        try:
+            snack_bar = ft.SnackBar(
+                content=text(message, 13, "#FFFFFF"),
+                bgcolor="#B42318" if is_error else self.active_role.accent_color,
+            )
+            page = self.page
+            page.snack_bar = snack_bar
+            snack_bar.open = True
+            page.update()
+        except Exception:
+            print(f"[ui] {'error' if is_error else 'notice'}: {message}")
