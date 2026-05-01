@@ -93,13 +93,41 @@ def pill(label: str, color: str, is_dark: bool) -> ft.Container:
     )
 
 
-def section_card(content: ft.Control, colors: dict[str, str], padding: int = 20) -> ft.Container:
+def dropdown_control_style(colors: dict[str, str], radius: int = 18, text_size: int = 13) -> dict[str, object]:
     is_dark = is_dark_palette(colors)
+    surface = colors.get("dropdown_surface", colors["input"])
+    border_color = colors.get("dropdown_border", colors["input_border"])
+    return {
+        "text_size": text_size,
+        "color": colors["text"],
+        "text_style": ft.TextStyle(color=colors["text"], size=text_size),
+        "label_style": ft.TextStyle(color=colors["text_secondary"], size=13),
+        "border_radius": radius,
+        "border_color": border_color,
+        "focused_border_color": border_color,
+        "bgcolor": surface,
+        "filled": True,
+        "fill_color": surface,
+        "content_padding": ft.padding.symmetric(horizontal=14, vertical=10),
+        "menu_style": ft.MenuStyle(
+            bgcolor=surface,
+            elevation=12,
+            shadow_color=hex_with_alpha("#000000", 0x40 if is_dark else 0x22),
+            side=ft.BorderSide(1, border_color),
+            padding=ft.padding.symmetric(vertical=6),
+        ),
+    }
+
+
+def section_card(content: ft.Control, colors: dict[str, str], padding: int = 20, *, solid: bool = False, radius: int = 24) -> ft.Container:
+    is_dark = is_dark_palette(colors)
+    bgcolor = colors.get("surface_solid_alt", colors["card"]) if solid else colors["card"]
+    border_color = colors.get("dropdown_border", colors["card_border"]) if solid else colors["card_border"]
     return ft.Container(
         padding=padding,
-        border_radius=24,
-        bgcolor=colors["card"],
-        border=ft.border.all(1, colors["card_border"]),
+        border_radius=radius,
+        bgcolor=bgcolor,
+        border=ft.border.all(1, border_color),
         shadow=soft_shadow(is_dark, None, "card"),
         content=content,
     )
@@ -540,7 +568,9 @@ class ChatInputBar(ft.Container):
 
 
 class FormField(ft.TextField):
-    def __init__(self, label: str, placeholder: str, colors: dict[str, str], multiline: bool = False, password: bool = False):
+    def __init__(self, label: str, placeholder: str, colors: dict[str, str], multiline: bool = False, password: bool = False, solid: bool = False):
+        fill_color = colors.get("surface_solid", colors["input"]) if solid else colors["input"]
+        border_color = colors.get("dropdown_border", colors["input_border"]) if solid else colors["input_border"]
         super().__init__(
             label=label,
             hint_text=placeholder,
@@ -553,21 +583,21 @@ class FormField(ft.TextField):
             color=colors["text"],
             label_style=ft.TextStyle(color=colors["text_secondary"], size=13),
             hint_style=ft.TextStyle(color=colors["text_tertiary"], size=13),
-            border_radius=22,
-            border_color=colors["input_border"],
-            focused_border_color=colors["input_border"],
-            bgcolor=colors["input"],
+            border_radius=20 if solid else 22,
+            border_color=border_color,
+            focused_border_color=border_color,
+            bgcolor=fill_color,
             filled=True,
-            fill_color=colors["input"],
+            fill_color=fill_color,
             content_padding=ft.padding.symmetric(horizontal=14, vertical=12),
         )
 
 
 class MemoryEditor(ft.Container):
     def __init__(self, memory: MemoryDraft, colors: dict[str, str], on_remove: Callable[[], None]) -> None:
-        self.content_field = FormField("记忆内容", "记忆内容...", colors, multiline=True)
+        self.content_field = FormField("记忆内容", "记忆内容...", colors, multiline=True, solid=True)
         self.content_field.value = memory.content
-        self.context_field = FormField("上下文", "例如：第一次见面", colors)
+        self.context_field = FormField("上下文", "例如：第一次见面", colors, solid=True)
         self.context_field.value = memory.context
         self.type_dropdown = ft.Dropdown(
             label="类型",
@@ -579,18 +609,14 @@ class MemoryEditor(ft.Container):
                 ft.dropdown.Option("daily_summary", "日度总结"),
                 ft.dropdown.Option("monthly_summary", "月度总结"),
             ],
-            text_size=12,
-            color=colors["text"],
-            border_radius=18,
-            border_color=colors["input_border"],
-            bgcolor=colors["input"],
+            **dropdown_control_style(colors, radius=18, text_size=12),
         )
         self.importance = ft.Slider(min=0, max=2, divisions=20, value=memory.importance)
         super().__init__(
-            padding=14,
-            border_radius=18,
-            bgcolor=colors["card"],
-            border=ft.border.all(1, colors["card_border"]),
+            padding=16,
+            border_radius=24,
+            bgcolor=colors.get("surface_solid_alt", colors["card"]),
+            border=ft.border.all(1, colors.get("dropdown_border", colors["card_border"])),
             shadow=soft_shadow(is_dark_palette(colors), None, "card"),
             content=ft.Column(
                 spacing=10,

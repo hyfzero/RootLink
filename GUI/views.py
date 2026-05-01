@@ -27,6 +27,7 @@ from .components import (
     TypingDots,
     animated_click,
     avatar,
+    dropdown_control_style,
     round_icon_button,
     section_card,
     text,
@@ -1132,7 +1133,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._stagger("create", 3, self._create_footer(colors), offset_y=0.03),
             ft.Container(height=24),
         ]
-        return self._page_column([ft.Container(padding=ft.padding.symmetric(horizontal=20), content=ft.Column(spacing=16, controls=controls))])
+        return self._page_column([ft.Container(padding=ft.padding.only(left=20, right=20, top=4, bottom=20), content=ft.Column(spacing=18, controls=controls))])
 
     def _create_progress(self, colors: dict[str, str]) -> ft.Control:
         bars: list[ft.Control] = []
@@ -1141,13 +1142,13 @@ class CompanionAppView(ft.Container, CompanionUIView):
             bars.append(
                 ft.Container(
                     expand=True,
-                    height=6,
-                    border_radius=4,
-                    bgcolor=hex_with_alpha(self.active_role.accent_color, 180 if active else 60),
-                    opacity=1.0 if active else 0.7,
+                    height=8,
+                    border_radius=999,
+                    bgcolor=hex_with_alpha(self.active_role.accent_color, 210 if active else 42),
+                    opacity=1.0 if active else 0.82,
                     animate_opacity=animation("normal"),
                     animate_scale=animation("normal"),
-                    scale=1.0 if active else 0.96,
+                    scale=1.0 if active else 0.98,
                 )
             )
         return section_card(
@@ -1162,16 +1163,19 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 ],
             ),
             colors,
+            padding=22,
+            solid=True,
+            radius=28,
         )
 
     def _create_footer(self, colors: dict[str, str]) -> ft.Control:
         return ft.Row(
             spacing=10,
             controls=[
-                ft.Container(expand=True, content=self._secondary_button("上一步", colors, lambda _: self._previous_step())),
+                ft.Container(expand=True, content=self._secondary_button("上一步", colors, lambda _: self._previous_step(), ft.Icons.CHEVRON_LEFT, subtle=self._create_step == 1)),
                 ft.Container(
                     expand=True,
-                    content=self._primary_button("创建" if self._create_step == 5 else "下一步", self.active_role.accent_color, lambda _: self._next_step()),
+                    content=self._primary_button("创建" if self._create_step == 5 else "下一步", self.active_role.accent_color, lambda _: self._next_step(), ft.Icons.CHECK if self._create_step == 5 else ft.Icons.CHEVRON_RIGHT),
                 ),
             ],
         )
@@ -1188,21 +1192,17 @@ class CompanionAppView(ft.Container, CompanionUIView):
         return self._speaking_step(colors)
 
     def _basic_step(self, colors: dict[str, str]) -> ft.Control:
-        self._brain_id_field = FormField("角色标识", "companion-id", colors)
+        self._brain_id_field = FormField("角色标识", "companion-id", colors, solid=True)
         self._brain_id_field.value = self._draft.brain_id
         self._template_dropdown = ft.Dropdown(
             label="模板",
             value=self._draft.template or "default",
             options=[ft.dropdown.Option("default", "默认"), ft.dropdown.Option("empathetic", "共情"), ft.dropdown.Option("strict", "克制")],
-            text_size=12,
-            border_radius=14,
-            border_color=colors["input_border"],
-            bgcolor=colors["input"],
-            color=colors["text"],
+            **dropdown_control_style(colors, radius=18, text_size=13),
         )
-        self._name_field = FormField("名称", "角色名称", colors)
+        self._name_field = FormField("名称", "角色名称", colors, solid=True)
         self._name_field.value = self._draft.name
-        self._description_field = FormField("描述", "简短描述这个角色", colors, multiline=True)
+        self._description_field = FormField("描述", "简短描述这个角色", colors, multiline=True, solid=True)
         self._description_field.value = self._draft.description
         return section_card(
             ft.Column(
@@ -1210,6 +1210,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 controls=[text("基础信息", 18, colors["text"], ft.FontWeight.W_500), self._brain_id_field, self._template_dropdown, self._name_field, self._description_field],
             ),
             colors,
+            padding=22,
+            solid=True,
+            radius=28,
         )
 
     def _portrait_step(self, colors: dict[str, str]) -> ft.Control:
@@ -1257,12 +1260,12 @@ class CompanionAppView(ft.Container, CompanionUIView):
                                 content=ft.Column(
                                     spacing=8,
                                     controls=[
-                                        text("Avatar", 13, colors["text"], ft.FontWeight.W_500),
+                                        text("头像", 13, colors["text"], ft.FontWeight.W_500),
                                         ft.Row(
                                             spacing=8,
                                             controls=[
-                                                ft.Container(expand=True, content=self._secondary_button("Replace", colors, lambda _: self._upload_create_avatar())),
-                                                ft.Container(expand=True, content=self._secondary_button("Remove", colors, lambda _: self._remove_create_avatar())),
+                                                ft.Container(expand=True, content=self._secondary_button("替换", colors, lambda _: self._upload_create_avatar(), ft.Icons.IMAGE_OUTLINED)),
+                                                ft.Container(expand=True, content=self._secondary_button("移除", colors, lambda _: self._remove_create_avatar(), ft.Icons.DELETE_OUTLINE, subtle=True)),
                                             ],
                                         ),
                                     ],
@@ -1282,8 +1285,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     ft.Row(
                         spacing=10,
                         controls=[
-                            ft.Container(expand=True, content=self._primary_button("Replace portrait", self.active_role.accent_color, lambda _: self._upload_portrait())),
-                            ft.Container(expand=True, content=self._secondary_button("Remove", colors, lambda _: self._remove_portrait())),
+                            ft.Container(expand=True, content=self._primary_button("更换立绘", self.active_role.accent_color, lambda _: self._upload_portrait(), ft.Icons.ADD_PHOTO_ALTERNATE_OUTLINED)),
+                            ft.Container(expand=True, content=self._secondary_button("移除", colors, lambda _: self._remove_portrait(), ft.Icons.DELETE_OUTLINE, subtle=True)),
                         ],
                     ),
                     ft.Container(
@@ -1297,44 +1300,39 @@ class CompanionAppView(ft.Container, CompanionUIView):
                             spacing=8,
                             controls=[
                                 ft.Icon(ft.Icons.CONTENT_CUT, size=16, color=colors["text_secondary"]),
-                                text("Background cutout: planned", 12, colors["text_secondary"]),
+                                text("抠图待实现", 12, colors["text_secondary"]),
                             ],
                         ),
                     ),
                 ],
             ),
             colors,
+            padding=22,
+            solid=True,
+            radius=28,
         )
 
     def _personality_step(self, colors: dict[str, str]) -> ft.Control:
-        self._age_field = FormField("年龄", "可选", colors)
+        self._age_field = FormField("年龄", "可选", colors, solid=True)
         self._age_field.value = self._draft.age
         self._gender_dropdown = ft.Dropdown(
             label="性别",
             value=self._draft.gender or "unknown",
             options=[ft.dropdown.Option("unknown", "未知"), ft.dropdown.Option("female", "女性"), ft.dropdown.Option("male", "男性"), ft.dropdown.Option("other", "其他")],
-            text_size=12,
-            border_radius=14,
-            border_color=colors["input_border"],
-            bgcolor=colors["input"],
-            color=colors["text"],
+            **dropdown_control_style(colors, radius=18, text_size=13),
         )
-        self._birthday_field = FormField("生日", "YYYY-MM-DD", colors)
+        self._birthday_field = FormField("生日", "YYYY-MM-DD", colors, solid=True)
         self._birthday_field.value = self._draft.birthday
-        self._background_field = FormField("背景", "角色经历与上下文", colors, multiline=True)
+        self._background_field = FormField("背景", "角色经历与上下文", colors, multiline=True, solid=True)
         self._background_field.value = self._draft.background
         self._style_dropdown = ft.Dropdown(
             label="语言风格预设",
             value=self._draft.speaking_style_preset or "friendly",
             options=[ft.dropdown.Option("friendly", "友好"), ft.dropdown.Option("calm", "冷静"), ft.dropdown.Option("confident", "自信"), ft.dropdown.Option("direct", "直接")],
-            text_size=12,
-            border_radius=14,
-            border_color=colors["input_border"],
-            bgcolor=colors["input"],
-            color=colors["text"],
+            **dropdown_control_style(colors, radius=18, text_size=13),
         )
-        self._trait_field = FormField("添加特质", "例如：耐心", colors)
-        self._interest_field = FormField("添加兴趣", "例如：钢琴", colors)
+        self._trait_field = FormField("添加特质", "例如：耐心", colors, solid=True)
+        self._interest_field = FormField("添加兴趣", "例如：钢琴", colors, solid=True)
         return ft.Column(
             spacing=12,
             controls=[
@@ -1350,6 +1348,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         ],
                     ),
                     colors,
+                    padding=22,
+                    solid=True,
+                    radius=28,
                 ),
                 section_card(
                     ft.Column(
@@ -1364,6 +1365,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         ],
                     ),
                     colors,
+                    padding=20,
+                    solid=True,
+                    radius=28,
                 ),
             ],
         )
@@ -1402,6 +1406,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         ],
                     ),
                     colors,
+                    padding=22,
+                    solid=True,
+                    radius=28,
                 )
             )
         return ft.Column(
@@ -1442,6 +1449,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 ],
             ),
             colors,
+            padding=22,
+            solid=True,
+            radius=28,
         )
 
     def _compact_dropdown(self, label: str, value: str, options: list[tuple[str, str]], colors: dict[str, str]) -> ft.Dropdown:
@@ -1449,11 +1459,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             label=label,
             value=value,
             options=[ft.dropdown.Option(key, title) for key, title in options],
-            text_size=12,
-            border_radius=14,
-            border_color=colors["input_border"],
-            bgcolor=colors["input"],
-            color=colors["text"],
+            **dropdown_control_style(colors, radius=18, text_size=13),
         )
 
     def _slider_block(self, label: str, slider: ft.Slider, colors: dict[str, str]) -> ft.Control:
@@ -1492,7 +1498,20 @@ class CompanionAppView(ft.Container, CompanionUIView):
             ),
         )
 
-    def _primary_button(self, label: str, color: str, on_click) -> ft.Container:
+    def _button_content(self, label: str, color: str, icon: str | None = None, size: int = 15) -> ft.Control:
+        if icon is None:
+            return text(label, size, color, ft.FontWeight.W_500)
+        return ft.Row(
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=7,
+            tight=True,
+            controls=[
+                ft.Icon(icon, size=17, color=color),
+                text(label, size, color, ft.FontWeight.W_500, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+            ],
+        )
+
+    def _primary_button(self, label: str, color: str, on_click, icon: str | None = None) -> ft.Container:
         button_text = "#1A1625" if self._is_dark else "#FFFFFF"
         return ft.Container(
             height=50,
@@ -1504,22 +1523,24 @@ class CompanionAppView(ft.Container, CompanionUIView):
             scale=1.0,
             animate_scale=animation("fast", phase="press"),
             on_click=animated_click(on_click),
-            content=text(label, 15, button_text, ft.FontWeight.W_500),
+            content=self._button_content(label, button_text, icon),
         )
 
-    def _secondary_button(self, label: str, colors: dict[str, str], on_click) -> ft.Container:
+    def _secondary_button(self, label: str, colors: dict[str, str], on_click, icon: str | None = None, subtle: bool = False) -> ft.Container:
+        fill_color = colors.get("surface_solid", colors["card"]) if not subtle else colors["muted"]
+        border_color = colors.get("dropdown_border", colors["card_border"]) if not subtle else colors["card_border"]
         return ft.Container(
             height=48,
-            border_radius=16,
-            bgcolor=colors["card"],
-            border=ft.border.all(1, colors["card_border"]),
-            shadow=soft_shadow(self._is_dark, None, "card"),
+            border_radius=18,
+            bgcolor=fill_color,
+            border=ft.border.all(1, border_color),
+            shadow=None if subtle else soft_shadow(self._is_dark, None, "card"),
             alignment=ft.Alignment(0, 0),
             ink=True,
             scale=1.0,
             animate_scale=animation("fast", phase="press"),
             on_click=animated_click(on_click),
-            content=text(label, 14, colors["text"], ft.FontWeight.W_500),
+            content=self._button_content(label, colors["text"], icon, size=14),
         )
 
     def _toggle_theme(self) -> None:

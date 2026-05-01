@@ -19,8 +19,8 @@ for path in (str(REPO_ROOT), str(SRC_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from GUI.components import MessageBubble
-from GUI.interfaces import ChatMessage, CompanionRole
+from GUI.components import MemoryEditor, MessageBubble
+from GUI.interfaces import ChatMessage, CompanionRole, MemoryDraft
 from GUI.views import CompanionAppView
 
 
@@ -81,6 +81,37 @@ class FakeListView:
 
 
 class GuiViewTests(unittest.TestCase):
+    def test_create_dropdown_uses_opaque_menu_surface(self) -> None:
+        view = CompanionAppView(roles=[make_role()])
+        colors = view._colors()
+
+        dropdown = view._compact_dropdown("Label", "common", [("common", "Common")], colors)
+
+        self.assertTrue(dropdown.filled)
+        self.assertEqual(dropdown.fill_color, colors["dropdown_surface"])
+        self.assertEqual(dropdown.bgcolor, colors["dropdown_surface"])
+        self.assertIsNotNone(dropdown.menu_style)
+        self.assertEqual(dropdown.menu_style.bgcolor, colors["dropdown_surface"])
+
+    def test_create_basic_template_dropdown_uses_opaque_menu_surface(self) -> None:
+        view = CompanionAppView(roles=[make_role()])
+        colors = view._colors()
+
+        view._basic_step(colors)
+
+        self.assertTrue(view._template_dropdown.filled)
+        self.assertEqual(view._template_dropdown.fill_color, colors["dropdown_surface"])
+        self.assertEqual(view._template_dropdown.menu_style.bgcolor, colors["dropdown_surface"])
+
+    def test_memory_editor_type_dropdown_uses_opaque_menu_surface(self) -> None:
+        colors = CompanionAppView(roles=[make_role()])._colors()
+
+        editor = MemoryEditor(MemoryDraft(content="note"), colors, lambda: None)
+
+        self.assertTrue(editor.type_dropdown.filled)
+        self.assertEqual(editor.type_dropdown.fill_color, colors["dropdown_surface"])
+        self.assertEqual(editor.type_dropdown.menu_style.bgcolor, colors["dropdown_surface"])
+
     def test_view_supports_empty_role_list(self) -> None:
         view = CompanionAppView(roles=[])
 
