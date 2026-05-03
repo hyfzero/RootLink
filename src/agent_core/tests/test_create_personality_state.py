@@ -16,6 +16,7 @@ for path in (str(REPO_ROOT), str(SRC_DIR)):
         sys.path.insert(0, path)
 
 from GUI.interfaces import CompanionRole, MemoryDraft
+from GUI.components import MemoryEditor
 from GUI.views import CompanionAppView
 
 
@@ -114,6 +115,17 @@ class CreatePersonalityStateTests(unittest.TestCase):
 
         self.assertEqual(view._draft.memories, [])
         self.assertEqual(view.safe_update_calls, 0)
+
+    def test_memory_importance_shows_live_numeric_value(self) -> None:
+        colors = CompanionAppView(roles=[make_role()])._colors()
+        editor = MemoryEditor(MemoryDraft(content="note", importance=1.2), colors, lambda: None)
+
+        self.assertEqual(editor.importance_value.value, "1.2 / 2.0")
+
+        editor.importance.value = 1.7
+        editor.importance.on_change(None)
+
+        self.assertEqual(editor.importance_value.value, "1.7 / 2.0")
 
 
 if __name__ == "__main__":

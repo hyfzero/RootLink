@@ -616,7 +616,8 @@ class MemoryEditor(ft.Container):
             ],
             **dropdown_control_style(colors, radius=18, text_size=12),
         )
-        self.importance = ft.Slider(min=0, max=2, divisions=20, value=memory.importance)
+        self.importance_value = text(self._importance_label(memory.importance), 12, colors["text_secondary"])
+        self.importance = ft.Slider(min=0, max=2, divisions=20, value=memory.importance, on_change=lambda _: self._update_importance_label())
         super().__init__(
             padding=16,
             border_radius=24,
@@ -629,11 +630,30 @@ class MemoryEditor(ft.Container):
                     ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[text("记忆条目", 13, colors["text_secondary"]), ft.IconButton(icon=ft.Icons.CLOSE, icon_color=colors["text_tertiary"], on_click=lambda _: on_remove())]),
                     self.content_field,
                     self.type_dropdown,
-                    ft.Column(spacing=2, controls=[text("重要度", 12, colors["text_secondary"]), self.importance]),
+                    ft.Column(
+                        spacing=2,
+                        controls=[
+                            ft.Row(
+                                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                controls=[text("重要度", 12, colors["text_secondary"]), self.importance_value],
+                            ),
+                            self.importance,
+                        ],
+                    ),
                     self.context_field,
                 ],
             ),
         )
+
+    def _importance_label(self, value: float | None) -> str:
+        return f"{float(value or 0):.1f} / 2.0"
+
+    def _update_importance_label(self) -> None:
+        self.importance_value.value = self._importance_label(self.importance.value)
+        try:
+            self.importance_value.update()
+        except (AssertionError, RuntimeError):
+            pass
 
     def to_draft(self) -> MemoryDraft:
         return MemoryDraft(
