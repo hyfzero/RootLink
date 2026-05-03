@@ -95,6 +95,9 @@ REPLY_EMOTION_STATUS = {
     "embarrassed": "\u5bb3\u7f9e \U0001f633",
 }
 
+HOME_TITLE_TEXT = "今天想和谁聊聊天"
+HOME_SUBTITLE_TEXT = "在一切的根部，我们彼此相连"
+
 
 def default_roles() -> list[CompanionRole]:
     return load_roles_from_data()
@@ -395,8 +398,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     content=ft.Column(
                         spacing=7,
                         controls=[
-                            text("晚上好，今天想和谁聊聊天？" if self._is_dark else "你好，今天想和谁聊聊天？", 28, colors["text"], ft.FontWeight.W_500),
-                            text("深夜的陪伴，从选择一个懂你的人开始" if self._is_dark else "每一天的陪伴，从选择一个懂你的人开始", 15, colors["text_secondary"]),
+                            text(HOME_TITLE_TEXT, 28, colors["text"], ft.FontWeight.W_500),
+                            text(HOME_SUBTITLE_TEXT, 15, colors["text_secondary"]),
                         ],
                     ),
                 ),

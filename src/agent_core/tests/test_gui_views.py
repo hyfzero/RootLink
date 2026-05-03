@@ -21,7 +21,7 @@ for path in (str(REPO_ROOT), str(SRC_DIR)):
 
 from GUI.components import MemoryEditor, MessageBubble
 from GUI.interfaces import ChatMessage, CompanionRole, MemoryDraft
-from GUI.views import CompanionAppView
+from GUI.views import HOME_SUBTITLE_TEXT, HOME_TITLE_TEXT, CompanionAppView
 
 
 def make_role() -> CompanionRole:
@@ -81,6 +81,10 @@ class FakeListView:
 
 
 class GuiViewTests(unittest.TestCase):
+    def test_home_header_copy_is_fixed(self) -> None:
+        self.assertEqual(HOME_TITLE_TEXT, "今天想和谁聊聊天")
+        self.assertEqual(HOME_SUBTITLE_TEXT, "在一切的根部，我们彼此相连")
+
     def test_create_dropdown_uses_opaque_menu_surface(self) -> None:
         view = CompanionAppView(roles=[make_role()])
         colors = view._colors()
