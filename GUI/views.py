@@ -29,6 +29,7 @@ from .components import (
     TypingDots,
     animated_click,
     avatar,
+    dropdown,
     dropdown_control_style,
     round_icon_button,
     section_card,
@@ -106,8 +107,8 @@ REPLY_EMOTION_STATUS = {
     "embarrassed": "\u5bb3\u7f9e \U0001f633",
 }
 
-HOME_TITLE_TEXT = "你好，今天想和谁聊聊天"
-HOME_SUBTITLE_TEXT = "在世界的根部，我们彼此相连"
+HOME_TITLE_TEXT = "今天想和谁聊聊天"
+HOME_SUBTITLE_TEXT = "在一切的根部，我们彼此相连"
 
 
 def default_roles() -> list[CompanionRole]:
@@ -142,6 +143,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._settings = UiSettings(is_dark=is_dark)
         self._profile = UserProfile(name=self._settings.user_name)
         self._draft = CharacterDraft()
+        self._create_mode = "create"
+        self._editing_role_id = ""
         self._create_step = 1
         self._create_step_seed = 0
         self._create_step_direction = 1
@@ -211,12 +214,43 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _touch_page(self, page: str) -> None:
         self._page_seed[page] = self._page_seed.get(page, 0) + 1
 
+    def _reset_create_navigation(self) -> None:
+        self._create_step = 1
+        self._create_step_seed += 1
+        self._create_step_direction = 1
+        self._emotion_id = "neutral"
+        self._portrait_advanced_open = False
+        self._portrait_rendering_emotion_id = ""
+        self._portrait_preview_generation += 1
+        self._portrait_preview_session_id = uuid.uuid4().hex
+        self._portrait_preview_paths = {}
+        self._memory_editors = []
+        self._memory_list = None
+
+    def _begin_create(self) -> None:
+        self._create_mode = "create"
+        self._editing_role_id = ""
+        self._draft = CharacterDraft()
+        self._reset_create_navigation()
+        self.show_page("create")
+
+    def _begin_edit_role(self, role_id: str) -> None:
+        draft = self._callback.load_character_draft(role_id)
+        if draft is None:
+            self.show_notice("\u65e0\u6cd5\u8bfb\u53d6\u89d2\u8272\u6570\u636e", is_error=True)
+            return
+        self._create_mode = "edit"
+        self._editing_role_id = role_id
+        self._draft = draft
+        self._reset_create_navigation()
+        self.show_page("create")
+
     def _build(self) -> None:
         colors = self._colors()
         self._chat_list_view = None
         self._immersive_dialogue_text = None
         page_content = self._build_current_page(colors)
-        page_content.key = f"page-{self._page_name}-{self._page_seed[self._page_name]}-{self._active_role_id}-{self._chat_mode}-{self._create_step}"
+        page_content.key = f"page-{self._page_name}-{self._page_seed[self._page_name]}-{self._active_role_id}-{self._chat_mode}-{self._create_mode}-{self._editing_role_id}-{self._create_step}"
         self.gradient = app_gradient(self._is_dark)
         content_width = self._content_width()
         self.content = ft.Row(
@@ -357,7 +391,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             offset_x=offset_x,
             scale_from=scale_from,
             duration_name="slow",
-            key=f"{page}-{self._page_seed.get(page, 0)}-{index}-{self._active_role_id}-{self._create_step}",
+            key=f"{page}-{self._page_seed.get(page, 0)}-{index}-{self._active_role_id}-{self._create_mode}-{self._create_step}",
         )
 
     def _page_column(self, controls: list[ft.Control], scroll: bool = True) -> ft.Column:
@@ -385,7 +419,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         role_cards.append(self._create_selector_card(colors))
         launching = self._chat_launching_role_id == selected.id
         feature_card = ft.Container(
-            content=RoleFeatureCard(selected, self._is_dark, self._begin_open_chat),
+            content=RoleFeatureCard(selected, self._is_dark, self._begin_open_chat, self._begin_edit_role),
             scale=0.97 if launching else 1.0,
             opacity=0.72 if launching else 1.0,
             animate_scale=animation("fast", phase="press"),
@@ -449,7 +483,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 ft.Row(
                     spacing=12,
                     controls=[
-                        ft.Container(expand=True, content=QuickAction("创建角色", "定制专属陪伴", ft.Icons.ADD, colors, lambda _: self.show_page("create"))),
+                        ft.Container(expand=True, content=QuickAction("创建角色", "定制专属陪伴", ft.Icons.ADD, colors, lambda _: self._begin_create())),
                         ft.Container(expand=True, content=QuickAction("继续话题", "上次聊到哪", ft.Icons.ACCESS_TIME, colors, lambda _: self._begin_open_chat(selected.id))),
                     ],
                 ),
@@ -541,7 +575,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 4,
                 ft.Container(
                     expand=False,
-                    content=QuickAction("创建角色", "功能暂未实现", ft.Icons.ADD, colors, lambda _: self.show_page("create")),
+                    content=QuickAction("创建角色", "功能暂未实现", ft.Icons.ADD, colors, lambda _: self._begin_create()),
                 ),
             ),
             ft.Container(height=28),
@@ -559,7 +593,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             scale=1.0,
             animate_scale=animation("fast", phase="press"),
             animate_opacity=animation("fast", phase="press"),
-            on_click=animated_click(lambda _: self.show_page("create")),
+            on_click=animated_click(lambda _: self._begin_create()),
             content=ft.Column(
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 spacing=9,
@@ -630,7 +664,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         alignment=ft.MainAxisAlignment.CENTER,
                         spacing=10,
                         controls=[
-                            avatar(role.avatar_path, 36, colors["card_border"], self._is_dark),
+                            self._editable_chat_avatar(role, colors),
                             ft.Column(
                                 spacing=2,
                                 controls=[
@@ -691,6 +725,15 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     ),
                     input_bar,
                 ],
+            ),
+        )
+
+    def _editable_chat_avatar(self, role: CompanionRole, colors: dict[str, str]) -> ft.Control:
+        return ft.GestureDetector(
+            on_long_press_start=lambda _: self._begin_edit_role(role.id),
+            content=ft.Container(
+                tooltip="\u957f\u6309\u7f16\u8f91\u89d2\u8272",
+                content=avatar(role.avatar_path, 36, colors["card_border"], self._is_dark),
             ),
         )
 
@@ -1074,7 +1117,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             active_color=self.active_role.accent_color,
             inactive_color=colors["muted"],
         )
-        self._provider_dropdown = ft.Dropdown(
+        self._provider_dropdown = dropdown(
             label="模型来源",
             value=self._settings.model_provider,
             options=[ft.dropdown.Option(key, label) for key, label in SETTINGS_PROVIDERS],
@@ -1163,7 +1206,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 content=step_content,
                 offset=ft.Offset(direction_x, 0),
                 duration_name="normal",
-                key=f"create-step-{self._create_step}-{self._create_step_seed}",
+                key=f"create-step-{self._create_mode}-{self._editing_role_id}-{self._create_step}-{self._create_step_seed}",
             )
         step_switcher = ft.AnimatedSwitcher(
             content=step_content,
@@ -1173,8 +1216,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
             switch_out_curve=ft.AnimationCurve.EASE_IN_OUT,
             transition=ft.AnimatedSwitcherTransition.FADE,
         )
+        title = "\u7f16\u8f91\u89d2\u8272" if self._create_mode == "edit" else "\u521b\u5efa\u89d2\u8272"
         controls = [
-            self._stagger("create", 0, self._header("创建角色", colors, lambda _: self.show_page("home")), offset_y=0.02),
+            self._stagger("create", 0, self._header(title, colors, lambda _: self.show_page("home")), offset_y=0.02),
             self._stagger("create", 1, self._create_progress(colors)),
             self._stagger("create", 2, ft.Container(content=step_switcher), offset_y=0.03),
             self._stagger("create", 3, self._create_footer(colors), offset_y=0.03),
@@ -1216,13 +1260,14 @@ class CompanionAppView(ft.Container, CompanionUIView):
         )
 
     def _create_footer(self, colors: dict[str, str]) -> ft.Control:
+        final_label = "\u4fdd\u5b58" if self._create_mode == "edit" else "\u521b\u5efa"
         return ft.Row(
             spacing=10,
             controls=[
                 ft.Container(expand=True, content=self._secondary_button("上一步", colors, lambda _: self._previous_step(), ft.Icons.CHEVRON_LEFT, subtle=self._create_step == 1)),
                 ft.Container(
                     expand=True,
-                    content=self._primary_button("创建" if self._create_step == 5 else "下一步", self.active_role.accent_color, lambda _: self._next_step(), ft.Icons.CHECK if self._create_step == 5 else ft.Icons.CHEVRON_RIGHT),
+                    content=self._primary_button(final_label if self._create_step == 5 else "下一步", self.active_role.accent_color, lambda _: self._next_step(), ft.Icons.CHECK if self._create_step == 5 else ft.Icons.CHEVRON_RIGHT),
                 ),
             ],
         )
@@ -1241,12 +1286,14 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _basic_step(self, colors: dict[str, str]) -> ft.Control:
         self._brain_id_field = FormField("角色标识", "companion-id", colors, solid=True)
         self._brain_id_field.value = self._draft.brain_id
-        self._template_dropdown = ft.Dropdown(
+        self._brain_id_field.disabled = self._create_mode == "edit"
+        self._template_dropdown = dropdown(
             label="模板",
             value=self._draft.template or "default",
             options=[ft.dropdown.Option("default", "默认"), ft.dropdown.Option("empathetic", "共情"), ft.dropdown.Option("strict", "克制")],
             **dropdown_control_style(colors, radius=18, text_size=13),
         )
+        self._template_dropdown.disabled = self._create_mode == "edit"
         self._name_field = FormField("名称", "角色名称", colors, solid=True)
         self._name_field.value = self._draft.name
         self._description_field = FormField("描述", "简短描述这个角色", colors, multiline=True, solid=True)
@@ -1522,7 +1569,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _personality_step(self, colors: dict[str, str]) -> ft.Control:
         self._age_field = FormField("年龄", "可选", colors, solid=True)
         self._age_field.value = self._draft.age
-        self._gender_dropdown = ft.Dropdown(
+        self._gender_dropdown = dropdown(
             label="性别",
             value=self._draft.gender or "unknown",
             options=[ft.dropdown.Option("unknown", "未知"), ft.dropdown.Option("female", "女性"), ft.dropdown.Option("male", "男性"), ft.dropdown.Option("other", "其他")],
@@ -1532,7 +1579,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._birthday_field.value = self._draft.birthday
         self._background_field = FormField("背景", "角色经历与上下文", colors, multiline=True, solid=True)
         self._background_field.value = self._draft.background
-        self._style_dropdown = ft.Dropdown(
+        self._style_dropdown = dropdown(
             label="语言风格预设",
             value=self._draft.speaking_style_preset or "friendly",
             options=[ft.dropdown.Option("friendly", "友好"), ft.dropdown.Option("calm", "冷静"), ft.dropdown.Option("confident", "自信"), ft.dropdown.Option("direct", "直接")],
@@ -1641,7 +1688,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         )
 
     def _compact_dropdown(self, label: str, value: str, options: list[tuple[str, str]], colors: dict[str, str]) -> ft.Dropdown:
-        return ft.Dropdown(
+        return dropdown(
             label=label,
             value=value,
             options=[ft.dropdown.Option(key, title) for key, title in options],
@@ -1907,6 +1954,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._create_step += 1
             self._create_step_seed += 1
             self._safe_update()
+            return
+        if self._create_mode == "edit":
+            self._callback.on_character_update_requested(self._editing_role_id or self._draft.brain_id, self._draft)
             return
         self._callback.on_character_create_requested(self._draft)
 

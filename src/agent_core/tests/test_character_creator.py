@@ -108,6 +108,100 @@ class CharacterCreatorTests(unittest.TestCase):
             self.assertEqual(roles[0].avatar_path, "")
             self.assertEqual(roles[0].standing_image_path, "")
 
+    def test_load_and_update_character_preserves_runtime_files_and_cleans_removed_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as data_root, tempfile.TemporaryDirectory() as assets_root:
+            image_path = Path(assets_root) / "avatar.png"
+            image_path.write_bytes(b"png-bytes")
+            creator = CharacterCreator(Path(data_root))
+            result = creator.create(
+                CharacterDraft(
+                    brain_id="editable",
+                    name="Editable",
+                    description="Original intro",
+                    avatar_path=str(image_path),
+                    portraits={"neutral": str(image_path)},
+                    age="19",
+                    birthday="2000-01-01",
+                    background="Original background",
+                    personality_traits=["calm"],
+                    interests=["music"],
+                    memories=[MemoryDraft(content="Likes tea.", memory_type="preference", importance=1.4, context="seed")],
+                )
+            )
+            brain_dir = result.brain_dir
+            (brain_dir / "history" / "history.json").write_text(json.dumps({"marker": "history"}), encoding="utf-8")
+            (brain_dir / "persona" / "state.json").write_text(json.dumps({"marker": "state"}), encoding="utf-8")
+            (brain_dir / "tags" / "reply_tags.json").write_text(json.dumps({"marker": "tags"}), encoding="utf-8")
+            (brain_dir / "config.json").write_text(json.dumps({"marker": "config"}), encoding="utf-8")
+
+            profile_path = brain_dir / "persona" / "profile.json"
+            profile = json.loads(profile_path.read_text(encoding="utf-8"))
+            profile["relationship_state"] = "warm"
+            profile["relationship_score"] = 12.5
+            profile["relationship_updated_at"] = 12345.0
+            profile_path.write_text(json.dumps(profile), encoding="utf-8")
+
+            ui_path = brain_dir / "ui.json"
+            ui = json.loads(ui_path.read_text(encoding="utf-8"))
+            ui["last_message"] = "recent"
+            ui["last_time"] = "now"
+            ui_path.write_text(json.dumps(ui), encoding="utf-8")
+
+            memories_path = brain_dir / "persona" / "memories.json"
+            memories = json.loads(memories_path.read_text(encoding="utf-8"))
+            original_memory = memories["preference_memories"][0]
+            memories["daily_summary_memories"] = [{"id": "daily", "content": "daily", "timestamp": 1.0, "memory_type": "daily_summary", "importance": 1.0, "context": None}]
+            memories["monthly_summary_memories"] = [{"id": "monthly", "content": "monthly", "timestamp": 2.0, "memory_type": "monthly_summary", "importance": 1.0, "context": None}]
+            memories_path.write_text(json.dumps(memories), encoding="utf-8")
+
+            loaded = creator.load_draft("editable")
+            self.assertEqual(loaded.name, "Editable")
+            self.assertEqual(loaded.age, "19")
+            self.assertEqual(loaded.birthday, "2000-01-01")
+            self.assertEqual(loaded.background, "Original background")
+            self.assertEqual(loaded.memories[0].memory_id, original_memory["id"])
+            self.assertEqual(loaded.memories[0].timestamp, original_memory["timestamp"])
+
+            loaded.name = "Edited"
+            loaded.background = "Edited background"
+            loaded.description = "Edited intro"
+            loaded.avatar_path = ""
+            loaded.portraits.pop("neutral", None)
+            loaded.memories[0].content = "Likes coffee."
+            creator.update("editable", loaded)
+
+            self.assertEqual(json.loads((brain_dir / "history" / "history.json").read_text(encoding="utf-8")), {"marker": "history"})
+            self.assertEqual(json.loads((brain_dir / "persona" / "state.json").read_text(encoding="utf-8")), {"marker": "state"})
+            self.assertEqual(json.loads((brain_dir / "tags" / "reply_tags.json").read_text(encoding="utf-8")), {"marker": "tags"})
+            self.assertEqual(json.loads((brain_dir / "config.json").read_text(encoding="utf-8")), {"marker": "config"})
+
+            updated_profile = json.loads(profile_path.read_text(encoding="utf-8"))
+            self.assertEqual(updated_profile["name"], "Edited")
+            self.assertEqual(updated_profile["background"], "Edited background")
+            self.assertEqual(updated_profile["relationship_state"], "warm")
+            self.assertEqual(updated_profile["relationship_score"], 12.5)
+
+            updated_memories = json.loads(memories_path.read_text(encoding="utf-8"))
+            self.assertEqual(updated_memories["preference_memories"][0]["id"], original_memory["id"])
+            self.assertEqual(updated_memories["preference_memories"][0]["timestamp"], original_memory["timestamp"])
+            self.assertEqual(updated_memories["preference_memories"][0]["content"], "Likes coffee.")
+            self.assertEqual(updated_memories["daily_summary_memories"][0]["id"], "daily")
+            self.assertEqual(updated_memories["monthly_summary_memories"][0]["id"], "monthly")
+
+            updated_ui = json.loads(ui_path.read_text(encoding="utf-8"))
+            self.assertEqual(updated_ui["last_message"], "recent")
+            self.assertEqual(updated_ui["last_time"], "now")
+            self.assertEqual(updated_ui["avatar"], "")
+            self.assertEqual(updated_ui["standing_image"], "")
+            self.assertEqual(updated_ui["portraits"], {})
+            self.assertFalse((brain_dir / "assets" / "avatar.png").exists())
+            self.assertFalse((brain_dir / "assets" / "portraits" / "neutral.png").exists())
+
+            roles = load_roles_from_data(Path(data_root))
+            self.assertEqual(roles[0].name, "Edited")
+            self.assertEqual(roles[0].avatar_path, "")
+            self.assertEqual(roles[0].standing_image_path, "")
+
     def test_template_creation_only_inherits_config_profile_and_style_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as data_root:
             data_dir = Path(data_root)

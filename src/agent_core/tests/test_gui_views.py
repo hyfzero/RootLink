@@ -20,7 +20,7 @@ for path in (str(REPO_ROOT), str(SRC_DIR)):
         sys.path.insert(0, path)
 
 from GUI.components import MemoryEditor, MessageBubble
-from GUI.interfaces import ChatMessage, CompanionRole, MemoryDraft
+from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUICallback, MemoryDraft
 from GUI.views import HOME_SUBTITLE_TEXT, HOME_TITLE_TEXT, CompanionAppView
 
 
@@ -80,6 +80,19 @@ class FakeListView:
         self.update_calls += 1
 
 
+class EditCallback(CompanionUICallback):
+    def __init__(self) -> None:
+        self.updated_role_id = ""
+        self.updated_draft: CharacterDraft | None = None
+
+    def load_character_draft(self, role_id: str) -> CharacterDraft | None:
+        return CharacterDraft(brain_id=role_id, name="Loaded")
+
+    def on_character_update_requested(self, role_id: str, draft: CharacterDraft) -> None:
+        self.updated_role_id = role_id
+        self.updated_draft = draft
+
+
 class GuiViewTests(unittest.TestCase):
     def test_home_header_copy_is_fixed(self) -> None:
         self.assertEqual(HOME_TITLE_TEXT, "今天想和谁聊聊天")
@@ -106,6 +119,27 @@ class GuiViewTests(unittest.TestCase):
         self.assertTrue(view._template_dropdown.filled)
         self.assertEqual(view._template_dropdown.fill_color, colors["dropdown_surface"])
         self.assertEqual(view._template_dropdown.menu_style.bgcolor, colors["dropdown_surface"])
+
+    def test_edit_mode_loads_draft_locks_id_and_saves_update(self) -> None:
+        callback = EditCallback()
+        view = CompanionAppView(callback=callback, roles=[make_role()])
+        colors = view._colors()
+
+        view._begin_edit_role("amadeus")
+
+        self.assertEqual(view._create_mode, "edit")
+        self.assertEqual(view._editing_role_id, "amadeus")
+        self.assertEqual(view._draft.name, "Loaded")
+        view._basic_step(colors)
+        self.assertTrue(view._brain_id_field.disabled)
+        self.assertTrue(view._template_dropdown.disabled)
+
+        view._create_step = 5
+        view._next_step()
+
+        self.assertEqual(callback.updated_role_id, "amadeus")
+        self.assertIsNotNone(callback.updated_draft)
+        self.assertEqual(callback.updated_draft.name, "Loaded")
 
     def test_memory_editor_type_dropdown_uses_opaque_menu_surface(self) -> None:
         colors = CompanionAppView(roles=[make_role()])._colors()

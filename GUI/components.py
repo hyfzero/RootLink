@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from typing import Callable, Optional
 
 import flet as ft
@@ -17,6 +18,7 @@ from .theme import MOTION, UI_FONT_FAMILY, animation, glass_gradient, hex_with_a
 
 IMAGE_COVER = BoxFit.COVER
 IMAGE_CONTAIN = BoxFit.CONTAIN
+_DROPDOWN_ACCEPTS_MENU_STYLE = "menu_style" in inspect.signature(ft.Dropdown).parameters
 
 
 def animated_click(handler: Optional[Callable], pressed_scale: float = 0.96) -> Callable:
@@ -122,6 +124,17 @@ def dropdown_control_style(colors: dict[str, str], radius: int = 18, text_size: 
             padding=ft.padding.symmetric(vertical=6),
         ),
     }
+
+
+def dropdown(**kwargs) -> ft.Dropdown:
+    menu_style = kwargs.get("menu_style")
+    if not _DROPDOWN_ACCEPTS_MENU_STYLE:
+        kwargs = dict(kwargs)
+        kwargs.pop("menu_style", None)
+    control = ft.Dropdown(**kwargs)
+    if menu_style is not None:
+        setattr(control, "menu_style", menu_style)
+    return control
 
 
 def section_card(content: ft.Control, colors: dict[str, str], padding: int = 20, *, solid: bool = False, radius: int = 24) -> ft.Container:
@@ -280,8 +293,59 @@ class TypingDots(ft.Row):
 class RoleFeatureCard(ft.Container):
     """Large selected-role card from the Figma home screen."""
 
-    def __init__(self, role: CompanionRole, is_dark: bool, on_chat: Callable[[str], None]) -> None:
+    def __init__(
+        self,
+        role: CompanionRole,
+        is_dark: bool,
+        on_chat: Callable[[str], None],
+        on_edit: Callable[[str], None] | None = None,
+    ) -> None:
         colors = palette(is_dark)
+        edit_button: ft.Control | None = None
+        if on_edit is not None:
+            edit_button = ft.Container(
+                width=38,
+                height=38,
+                border_radius=19,
+                tooltip="\u7f16\u8f91\u89d2\u8272",
+                bgcolor=hex_with_alpha("#FFFFFF", 28 if is_dark else 180),
+                border=ft.border.all(1, hex_with_alpha("#FFFFFF", 42 if is_dark else 210)),
+                alignment=ft.Alignment(0, 0),
+                ink=True,
+                scale=1.0,
+                animate_scale=animation("fast", phase="press"),
+                on_click=animated_click(lambda _: on_edit(role.id)),
+                content=ft.Icon(ft.Icons.EDIT_OUTLINED, size=17, color=colors["text_secondary"]),
+            )
+        header_controls: list[ft.Control] = [
+            ft.Stack(
+                width=86,
+                height=86,
+                controls=[
+                    avatar(role.avatar_path, 80, hex_with_alpha(role.accent_color, 90), is_dark),
+                    ft.Container(
+                        width=18,
+                        height=18,
+                        right=2,
+                        bottom=2,
+                        border_radius=9,
+                        bgcolor=role.accent_color,
+                        border=ft.border.all(2, "#1E1A2E" if is_dark else "#EBE9F3"),
+                    ),
+                ],
+            ),
+            ft.Column(
+                expand=True,
+                spacing=7,
+                controls=[
+                    text(role.name, 20, colors["text"], ft.FontWeight.W_500),
+                    text(role.type, 13, hex_with_alpha(role.accent_color, 220)),
+                    ft.Row(spacing=6, wrap=True, controls=[pill(tag, role.accent_color, is_dark) for tag in role.tags]),
+                ],
+            ),
+        ]
+        if edit_button is not None:
+            header_controls.append(edit_button)
         super().__init__(
             padding=24,
             border_radius=28,
@@ -298,33 +362,7 @@ class RoleFeatureCard(ft.Container):
                     ft.Row(
                         spacing=18,
                         vertical_alignment=ft.CrossAxisAlignment.START,
-                        controls=[
-                            ft.Stack(
-                                width=86,
-                                height=86,
-                                controls=[
-                                    avatar(role.avatar_path, 80, hex_with_alpha(role.accent_color, 90), is_dark),
-                                    ft.Container(
-                                        width=18,
-                                        height=18,
-                                        right=2,
-                                        bottom=2,
-                                        border_radius=9,
-                                        bgcolor=role.accent_color,
-                                        border=ft.border.all(2, "#1E1A2E" if is_dark else "#EBE9F3"),
-                                    ),
-                                ],
-                            ),
-                            ft.Column(
-                                expand=True,
-                                spacing=7,
-                                controls=[
-                                    text(role.name, 20, colors["text"], ft.FontWeight.W_500),
-                                    text(role.type, 13, hex_with_alpha(role.accent_color, 220)),
-                                    ft.Row(spacing=6, wrap=True, controls=[pill(tag, role.accent_color, is_dark) for tag in role.tags]),
-                                ],
-                            ),
-                        ],
+                        controls=header_controls,
                     ),
                     text(role.intro, 14, colors["text_secondary"]),
                     ft.Container(
@@ -600,11 +638,12 @@ class FormField(ft.TextField):
 
 class MemoryEditor(ft.Container):
     def __init__(self, memory: MemoryDraft, colors: dict[str, str], on_remove: Callable[[], None]) -> None:
+        self._memory = memory
         self.content_field = FormField("记忆内容", "记忆内容...", colors, multiline=True, solid=True)
         self.content_field.value = memory.content
         self.context_field = FormField("上下文", "例如：第一次见面", colors, solid=True)
         self.context_field.value = memory.context
-        self.type_dropdown = ft.Dropdown(
+        self.type_dropdown = dropdown(
             label="类型",
             value=memory.memory_type,
             options=[
@@ -661,4 +700,6 @@ class MemoryEditor(ft.Container):
             memory_type=self.type_dropdown.value or "episodic",
             importance=float(self.importance.value or 1.0),
             context=self.context_field.value or "",
+            memory_id=self._memory.memory_id,
+            timestamp=self._memory.timestamp,
         )

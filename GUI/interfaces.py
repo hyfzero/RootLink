@@ -66,6 +66,8 @@ class MemoryDraft:
     memory_type: str = "episodic"
     importance: float = 1.0
     context: str = ""
+    memory_id: str = ""
+    timestamp: float | None = None
 
 
 @dataclass(slots=True)
@@ -139,6 +141,12 @@ class CompanionUICallback(ABC):
         pass
 
     def on_character_create_requested(self, draft: CharacterDraft) -> None:
+        pass
+
+    def load_character_draft(self, role_id: str) -> CharacterDraft | None:
+        return None
+
+    def on_character_update_requested(self, role_id: str, draft: CharacterDraft) -> None:
         pass
 
     def on_theme_toggled(self, is_dark: bool) -> None:

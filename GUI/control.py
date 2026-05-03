@@ -750,6 +750,35 @@ class AmaduesController(CompanionUICallback):
             self.view.show_notice(f"Created character: {draft.name.strip()}")
             self.view.show_page("home")
 
+    def load_character_draft(self, role_id: str) -> CharacterDraft | None:
+        try:
+            brain_id = self._resolve_brain_id(role_id, self._runtime)
+            return CharacterCreator(PathResolver.get_data_dir()).load_draft(brain_id)
+        except CharacterCreationError as exc:
+            if self.view is not None:
+                self.view.show_notice(str(exc), is_error=True)
+            else:
+                print(f"[ui] load character failed: {exc}")
+        return None
+
+    def on_character_update_requested(self, role_id: str, draft: CharacterDraft) -> None:
+        try:
+            brain_id = self._resolve_brain_id(role_id, self._runtime)
+            result = CharacterCreator(PathResolver.get_data_dir()).update(brain_id, draft)
+        except CharacterCreationError as exc:
+            if self.view is not None:
+                self.view.show_notice(str(exc), is_error=True)
+            else:
+                print(f"[ui] update character failed: {exc}")
+            return
+
+        self._invalidate_runtime()
+        if self.view is not None:
+            self._publish_data_roles()
+            self.view.set_active_role(result.brain_id)
+            self.view.show_notice(f"Saved character: {draft.name.strip()}")
+            self.view.show_page("home")
+
     def on_theme_toggled(self, is_dark: bool) -> None:
         self._settings.is_dark = is_dark
 
