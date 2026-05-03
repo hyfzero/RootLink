@@ -73,14 +73,19 @@ def round_icon_button(icon: str, colors: dict[str, str], on_click: Optional[Call
 
 
 def avatar(path: str, size: int = 48, ring_color: Optional[str] = None, is_dark: bool = True) -> ft.Container:
+    has_image = bool(path)
     return ft.Container(
         width=size,
         height=size,
         border_radius=size / 2,
         clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        bgcolor=hex_with_alpha("#FFFFFF", 0x10 if is_dark else 0x22) if not has_image else None,
         border=ft.border.all(1, ring_color or hex_with_alpha("#FFFFFF", 0x1A)),
         shadow=soft_shadow(is_dark, None, "card") if size >= 72 else None,
-        content=ft.Image(src=path, width=size, height=size, fit=IMAGE_COVER),
+        alignment=ft.Alignment(0, 0),
+        content=ft.Image(src=path, width=size, height=size, fit=IMAGE_COVER)
+        if has_image
+        else ft.Icon(ft.Icons.PERSON, size=max(16, size // 2), color=hex_with_alpha("#FFFFFF", 0x92) if is_dark else hex_with_alpha("#363040", 0x88)),
     )
 
 

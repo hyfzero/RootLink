@@ -69,6 +69,31 @@ class MemoryDraft:
 
 
 @dataclass(slots=True)
+class PortraitLayoutDraft:
+    """Shared portrait canvas data used to align expressions/actions."""
+
+    canvas_width: int = 0
+    canvas_height: int = 0
+    anchor_bbox: tuple[int, int, int, int] | None = None
+
+
+@dataclass(slots=True)
+class PortraitEditDraft:
+    """Processing values for one source portrait image."""
+
+    source_path: str = ""
+    processed_path: str = ""
+    background_color: tuple[int, int, int] = (255, 255, 255)
+    tolerance: int = 32
+    feather: int = 2
+    crop_box: tuple[int, int, int, int] | None = None
+    scale: float = 1.0
+    offset_x: int = 0
+    offset_y: int = 0
+    warning: str = ""
+
+
+@dataclass(slots=True)
 class CharacterDraft:
     """Collected values from the character creation wizard."""
 
@@ -78,6 +103,8 @@ class CharacterDraft:
     description: str = ""
     avatar_path: str = ""
     portraits: dict[str, str] = field(default_factory=dict)
+    portrait_layout: PortraitLayoutDraft | None = None
+    portrait_edits: dict[str, PortraitEditDraft] = field(default_factory=dict)
     age: str = ""
     gender: str = "unknown"
     birthday: str = ""

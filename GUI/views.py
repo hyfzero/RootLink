@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -39,9 +41,11 @@ from .interfaces import (
     CompanionUICallback,
     CompanionUIView,
     MemoryDraft,
+    PortraitEditDraft,
     UiSettings,
     UserProfile,
 )
+from .portrait_processing import PortraitProcessingError, export_aligned_portrait, sample_background_color
 from .theme import (
     MOBILE_WIDTH,
     MOTION,
@@ -79,6 +83,13 @@ PORTRAIT_EMOTIONS = [
     ("surprised", "惊讶"),
 ]
 
+PORTRAIT_CUTOUT_PRESETS = [
+    ("soft", "保守", 18, 1),
+    ("standard", "标准", 32, 2),
+    ("strong", "强力", 55, 3),
+]
+PORTRAIT_PREVIEW_DEBOUNCE_SECONDS = 0.25
+
 CREATE_STEPS = ["基础信息", "立绘", "人格", "记忆", "语言风格"]
 
 
@@ -95,8 +106,8 @@ REPLY_EMOTION_STATUS = {
     "embarrassed": "\u5bb3\u7f9e \U0001f633",
 }
 
-HOME_TITLE_TEXT = "今天想和谁聊聊天"
-HOME_SUBTITLE_TEXT = "在一切的根部，我们彼此相连"
+HOME_TITLE_TEXT = "你好，今天想和谁聊聊天"
+HOME_SUBTITLE_TEXT = "在世界的根部，我们彼此相连"
 
 
 def default_roles() -> list[CompanionRole]:
@@ -139,7 +150,20 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._file_picker_target: tuple[str, str] | None = None
         self._trait_field: Optional[ft.TextField] = None
         self._interest_field: Optional[ft.TextField] = None
+        self._trait_chips: Optional[ft.Row] = None
+        self._interest_chips: Optional[ft.Row] = None
         self._memory_editors: list[MemoryEditor] = []
+        self._memory_list: Optional[ft.Column] = None
+        self._portrait_tolerance_slider: Optional[ft.Slider] = None
+        self._portrait_feather_slider: Optional[ft.Slider] = None
+        self._portrait_scale_slider: Optional[ft.Slider] = None
+        self._portrait_offset_x_slider: Optional[ft.Slider] = None
+        self._portrait_offset_y_slider: Optional[ft.Slider] = None
+        self._portrait_advanced_open = False
+        self._portrait_preview_generation = 0
+        self._portrait_rendering_emotion_id = ""
+        self._portrait_preview_session_id = uuid.uuid4().hex
+        self._portrait_preview_paths: dict[str, str] = {}
         self.motion_enabled = True
         self._page_seed = {page: 0 for page in self.VALID_PAGES}
         self._chat_launching_role_id: Optional[str] = None
@@ -302,7 +326,16 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if kind == "avatar":
             self._draft.avatar_path = file_path
         elif kind == "portrait" and emotion_id:
-            self._draft.portraits[emotion_id] = file_path
+            try:
+                background_color = sample_background_color(file_path)
+                self._draft.portrait_edits[emotion_id] = PortraitEditDraft(
+                    source_path=file_path,
+                    background_color=background_color,
+                )
+                self._process_portrait(emotion_id, refresh=False)
+            except PortraitProcessingError as exc:
+                self.show_notice(str(exc), is_error=True)
+                return
         self._safe_update()
 
     def _stagger(
@@ -965,9 +998,12 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._reset_immersive_state(role)
         self._immersive_dialogue_text = text(self._visible_immersive_text(role), 15, colors["text_soft"], max_lines=None)
         self._schedule_immersive_typewriter()
+        portrait_path = self._current_portrait_path(role)
         portrait: ft.Control = ft.Container(
             alignment=ft.Alignment(0, 1),
-            content=ft.Image(src=role.standing_image_path, fit=IMAGE_CONTAIN, width=390, height=520),
+            content=ft.Image(src=portrait_path, fit=IMAGE_CONTAIN, width=390, height=520)
+            if portrait_path
+            else ft.Icon(ft.Icons.PERSON_OUTLINE, size=120, color=colors["text_tertiary"]),
         )
         dialogue: ft.Control = ft.Container(
             height=168,
@@ -1018,6 +1054,14 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 ],
             ),
         )
+
+    def _current_portrait_path(self, role: CompanionRole) -> str:
+        emotion = self._normalize_emotion(self._reply_emotions.get(role.id, ""))
+        if emotion:
+            portrait_path = role.portraits.get(emotion, "")
+            if portrait_path:
+                return portrait_path
+        return role.portraits.get("neutral", "") or role.standing_image_path
 
     def _build_settings_page(self, colors: dict[str, str]) -> ft.Control:
         self._settings_name_field = FormField("显示名称", "你的昵称", colors)
@@ -1235,8 +1279,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     content=text(label, 11, colors["text"] if selected else colors["text_secondary"]),
                 )
             )
-        avatar_path = self._draft.avatar_path or self.active_role.avatar_path
-        preview_path = self._draft.portraits.get(self._emotion_id) or self.active_role.standing_image_path
+        avatar_path = self._draft.avatar_path
+        preview_path = self._draft.portraits.get(self._emotion_id, "")
         return section_card(
             ft.Column(
                 spacing=12,
@@ -1283,7 +1327,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
                         bgcolor=colors["muted"],
                         border=ft.border.all(1, colors["card_border"]),
-                        content=ft.Image(src=preview_path, fit=IMAGE_CONTAIN),
+                        alignment=ft.Alignment(0, 0),
+                        content=ft.Image(src=preview_path, fit=IMAGE_CONTAIN)
+                        if preview_path
+                        else ft.Icon(ft.Icons.PERSON_OUTLINE, size=56, color=colors["text_tertiary"]),
                     ),
                     ft.Row(
                         spacing=10,
@@ -1292,21 +1339,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                             ft.Container(expand=True, content=self._secondary_button("移除", colors, lambda _: self._remove_portrait(), ft.Icons.DELETE_OUTLINE, subtle=True)),
                         ],
                     ),
-                    ft.Container(
-                        height=44,
-                        border_radius=14,
-                        bgcolor=hex_with_alpha(self.active_role.accent_color, 36),
-                        border=ft.border.all(1, hex_with_alpha(self.active_role.accent_color, 70)),
-                        alignment=ft.Alignment(0, 0),
-                        content=ft.Row(
-                            alignment=ft.MainAxisAlignment.CENTER,
-                            spacing=8,
-                            controls=[
-                                ft.Icon(ft.Icons.CONTENT_CUT, size=16, color=colors["text_secondary"]),
-                                text("抠图待实现", 12, colors["text_secondary"]),
-                            ],
-                        ),
-                    ),
+                    self._portrait_processing_panel(colors),
                 ],
             ),
             colors,
@@ -1314,6 +1347,177 @@ class CompanionAppView(ft.Container, CompanionUIView):
             solid=True,
             radius=28,
         )
+
+    def _portrait_processing_panel(self, colors: dict[str, str]) -> ft.Control:
+        edit = self._draft.portrait_edits.get(self._emotion_id)
+        if edit is None or not edit.source_path:
+            return ft.Container(
+                padding=ft.padding.symmetric(horizontal=14, vertical=12),
+                border_radius=14,
+                bgcolor=hex_with_alpha(self.active_role.accent_color, 28),
+                border=ft.border.all(1, hex_with_alpha(self.active_role.accent_color, 58)),
+                content=ft.Row(
+                    spacing=8,
+                    controls=[
+                        ft.Icon(ft.Icons.CONTENT_CUT, size=16, color=colors["text_secondary"]),
+                        text("上传立绘后可进行抠图和对齐。", 12, colors["text_secondary"]),
+                    ],
+                ),
+            )
+
+        self._portrait_tolerance_slider = self._portrait_slider(0, 120, 24, edit.tolerance)
+        self._portrait_feather_slider = self._portrait_slider(0, 8, 8, edit.feather)
+        self._portrait_scale_slider = self._portrait_slider(0.5, 1.5, 20, edit.scale)
+        self._portrait_offset_x_slider = self._portrait_slider(-120, 120, 24, edit.offset_x)
+        self._portrait_offset_y_slider = self._portrait_slider(-120, 120, 24, edit.offset_y)
+
+        warning = ft.Container()
+        if edit.warning:
+            warning = ft.Container(
+                padding=ft.padding.symmetric(horizontal=12, vertical=9),
+                border_radius=12,
+                bgcolor=hex_with_alpha("#F59E0B", 34),
+                border=ft.border.all(1, hex_with_alpha("#F59E0B", 78)),
+                content=text(edit.warning, 11, colors["text_secondary"]),
+            )
+
+        status = ft.Container()
+        if self._portrait_rendering_emotion_id == self._emotion_id:
+            status = ft.Container(
+                padding=ft.padding.symmetric(horizontal=12, vertical=9),
+                border_radius=12,
+                bgcolor=hex_with_alpha(self.active_role.accent_color, 28),
+                border=ft.border.all(1, hex_with_alpha(self.active_role.accent_color, 58)),
+                content=ft.Row(
+                    spacing=8,
+                    controls=[
+                        ft.ProgressRing(width=14, height=14, stroke_width=2, color=self.active_role.accent_color),
+                        text("正在生成预览...", 11, colors["text_secondary"]),
+                    ],
+                ),
+            )
+
+        preset_controls = [
+            self._portrait_preset_button(preset_id, label, edit, colors)
+            for preset_id, label, _, _ in PORTRAIT_CUTOUT_PRESETS
+        ]
+        advanced_controls: list[ft.Control] = []
+        if self._portrait_advanced_open:
+            advanced_controls = [
+                self._portrait_slider_row("背景清理强度", self._portrait_tolerance_slider, colors),
+                self._portrait_slider_row("边缘柔和度", self._portrait_feather_slider, colors),
+                self._portrait_slider_row("缩放", self._portrait_scale_slider, colors),
+                self._portrait_slider_row("横向偏移", self._portrait_offset_x_slider, colors),
+                self._portrait_slider_row("纵向偏移", self._portrait_offset_y_slider, colors),
+            ]
+
+        return ft.Container(
+            padding=14,
+            border_radius=18,
+            bgcolor=colors["input"],
+            border=ft.border.all(1, colors["input_border"]),
+            content=ft.Column(
+                spacing=10,
+                controls=[
+                    ft.Row(
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Icon(ft.Icons.CONTENT_CUT, size=16, color=colors["text_secondary"]),
+                            ft.Column(
+                                spacing=1,
+                                controls=[
+                                    text("抠图预设", 12, colors["text"], ft.FontWeight.W_500),
+                                    text("调整后会自动刷新预览", 11, colors["text_tertiary"]),
+                                ],
+                            ),
+                        ],
+                    ),
+                    ft.Row(spacing=8, wrap=True, controls=preset_controls),
+                    ft.Row(
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Icon(ft.Icons.COLORIZE_OUTLINED, size=16, color=colors["text_secondary"]),
+                            ft.Column(
+                                spacing=1,
+                                controls=[
+                                    text("选择背景位置", 12, colors["text"], ft.FontWeight.W_500),
+                                    text("选一块纯背景作为清理参考", 11, colors["text_tertiary"]),
+                                ],
+                            ),
+                            ft.Container(width=18, height=18, border_radius=9, bgcolor=self._portrait_color_hex(edit.background_color), border=ft.border.all(1, colors["card_border"])),
+                        ],
+                    ),
+                    ft.Row(
+                        spacing=8,
+                        wrap=True,
+                        controls=[
+                            self._mini_button("左上角", colors, lambda _: self._set_portrait_background("top_left")),
+                            self._mini_button("右上角", colors, lambda _: self._set_portrait_background("top_right")),
+                            self._mini_button("左下角", colors, lambda _: self._set_portrait_background("bottom_left")),
+                            self._mini_button("右下角", colors, lambda _: self._set_portrait_background("bottom_right")),
+                        ],
+                    ),
+                    self._mini_button("收起高级微调" if self._portrait_advanced_open else "高级微调", colors, lambda _: self._toggle_portrait_advanced()),
+                    *advanced_controls,
+                    status,
+                    warning,
+                ],
+            ),
+        )
+
+    def _portrait_slider(self, min_value: float, max_value: float, divisions: int, value: float) -> ft.Slider:
+        return ft.Slider(
+            min=min_value,
+            max=max_value,
+            divisions=divisions,
+            value=value,
+            active_color=self.active_role.accent_color,
+            inactive_color=self._colors()["muted"],
+            on_change=lambda _: self._queue_portrait_preview(),
+        )
+
+    def _portrait_slider_row(self, label: str, slider: ft.Slider, colors: dict[str, str]) -> ft.Control:
+        return ft.Row(
+            spacing=10,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.Container(width=82, content=text(label, 11, colors["text_secondary"])),
+                ft.Container(expand=True, content=slider),
+            ],
+        )
+
+    def _portrait_preset_button(self, preset_id: str, label: str, edit: PortraitEditDraft, colors: dict[str, str]) -> ft.Control:
+        selected = self._portrait_preset_id(edit) == preset_id
+        return ft.Container(
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border_radius=12,
+            bgcolor=hex_with_alpha(self.active_role.accent_color, 48) if selected else colors["card_strong"],
+            border=ft.border.all(1, hex_with_alpha(self.active_role.accent_color, 88) if selected else colors["card_border"]),
+            ink=True,
+            scale=1.0,
+            animate_scale=animation("fast", phase="press"),
+            on_click=animated_click(lambda _, value=preset_id: self._set_portrait_preset(value)),
+            content=text(label, 11, colors["text"]),
+        )
+
+    def _mini_button(self, label: str, colors: dict[str, str], on_click) -> ft.Control:
+        return ft.Container(
+            padding=ft.padding.symmetric(horizontal=10, vertical=7),
+            border_radius=12,
+            bgcolor=colors["card_strong"],
+            border=ft.border.all(1, colors["card_border"]),
+            ink=True,
+            scale=1.0,
+            animate_scale=animation("fast", phase="press"),
+            on_click=animated_click(on_click),
+            content=text(label, 11, colors["text"]),
+        )
+
+    def _portrait_color_hex(self, color: tuple[int, int, int]) -> str:
+        red, green, blue = [max(0, min(255, int(channel))) for channel in color]
+        return f"#{red:02X}{green:02X}{blue:02X}"
 
     def _personality_step(self, colors: dict[str, str]) -> ft.Control:
         self._age_field = FormField("年龄", "可选", colors, solid=True)
@@ -1336,6 +1540,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         )
         self._trait_field = FormField("添加特质", "例如：耐心", colors, solid=True)
         self._interest_field = FormField("添加兴趣", "例如：钢琴", colors, solid=True)
+        self._trait_chips = self._chip_wrap(self._draft.personality_traits, colors, self._remove_trait)
+        self._interest_chips = self._chip_wrap(self._draft.interests, colors, self._remove_interest)
         return ft.Column(
             spacing=12,
             controls=[
@@ -1361,10 +1567,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         controls=[
                             text("特质", 13, colors["text_secondary"]),
                             ft.Row(spacing=8, controls=[ft.Container(expand=True, content=self._trait_field), self._small_add_button(colors, lambda _: self._add_trait())]),
-                            self._chip_wrap(self._draft.personality_traits, colors, self._remove_trait),
+                            self._trait_chips,
                             text("兴趣", 13, colors["text_secondary"]),
                             ft.Row(spacing=8, controls=[ft.Container(expand=True, content=self._interest_field), self._small_add_button(colors, lambda _: self._add_interest())]),
-                            self._chip_wrap(self._draft.interests, colors, self._remove_interest),
+                            self._interest_chips,
                         ],
                     ),
                     colors,
@@ -1390,30 +1596,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         )
 
     def _memory_step(self, colors: dict[str, str]) -> ft.Control:
-        self._memory_editors = []
-        editors: list[ft.Control] = []
-        for index, memory in enumerate(self._draft.memories):
-            editor = MemoryEditor(memory, colors, lambda _, idx=index: self._remove_memory(idx))
-            self._memory_editors.append(editor)
-            editors.append(editor)
-        if not editors:
-            editors.append(
-                section_card(
-                    ft.Column(
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        spacing=8,
-                        controls=[
-                            ft.Icon(ft.Icons.AUTO_AWESOME, size=24, color=colors["text_tertiary"]),
-                            text("还没有记忆", 13, colors["text_secondary"]),
-                            text("添加记忆条目来引导角色行为。", 11, colors["text_tertiary"]),
-                        ],
-                    ),
-                    colors,
-                    padding=22,
-                    solid=True,
-                    radius=28,
-                )
-            )
+        self._memory_list = ft.Column(spacing=12, controls=self._memory_controls(colors))
         return ft.Column(
             spacing=12,
             controls=[
@@ -1424,7 +1607,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         round_icon_button(ft.Icons.ADD, colors, lambda _: self._add_memory()),
                     ],
                 ),
-                *editors,
+                self._memory_list,
             ],
         )
 
@@ -1468,9 +1651,36 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _slider_block(self, label: str, slider: ft.Slider, colors: dict[str, str]) -> ft.Control:
         return ft.Column(spacing=4, controls=[text(label, 12, colors["text_secondary"]), slider])
 
-    def _chip_wrap(self, values: list[str], colors: dict[str, str], on_remove) -> ft.Control:
+    def _memory_controls(self, colors: dict[str, str]) -> list[ft.Control]:
+        self._memory_editors = []
+        controls: list[ft.Control] = []
+        for index, memory in enumerate(self._draft.memories):
+            editor = MemoryEditor(memory, colors, lambda idx=index: self._remove_memory(idx))
+            self._memory_editors.append(editor)
+            controls.append(editor)
+        if controls:
+            return controls
+        return [
+            section_card(
+                ft.Column(
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=8,
+                    controls=[
+                        ft.Icon(ft.Icons.AUTO_AWESOME, size=24, color=colors["text_tertiary"]),
+                        text("还没有记忆", 13, colors["text_secondary"]),
+                        text("添加记忆条目来引导角色行为。", 11, colors["text_tertiary"]),
+                    ],
+                ),
+                colors,
+                padding=22,
+                solid=True,
+                radius=28,
+            )
+        ]
+
+    def _chip_controls(self, values: list[str], colors: dict[str, str], on_remove) -> list[ft.Control]:
         if not values:
-            return text("还没有条目。", 11, colors["text_tertiary"])
+            return [text("还没有条目。", 11, colors["text_tertiary"])]
         chips: list[ft.Control] = []
         for item in values:
             chips.append(
@@ -1489,7 +1699,37 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     ),
                 )
             )
-        return ft.Row(spacing=8, wrap=True, controls=chips)
+        return chips
+
+    def _chip_wrap(self, values: list[str], colors: dict[str, str], on_remove) -> ft.Row:
+        return ft.Row(spacing=8, wrap=True, controls=self._chip_controls(values, colors, on_remove))
+
+    def _try_update_control(self, control: Optional[ft.Control]) -> bool:
+        if control is None:
+            return False
+        try:
+            control.update()
+        except (AssertionError, RuntimeError):
+            return False
+        return True
+
+    def _refresh_trait_chips(self) -> None:
+        if self._trait_chips is None:
+            return
+        self._trait_chips.controls = self._chip_controls(self._draft.personality_traits, self._colors(), self._remove_trait)
+        self._try_update_control(self._trait_chips)
+
+    def _refresh_interest_chips(self) -> None:
+        if self._interest_chips is None:
+            return
+        self._interest_chips.controls = self._chip_controls(self._draft.interests, self._colors(), self._remove_interest)
+        self._try_update_control(self._interest_chips)
+
+    def _refresh_memory_list(self) -> None:
+        if self._memory_list is None:
+            return
+        self._memory_list.controls = self._memory_controls(self._colors())
+        self._try_update_control(self._memory_list)
 
     def _header(self, title: str, colors: dict[str, str], on_back=None) -> ft.Container:
         return ft.Container(
@@ -1683,7 +1923,141 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _remove_portrait(self) -> None:
         self._draft.portraits.pop(self._emotion_id, None)
+        self._draft.portrait_edits.pop(self._emotion_id, None)
+        if self._emotion_id == "neutral":
+            self._draft.portrait_layout = None
         self._safe_update()
+
+    def _process_current_portrait(self) -> None:
+        self._queue_portrait_preview()
+
+    def _process_portrait(
+        self,
+        emotion_id: str,
+        *,
+        refresh: bool = True,
+        sync_controls: bool = True,
+        expected_generation: int | None = None,
+    ) -> bool:
+        edit = self._draft.portrait_edits.get(emotion_id)
+        if edit is None:
+            return False
+        if sync_controls:
+            self._sync_portrait_edit_from_controls(edit)
+        layout = None if emotion_id == "neutral" else self._draft.portrait_layout
+        try:
+            output_path = self._portrait_preview_output_path(emotion_id)
+            old_output_path = self._portrait_preview_paths.get(emotion_id, "")
+            output_path, resolved_layout, warning = export_aligned_portrait(edit, layout, output_path=output_path)
+        except PortraitProcessingError as exc:
+            self.show_notice(str(exc), is_error=True)
+            return False
+        if expected_generation is not None and expected_generation != self._portrait_preview_generation:
+            self._cleanup_portrait_preview_path(str(output_path))
+            return False
+        edit.processed_path = str(output_path)
+        edit.warning = warning
+        self._draft.portraits[emotion_id] = str(output_path)
+        self._portrait_preview_paths[emotion_id] = str(output_path)
+        self._cleanup_portrait_preview_path(old_output_path, keep=str(output_path))
+        if emotion_id == "neutral":
+            self._draft.portrait_layout = resolved_layout
+        if refresh:
+            self._safe_update()
+        return True
+
+    def _sync_portrait_edit_from_controls(self, edit: PortraitEditDraft) -> None:
+        if self._portrait_tolerance_slider is not None and self._portrait_tolerance_slider.value is not None:
+            edit.tolerance = int(self._portrait_tolerance_slider.value)
+        if self._portrait_feather_slider is not None and self._portrait_feather_slider.value is not None:
+            edit.feather = int(self._portrait_feather_slider.value)
+        if self._portrait_scale_slider is not None and self._portrait_scale_slider.value is not None:
+            edit.scale = float(self._portrait_scale_slider.value)
+        if self._portrait_offset_x_slider is not None:
+            edit.offset_x = int(self._portrait_offset_x_slider.value or 0)
+        if self._portrait_offset_y_slider is not None:
+            edit.offset_y = int(self._portrait_offset_y_slider.value or 0)
+
+    def _set_portrait_background(self, preset: str) -> None:
+        edit = self._draft.portrait_edits.get(self._emotion_id)
+        if edit is None or not edit.source_path:
+            return
+        try:
+            edit.background_color = sample_background_color(edit.source_path, preset)
+        except PortraitProcessingError as exc:
+            self.show_notice(str(exc), is_error=True)
+            return
+        self._queue_portrait_preview()
+
+    def _set_portrait_preset(self, preset_id: str) -> None:
+        edit = self._draft.portrait_edits.get(self._emotion_id)
+        if edit is None:
+            return
+        for candidate_id, _, tolerance, feather in PORTRAIT_CUTOUT_PRESETS:
+            if candidate_id == preset_id:
+                edit.tolerance = tolerance
+                edit.feather = feather
+                if self._portrait_tolerance_slider is not None:
+                    self._portrait_tolerance_slider.value = tolerance
+                if self._portrait_feather_slider is not None:
+                    self._portrait_feather_slider.value = feather
+                self._queue_portrait_preview()
+                return
+
+    def _portrait_preset_id(self, edit: PortraitEditDraft) -> str:
+        for preset_id, _, tolerance, feather in PORTRAIT_CUTOUT_PRESETS:
+            if edit.tolerance == tolerance and edit.feather == feather:
+                return preset_id
+        return ""
+
+    def _toggle_portrait_advanced(self) -> None:
+        self._portrait_advanced_open = not self._portrait_advanced_open
+        self._safe_update()
+
+    def _queue_portrait_preview(self) -> None:
+        edit = self._draft.portrait_edits.get(self._emotion_id)
+        if edit is None:
+            return
+        emotion_id = self._emotion_id
+        self._sync_portrait_edit_from_controls(edit)
+        self._portrait_preview_generation += 1
+        generation = self._portrait_preview_generation
+
+        async def _render_later() -> None:
+            await asyncio.sleep(PORTRAIT_PREVIEW_DEBOUNCE_SECONDS)
+            if generation != self._portrait_preview_generation or self._emotion_id != emotion_id:
+                return
+            self._portrait_rendering_emotion_id = emotion_id
+            self._safe_update()
+            self._process_portrait(emotion_id, refresh=False, sync_controls=False, expected_generation=generation)
+            if generation == self._portrait_preview_generation:
+                self._portrait_rendering_emotion_id = ""
+                self._safe_update()
+
+        try:
+            page = self.page
+        except RuntimeError:
+            page = None
+        if page is None:
+            self._process_portrait(emotion_id, sync_controls=False)
+            return
+        page.run_task(_render_later)
+
+    def _portrait_preview_output_path(self, emotion_id: str) -> Path:
+        safe_emotion = "".join(character for character in emotion_id if character.isalnum() or character in ("-", "_")) or "portrait"
+        root = Path(tempfile.gettempdir()) / "amadues_portraits" / self._portrait_preview_session_id
+        return root / f"{safe_emotion}-{self._portrait_preview_generation}.png"
+
+    def _cleanup_portrait_preview_path(self, path: str, *, keep: str = "") -> None:
+        if not path or path == keep:
+            return
+        try:
+            preview_path = Path(path)
+            session_root = Path(tempfile.gettempdir()) / "amadues_portraits" / self._portrait_preview_session_id
+            if preview_path.is_file() and session_root in preview_path.parents:
+                preview_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     def _upload_create_avatar(self) -> None:
         self._open_image_picker("avatar")
@@ -1693,35 +2067,45 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._safe_update()
 
     def _add_trait(self) -> None:
+        self._persist_current_step()
         value = (self._trait_field.value if self._trait_field else "").strip()
         if value and value not in self._draft.personality_traits:
             self._draft.personality_traits.append(value)
-            self._safe_update()
+            if self._trait_field is not None:
+                self._trait_field.value = ""
+                self._try_update_control(self._trait_field)
+            self._refresh_trait_chips()
 
     def _remove_trait(self, value: str) -> None:
+        self._persist_current_step()
         self._draft.personality_traits = [item for item in self._draft.personality_traits if item != value]
-        self._safe_update()
+        self._refresh_trait_chips()
 
     def _add_interest(self) -> None:
+        self._persist_current_step()
         value = (self._interest_field.value if self._interest_field else "").strip()
         if value and value not in self._draft.interests:
             self._draft.interests.append(value)
-            self._safe_update()
+            if self._interest_field is not None:
+                self._interest_field.value = ""
+                self._try_update_control(self._interest_field)
+            self._refresh_interest_chips()
 
     def _remove_interest(self, value: str) -> None:
+        self._persist_current_step()
         self._draft.interests = [item for item in self._draft.interests if item != value]
-        self._safe_update()
+        self._refresh_interest_chips()
 
     def _add_memory(self) -> None:
         self._persist_current_step()
         self._draft.memories.append(MemoryDraft(content=""))
-        self._safe_update()
+        self._refresh_memory_list()
 
     def _remove_memory(self, index: int) -> None:
         self._persist_current_step()
         if 0 <= index < len(self._draft.memories):
             del self._draft.memories[index]
-        self._safe_update()
+        self._refresh_memory_list()
 
     def set_roles(self, roles: list[CompanionRole]) -> None:
         self._roles = roles
@@ -1811,6 +2195,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
         normalized = self._normalize_emotion(emotion)
         if normalized:
             self._reply_emotions[role_id] = normalized
+        if role_id == self._active_role_id and self._chat_mode == "immersive":
+            self._safe_update()
+            return
         if role_id == self._active_role_id and not self._refresh_chat_status():
             self._safe_update()
 

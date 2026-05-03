@@ -66,7 +66,10 @@ def role_from_brain(registry: BrainRegistry, brain_id: str, data_dir: Optional[P
     brain_dir = root / brain_id
     ui_data = _read_json(brain_dir / "ui.json")
     portraits = _load_portraits(brain_dir, ui_data)
-    avatar_path = _resolve_data_path(brain_dir, ui_data.get("avatar") or "assets/avatar.png")
+    avatar_path = _resolve_data_path(brain_dir, ui_data.get("avatar"))
+    legacy_avatar_path = brain_dir / "assets" / "avatar.png"
+    if not avatar_path and legacy_avatar_path.exists():
+        avatar_path = legacy_avatar_path.as_posix()
     standing_image_path = (
         portraits.get("neutral")
         or _resolve_data_path(brain_dir, ui_data.get("standing_image") or ui_data.get("portrait"))

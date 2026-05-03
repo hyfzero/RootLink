@@ -6,7 +6,7 @@ import json
 import re
 import shutil
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import Any
 
@@ -176,15 +176,21 @@ class CharacterCreator:
             "avatar": avatar_rel,
             "standing_image": portraits_rel.get("neutral", ""),
             "portraits": portraits_rel,
+            "portrait_layout": self._json_safe(draft.portrait_layout) if draft.portrait_layout else {},
+            "portrait_sources": {
+                emotion: self._json_safe(edit)
+                for emotion, edit in draft.portrait_edits.items()
+                if str(getattr(edit, "source_path", "")).strip()
+            },
             "last_message": "",
             "last_time": "",
         }
 
     def _copy_assets(self, brain_dir: Path, draft: CharacterDraft) -> tuple[str, dict[str, str]]:
         avatar_source = draft.avatar_path.strip()
-        if not avatar_source:
-            avatar_source = str(RESOURCE_DIR / "amadues.png")
-        avatar_rel = self._copy_image(avatar_source, brain_dir / "assets", "avatar", brain_dir)
+        avatar_rel = ""
+        if avatar_source:
+            avatar_rel = self._copy_image(avatar_source, brain_dir / "assets", "avatar", brain_dir)
 
         portraits: dict[str, str] = {}
         for emotion, source in draft.portraits.items():
@@ -194,17 +200,6 @@ class CharacterCreator:
                 str(source),
                 brain_dir / "assets" / "portraits",
                 str(emotion),
-                brain_dir,
-            )
-
-        if "neutral" not in portraits:
-            neutral_source = next((source for source in draft.portraits.values() if str(source).strip()), "")
-            if not neutral_source:
-                neutral_source = str(RESOURCE_DIR / "amadues_Full_profile.png")
-            portraits["neutral"] = self._copy_image(
-                neutral_source,
-                brain_dir / "assets" / "portraits",
-                "neutral",
                 brain_dir,
             )
 
@@ -282,6 +277,19 @@ class CharacterCreator:
     def _accent_color(self, brain_id: str) -> str:
         index = sum(ord(char) for char in brain_id) % len(DEFAULT_ACCENT_PALETTE)
         return DEFAULT_ACCENT_PALETTE[index]
+
+    def _json_safe(self, value: object) -> object:
+        if value is None:
+            return None
+        if is_dataclass(value):
+            return self._json_safe(asdict(value))
+        if isinstance(value, dict):
+            return {str(key): self._json_safe(item) for key, item in value.items()}
+        if isinstance(value, tuple):
+            return [self._json_safe(item) for item in value]
+        if isinstance(value, list):
+            return [self._json_safe(item) for item in value]
+        return value
 
     def _write_json(self, path: Path, payload: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

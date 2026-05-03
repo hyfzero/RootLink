@@ -92,6 +92,22 @@ class CharacterCreatorTests(unittest.TestCase):
             self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
             self.assertFalse(any(path.name.startswith(".creating-dup-") for path in data_dir.iterdir()))
 
+    def test_create_allows_empty_avatar_and_portrait_without_default_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as data_root:
+            result = CharacterCreator(Path(data_root)).create(CharacterDraft(brain_id="empty_assets", name="Empty Assets"))
+            brain_dir = result.brain_dir
+            ui = json.loads((brain_dir / "ui.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(ui["avatar"], "")
+            self.assertEqual(ui["standing_image"], "")
+            self.assertEqual(ui["portraits"], {})
+            self.assertFalse((brain_dir / "assets" / "avatar.png").exists())
+            self.assertFalse((brain_dir / "assets" / "portraits" / "neutral.png").exists())
+
+            roles = load_roles_from_data(Path(data_root))
+            self.assertEqual(roles[0].avatar_path, "")
+            self.assertEqual(roles[0].standing_image_path, "")
+
     def test_template_creation_only_inherits_config_profile_and_style_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as data_root:
             data_dir = Path(data_root)
@@ -142,7 +158,7 @@ class CharacterCreatorTests(unittest.TestCase):
             history = json.loads((brain_dir / "history" / "history.json").read_text(encoding="utf-8"))
             self.assertNotIn("marker", history)
             self.assertFalse((brain_dir / "session" / "current" / "state.json").exists())
-            self.assertNotEqual((brain_dir / "assets" / "avatar.png").read_bytes(), b"template-avatar")
+            self.assertFalse((brain_dir / "assets" / "avatar.png").exists())
 
 
 if __name__ == "__main__":
