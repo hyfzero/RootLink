@@ -201,6 +201,29 @@ class GuiViewTests(unittest.TestCase):
         view.set_reply_emotion(role.id, "sad")
         self.assertEqual(view._chat_status_value(role), "\u96be\u8fc7 \U0001f622")
 
+    def test_reply_emotion_in_immersive_updates_portrait_without_rebuilding_page(self) -> None:
+        role = make_role()
+        view = CompanionAppView(roles=[role])
+        view._active_role_id = role.id
+        view._page_name = "chat"
+        view._chat_mode = "immersive"
+        calls = {"portrait": 0, "rebuild": 0}
+
+        def refresh_portrait() -> bool:
+            calls["portrait"] += 1
+            return True
+
+        def rebuild() -> None:
+            calls["rebuild"] += 1
+
+        view._refresh_immersive_portrait = refresh_portrait  # type: ignore[method-assign]
+        view._safe_update = rebuild  # type: ignore[method-assign]
+
+        view.set_reply_emotion(role.id, "happy")
+
+        self.assertEqual(calls["portrait"], 1)
+        self.assertEqual(calls["rebuild"], 0)
+
     def test_split_immersive_sentences_handles_punctuation_and_newlines(self) -> None:
         view = CompanionAppView(roles=[make_role()])
 

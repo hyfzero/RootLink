@@ -174,6 +174,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._chat_list_view: Optional[ft.ListView] = None
         self._chat_status_text: Optional[ft.Text] = None
         self._immersive_dialogue_text: Optional[ft.Text] = None
+        self._immersive_portrait_container: Optional[ft.Container] = None
         self._pending_scroll_to_latest = False
         self._immersive_message_id: Optional[str] = None
         self._immersive_message_text = ""
@@ -249,6 +250,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         colors = self._colors()
         self._chat_list_view = None
         self._immersive_dialogue_text = None
+        self._immersive_portrait_container = None
         page_content = self._build_current_page(colors)
         page_content.key = f"page-{self._page_name}-{self._page_seed[self._page_name]}-{self._active_role_id}-{self._chat_mode}-{self._create_mode}-{self._editing_role_id}-{self._create_step}"
         self.gradient = app_gradient(self._is_dark)
@@ -1112,13 +1114,11 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._reset_immersive_state(role)
         self._immersive_dialogue_text = text(self._visible_immersive_text(role), 15, colors["text_soft"], max_lines=None)
         self._schedule_immersive_typewriter()
-        portrait_path = self._current_portrait_path(role)
-        portrait: ft.Control = ft.Container(
+        self._immersive_portrait_container = ft.Container(
             alignment=ft.Alignment(0, 1),
-            content=ft.Image(src=portrait_path, fit=IMAGE_CONTAIN, width=390, height=520)
-            if portrait_path
-            else ft.Icon(ft.Icons.PERSON_OUTLINE, size=120, color=colors["text_tertiary"]),
+            content=self._immersive_portrait_content(role, colors),
         )
+        portrait: ft.Control = self._immersive_portrait_container
         dialogue: ft.Control = ft.Container(
             height=168,
             margin=ft.margin.only(left=16, right=16, bottom=12),
@@ -1176,6 +1176,22 @@ class CompanionAppView(ft.Container, CompanionUIView):
             if portrait_path:
                 return portrait_path
         return role.portraits.get("neutral", "") or role.standing_image_path
+
+    def _immersive_portrait_content(self, role: CompanionRole, colors: dict[str, str]) -> ft.Control:
+        portrait_path = self._current_portrait_path(role)
+        if portrait_path:
+            return ft.Image(src=portrait_path, fit=IMAGE_CONTAIN, width=390, height=520)
+        return ft.Icon(ft.Icons.PERSON_OUTLINE, size=120, color=colors["text_tertiary"])
+
+    def _refresh_immersive_portrait(self) -> bool:
+        if self._page_name != "chat" or self._chat_mode != "immersive" or self._immersive_portrait_container is None:
+            return False
+        self._immersive_portrait_container.content = self._immersive_portrait_content(self.active_role, self._colors())
+        try:
+            self._immersive_portrait_container.update()
+        except (AssertionError, RuntimeError):
+            return False
+        return True
 
     def _build_settings_page(self, colors: dict[str, str]) -> ft.Control:
         self._settings_name_field = FormField("显示名称", "你的昵称", colors)
@@ -2317,7 +2333,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if normalized:
             self._reply_emotions[role_id] = normalized
         if role_id == self._active_role_id and self._chat_mode == "immersive":
-            self._safe_update()
+            self._refresh_chat_status()
+            if not self._refresh_immersive_portrait():
+                self._safe_update()
             return
         if role_id == self._active_role_id and not self._refresh_chat_status():
             self._safe_update()
