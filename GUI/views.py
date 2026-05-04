@@ -136,7 +136,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._is_dark = is_dark
         self._chat_mode = "normal"
         self._chat_mode_seed = 0
-        self._messages = self._seed_messages(self.active_role) if self._roles else []
+        self._messages: list[ChatMessage] = []
         self._seen_message_ids = {message.id for message in self._messages}
         self._typing = False
         self._reply_emotions: dict[str, str] = {}
@@ -196,18 +196,6 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if self._roles:
             return self._roles[0]
         return EMPTY_ROLE
-
-    def _seed_messages(self, role: CompanionRole) -> list[ChatMessage]:
-        seed = {
-            "amadeus": "记得你上次停下来的地方。准备好继续了吗？",
-            "shinji": "我会在这里。你可以慢慢说。",
-            "asuka": "别一个人扛着，直接说出来。",
-        }.get(role.id, "我已经准备好了。")
-        return [
-            ChatMessage("seed-1", role.id, seed, False, datetime.now()),
-            ChatMessage("seed-2", role.id, "最近有点累。", True, datetime.now()),
-            ChatMessage("seed-3", role.id, role.last_message or role.status_text, False, datetime.now()),
-        ]
 
     def _colors(self) -> dict[str, str]:
         return palette(self._is_dark)
@@ -844,7 +832,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         )
 
     def _latest_role_reply_text(self, role: CompanionRole) -> str:
-        return next((message.text for message in reversed(self._messages) if message.role_id == role.id and not message.is_user), role.status_text)
+        return next((message.text for message in reversed(self._messages) if message.role_id == role.id and not message.is_user), "")
 
     def _normalize_emotion(self, emotion: str) -> str:
         return str(emotion or "").strip().replace("_zh", "").lower()
@@ -869,6 +857,18 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _role_messages(self, role_id: str) -> list[ChatMessage]:
         return [message for message in self._messages if message.role_id == role_id]
+
+    def _sync_role_recent_message(self, role_id: str) -> None:
+        role = next((candidate for candidate in self._roles if candidate.id == role_id), None)
+        if role is None:
+            return
+        latest = next((message for message in reversed(self._messages) if message.role_id == role_id and message.text.strip()), None)
+        if latest is None:
+            role.last_message = ""
+            role.last_time = ""
+            return
+        role.last_message = latest.text
+        role.last_time = latest.timestamp.strftime("%H:%M")
 
     def _normal_display_messages(self, role_id: str) -> list[ChatMessage]:
         display_messages: list[ChatMessage] = []
@@ -967,7 +967,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             latest_reply = self._latest_role_reply(role)
             if latest_reply is not None:
                 return latest_reply.text
-            return role.status_text
+            return ""
         return self._immersive_segments[self._immersive_index]
 
     def _visible_immersive_text(self, role: CompanionRole) -> str:
@@ -1930,10 +1930,6 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if not any(role.id == role_id for role in self._roles):
             return
         self._active_role_id = role_id
-        if not any(message.role_id == role_id for message in self._messages):
-            seeded = self._seed_messages(self.active_role)
-            self._messages.extend(seeded)
-            self._seen_message_ids.update(message.id for message in seeded)
 
     def _begin_open_chat(self, role_id: str) -> None:
         self._prepare_chat(role_id)
@@ -2250,6 +2246,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._active_role_id = ""
         elif self._active_role_id not in [role.id for role in roles]:
             self._active_role_id = roles[0].id
+        for role in self._roles:
+            if any(message.role_id == role.id for message in self._messages):
+                self._sync_role_recent_message(role.id)
         self._safe_update()
 
     def set_active_role(self, role_id: str) -> None:
@@ -2266,6 +2265,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def set_messages(self, messages: list[ChatMessage]) -> None:
         self._messages = messages
         self._seen_message_ids = {message.id for message in messages}
+        for role in self._roles:
+            self._sync_role_recent_message(role.id)
         if self._chat_mode == "immersive":
             self._reset_immersive_state(self.active_role)
         elif self._page_name == "chat":
@@ -2279,6 +2280,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._messages = retained + messages
         retained_ids = {message.id for message in retained}
         self._seen_message_ids = retained_ids | {message.id for message in messages}
+        self._sync_role_recent_message(role_id)
         if role_id == self._active_role_id:
             if self._chat_mode == "immersive":
                 self._reset_immersive_state(self.active_role)
@@ -2290,6 +2292,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def append_message(self, message: ChatMessage) -> None:
         self._messages.append(message)
+        self._sync_role_recent_message(message.role_id)
         if message.role_id == self._active_role_id:
             if self._chat_mode == "immersive" and not message.is_user:
                 self._reset_immersive_state(self.active_role)
@@ -2309,6 +2312,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 break
         if updated_message is None:
             return
+        self._sync_role_recent_message(updated_message.role_id)
         if updated_message.role_id == self._active_role_id:
             if self._chat_mode == "immersive" and not updated_message.is_user:
                 self._reset_immersive_state(self.active_role)
@@ -2375,6 +2379,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._immersive_index = 0
         self._immersive_display_text = ""
         self._immersive_typewriter_generation += 1
+        self._sync_role_recent_message(active_role)
         if not self._refresh_chat_surface():
             self._safe_update()
 

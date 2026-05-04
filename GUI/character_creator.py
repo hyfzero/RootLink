@@ -296,7 +296,7 @@ class CharacterCreator:
             "type": "Custom",
             "tags": tags,
             "intro": intro,
-            "status_text": "Ready to chat.",
+            "status_text": "",
             "accent_color": self._accent_color(brain_id),
             "avatar": avatar_rel,
             "standing_image": portraits_rel.get("neutral", ""),

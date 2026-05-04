@@ -183,6 +183,26 @@ class GuiViewTests(unittest.TestCase):
         self.assertEqual(view.active_role.id, "")
         self.assertEqual(view._messages, [])
 
+    def test_role_starts_without_default_messages(self) -> None:
+        role = make_role()
+        view = CompanionAppView(roles=[role])
+
+        self.assertEqual(view._messages, [])
+
+        view._prepare_chat(role.id)
+
+        self.assertEqual(view._messages, [])
+
+    def test_immersive_chat_without_reply_stays_empty(self) -> None:
+        role = make_role()
+        view = CompanionAppView(roles=[role])
+        view._active_role_id = role.id
+        view._chat_mode = "immersive"
+
+        view._reset_immersive_state(role)
+
+        self.assertEqual(view._current_immersive_text(role), "")
+
     def test_chat_status_uses_typing_and_reply_emotion(self) -> None:
         role = make_role()
         view = CompanionAppView(roles=[role])
@@ -293,6 +313,42 @@ class GuiViewTests(unittest.TestCase):
 
         self.assertEqual(view._messages[0].text, "新内容")
         self.assertFalse(view._messages[0].is_streaming)
+
+    def test_append_message_updates_recent_chat_preview(self) -> None:
+        role = make_role()
+        view = CompanionAppView(roles=[role])
+        view._active_role_id = role.id
+
+        view.append_message(ChatMessage("user-1", role.id, "hello", True, datetime(2026, 5, 4, 9, 1)))
+        view.append_message(ChatMessage("assistant-1", role.id, "", False, datetime(2026, 5, 4, 9, 2), is_streaming=True))
+
+        self.assertEqual(view._roles[0].last_message, "hello")
+        self.assertEqual(view._roles[0].last_time, "09:01")
+
+        view.update_message_text("assistant-1", "latest reply", is_streaming=False)
+
+        self.assertEqual(view._roles[0].last_message, "latest reply")
+        self.assertEqual(view._roles[0].last_time, "09:02")
+
+    def test_set_role_messages_updates_recent_chat_from_loaded_history(self) -> None:
+        role = make_role()
+        view = CompanionAppView(roles=[role])
+
+        view.set_role_messages(
+            role.id,
+            [
+                ChatMessage("user-1", role.id, "older", True, datetime(2026, 5, 4, 8, 30)),
+                ChatMessage("assistant-1", role.id, "newer", False, datetime(2026, 5, 4, 8, 31)),
+            ],
+        )
+
+        self.assertEqual(view._roles[0].last_message, "newer")
+        self.assertEqual(view._roles[0].last_time, "08:31")
+
+        view.set_role_messages(role.id, [])
+
+        self.assertEqual(view._roles[0].last_message, "")
+        self.assertEqual(view._roles[0].last_time, "")
 
     def test_new_assistant_message_resets_immersive_state(self) -> None:
         role = make_role()

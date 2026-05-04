@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -55,6 +56,46 @@ def _load_portraits(brain_dir: Path, ui_data: dict[str, Any]) -> dict[str, str]:
     return portraits
 
 
+def _iter_session_json_files(brain_dir: Path) -> list[Path]:
+    session_dir = brain_dir / "session"
+    if not session_dir.exists():
+        return []
+    paths = list((session_dir / "current").glob("*.json"))
+    archive_dir = session_dir / "archive"
+    if archive_dir.exists():
+        paths.extend(archive_dir.rglob("*.json"))
+    return paths
+
+
+def _latest_session_message(brain_dir: Path) -> tuple[str, str]:
+    latest_text = ""
+    latest_timestamp = 0.0
+    for path in _iter_session_json_files(brain_dir):
+        try:
+            data = _read_json(path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        messages = data.get("messages")
+        if not isinstance(messages, list):
+            continue
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            text = str(message.get("content") or "").strip()
+            if not text:
+                continue
+            try:
+                timestamp = float(message.get("timestamp") or 0)
+            except (TypeError, ValueError):
+                timestamp = 0.0
+            if timestamp >= latest_timestamp:
+                latest_text = text
+                latest_timestamp = timestamp
+    if not latest_text:
+        return "", ""
+    return latest_text, datetime.fromtimestamp(latest_timestamp).strftime("%H:%M") if latest_timestamp else ""
+
+
 def role_from_brain(registry: BrainRegistry, brain_id: str, data_dir: Optional[Path] = None) -> Optional[CompanionRole]:
     """Build a UI role from one loaded brain and its optional ui.json metadata."""
 
@@ -74,6 +115,7 @@ def role_from_brain(registry: BrainRegistry, brain_id: str, data_dir: Optional[P
         portraits.get("neutral")
         or _resolve_data_path(brain_dir, ui_data.get("standing_image") or ui_data.get("portrait"))
     )
+    last_message, last_time = _latest_session_message(brain_dir)
 
     return CompanionRole(
         id=brain_id,
@@ -86,8 +128,8 @@ def role_from_brain(registry: BrainRegistry, brain_id: str, data_dir: Optional[P
         avatar_path=avatar_path,
         standing_image_path=standing_image_path,
         portraits=portraits,
-        last_message=str(ui_data.get("last_message") or ""),
-        last_time=str(ui_data.get("last_time") or ""),
+        last_message=last_message,
+        last_time=last_time,
     )
 
 

@@ -7,6 +7,7 @@ import json
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 TEST_FILE = Path(__file__).resolve()
@@ -107,6 +108,41 @@ class CharacterCreatorTests(unittest.TestCase):
             roles = load_roles_from_data(Path(data_root))
             self.assertEqual(roles[0].avatar_path, "")
             self.assertEqual(roles[0].standing_image_path, "")
+            self.assertEqual(roles[0].last_message, "")
+            self.assertEqual(roles[0].last_time, "")
+
+    def test_role_recent_chat_comes_from_session_messages_only(self) -> None:
+        with tempfile.TemporaryDirectory() as data_root:
+            result = CharacterCreator(Path(data_root)).create(CharacterDraft(brain_id="recent_role", name="Recent Role"))
+            brain_dir = result.brain_dir
+            ui_path = brain_dir / "ui.json"
+            ui = json.loads(ui_path.read_text(encoding="utf-8"))
+            ui["last_message"] = "stale default"
+            ui["last_time"] = "00:00"
+            ui_path.write_text(json.dumps(ui, ensure_ascii=False), encoding="utf-8")
+
+            roles = load_roles_from_data(Path(data_root))
+            self.assertEqual(roles[0].last_message, "")
+            self.assertEqual(roles[0].last_time, "")
+
+            session_path = brain_dir / "session" / "current" / "2026-05-04.json"
+            session_path.write_text(
+                json.dumps(
+                    {
+                        "date": "2026-05-04",
+                        "messages": [
+                            {"role": "user", "content": "older", "timestamp": 1777860000},
+                            {"role": "assistant", "content": "latest", "timestamp": 1777860060},
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            roles = load_roles_from_data(Path(data_root))
+            self.assertEqual(roles[0].last_message, "latest")
+            self.assertEqual(roles[0].last_time, datetime.fromtimestamp(1777860060).strftime("%H:%M"))
 
     def test_load_and_update_character_preserves_runtime_files_and_cleans_removed_assets(self) -> None:
         with tempfile.TemporaryDirectory() as data_root, tempfile.TemporaryDirectory() as assets_root:
