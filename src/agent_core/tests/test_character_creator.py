@@ -132,7 +132,7 @@ class CharacterCreatorTests(unittest.TestCase):
                         "date": "2026-05-04",
                         "messages": [
                             {"role": "user", "content": "older", "timestamp": 1777860000},
-                            {"role": "assistant", "content": "latest", "timestamp": 1777860060},
+                            {"role": "assistant", "content": "第一句。最新一句。", "timestamp": 1777860060},
                         ],
                     },
                     ensure_ascii=False,
@@ -141,8 +141,9 @@ class CharacterCreatorTests(unittest.TestCase):
             )
 
             roles = load_roles_from_data(Path(data_root))
-            self.assertEqual(roles[0].last_message, "latest")
+            self.assertEqual(roles[0].last_message, "最新一句。")
             self.assertEqual(roles[0].last_time, datetime.fromtimestamp(1777860060).strftime("%H:%M"))
+            self.assertEqual(roles[0].last_timestamp, 1777860060)
 
     def test_load_and_update_character_preserves_runtime_files_and_cleans_removed_assets(self) -> None:
         with tempfile.TemporaryDirectory() as data_root, tempfile.TemporaryDirectory() as assets_root:

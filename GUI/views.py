@@ -478,6 +478,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         selected = self.active_role
         role_cards = [RoleSelectorCard(role, role.id == selected.id, self._is_dark, self.set_active_role) for role in self._roles]
         role_cards.append(self._create_selector_card(colors))
+        recent_roles = self._recent_roles()
         launching = self._chat_launching_role_id == selected.id
         feature_card = ft.Container(
             content=RoleFeatureCard(selected, self._is_dark, self._begin_open_chat, self._begin_edit_role, self._begin_export_role),
@@ -554,7 +555,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 5,
                 ft.Column(
                     spacing=12,
-                    controls=[text("最近聊天", 15, colors["text_secondary"]), *[RecentChatRow(role, self._is_dark, self._begin_open_chat) for role in self._roles]],
+                    controls=[text("最近聊天", 15, colors["text_secondary"]), *[RecentChatRow(role, self._is_dark, self._begin_open_chat) for role in recent_roles]],
                 ),
             ),
             ft.Container(height=28),
@@ -858,17 +859,22 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _role_messages(self, role_id: str) -> list[ChatMessage]:
         return [message for message in self._messages if message.role_id == role_id]
 
+    def _recent_roles(self) -> list[CompanionRole]:
+        return sorted(self._roles, key=lambda role: role.last_timestamp, reverse=True)
+
     def _sync_role_recent_message(self, role_id: str) -> None:
         role = next((candidate for candidate in self._roles if candidate.id == role_id), None)
         if role is None:
             return
-        latest = next((message for message in reversed(self._messages) if message.role_id == role_id and message.text.strip()), None)
+        latest = next((message for message in reversed(self._normal_display_messages(role_id)) if message.text.strip()), None)
         if latest is None:
             role.last_message = ""
             role.last_time = ""
+            role.last_timestamp = 0.0
             return
         role.last_message = latest.text
         role.last_time = latest.timestamp.strftime("%H:%M")
+        role.last_timestamp = latest.timestamp.timestamp()
 
     def _normal_display_messages(self, role_id: str) -> list[ChatMessage]:
         display_messages: list[ChatMessage] = []

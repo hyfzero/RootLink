@@ -14,6 +14,7 @@ if str(SRC_DIR) not in sys.path:
 
 from agent_core.session import BrainRegistry, PathResolver
 
+from .chat_text import split_display_sentences
 from .interfaces import CompanionRole
 
 DEFAULT_ACCENT_COLOR = "#B6A8C9"
@@ -67,7 +68,7 @@ def _iter_session_json_files(brain_dir: Path) -> list[Path]:
     return paths
 
 
-def _latest_session_message(brain_dir: Path) -> tuple[str, str]:
+def _latest_session_message(brain_dir: Path) -> tuple[str, str, float]:
     latest_text = ""
     latest_timestamp = 0.0
     for path in _iter_session_json_files(brain_dir):
@@ -84,6 +85,8 @@ def _latest_session_message(brain_dir: Path) -> tuple[str, str]:
             text = str(message.get("content") or "").strip()
             if not text:
                 continue
+            if str(message.get("role") or "") != "user":
+                text = (split_display_sentences(text) or [text])[-1]
             try:
                 timestamp = float(message.get("timestamp") or 0)
             except (TypeError, ValueError):
@@ -92,8 +95,8 @@ def _latest_session_message(brain_dir: Path) -> tuple[str, str]:
                 latest_text = text
                 latest_timestamp = timestamp
     if not latest_text:
-        return "", ""
-    return latest_text, datetime.fromtimestamp(latest_timestamp).strftime("%H:%M") if latest_timestamp else ""
+        return "", "", 0.0
+    return latest_text, datetime.fromtimestamp(latest_timestamp).strftime("%H:%M") if latest_timestamp else "", latest_timestamp
 
 
 def role_from_brain(registry: BrainRegistry, brain_id: str, data_dir: Optional[Path] = None) -> Optional[CompanionRole]:
@@ -115,7 +118,7 @@ def role_from_brain(registry: BrainRegistry, brain_id: str, data_dir: Optional[P
         portraits.get("neutral")
         or _resolve_data_path(brain_dir, ui_data.get("standing_image") or ui_data.get("portrait"))
     )
-    last_message, last_time = _latest_session_message(brain_dir)
+    last_message, last_time, last_timestamp = _latest_session_message(brain_dir)
 
     return CompanionRole(
         id=brain_id,
@@ -130,6 +133,7 @@ def role_from_brain(registry: BrainRegistry, brain_id: str, data_dir: Optional[P
         portraits=portraits,
         last_message=last_message,
         last_time=last_time,
+        last_timestamp=last_timestamp,
     )
 
 

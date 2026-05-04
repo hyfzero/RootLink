@@ -330,6 +330,26 @@ class GuiViewTests(unittest.TestCase):
         self.assertEqual(view._roles[0].last_message, "latest reply")
         self.assertEqual(view._roles[0].last_time, "09:02")
 
+    def test_recent_chat_uses_latest_display_bubble_text(self) -> None:
+        role = make_role()
+        view = CompanionAppView(roles=[role])
+
+        view.append_message(ChatMessage("assistant-1", role.id, "第一句。第二句。", False, datetime(2026, 5, 4, 9, 3)))
+
+        self.assertEqual(view._roles[0].last_message, "第二句。")
+        self.assertEqual(view._roles[0].last_time, "09:03")
+
+    def test_recent_chat_rows_sort_by_latest_chat_time(self) -> None:
+        older_role = make_role()
+        newer_role = make_role()
+        newer_role.id = "newer"
+        view = CompanionAppView(roles=[older_role, newer_role])
+
+        view.append_message(ChatMessage("older-1", older_role.id, "older", True, datetime(2026, 5, 4, 9, 1)))
+        view.append_message(ChatMessage("newer-1", newer_role.id, "newer", True, datetime(2026, 5, 4, 9, 5)))
+
+        self.assertEqual([role.id for role in view._recent_roles()], ["newer", "amadeus"])
+
     def test_set_role_messages_updates_recent_chat_from_loaded_history(self) -> None:
         role = make_role()
         view = CompanionAppView(roles=[role])

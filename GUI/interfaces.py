@@ -24,6 +24,7 @@ class CompanionRole:
     portraits: dict[str, str] = field(default_factory=dict)
     last_message: str = ""
     last_time: str = ""
+    last_timestamp: float = 0.0
 
 
 @dataclass(slots=True)
