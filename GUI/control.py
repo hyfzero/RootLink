@@ -27,6 +27,7 @@ from agent_core.models import ModelsJsonConfig, ModelsStorage, ProviderConfig, g
 from agent_core.session import BrainRegistry, PathResolver, SessionConfig, SessionManager
 
 from .chat_text import (
+    NORMAL_CHARACTER_DELAY_SECONDS,
     NORMAL_SENTENCE_DELAY_SECONDS,
     consume_complete_sentence,
     split_display_sentences,
@@ -111,6 +112,7 @@ class _NormalMessageStreamer:
         role_id: str,
         base_id: str,
         sentence_delay: float = NORMAL_SENTENCE_DELAY_SECONDS,
+        character_delay: float = NORMAL_CHARACTER_DELAY_SECONDS,
     ) -> None:
         self._view = view
         self._role_id = role_id
@@ -118,7 +120,9 @@ class _NormalMessageStreamer:
         self._pending = ""
         self._index = 0
         self._current_id: str | None = None
+        self._current_text = ""
         self._sentence_delay = sentence_delay
+        self._character_delay = character_delay
         self._has_emitted_sentence = False
 
     def push(self, delta: str) -> None:
@@ -138,10 +142,11 @@ class _NormalMessageStreamer:
             self._show_current(sentence, is_streaming=False)
             self._pending = rest
             self._current_id = None
+            self._current_text = ""
             self._index += 1
             self._has_emitted_sentence = True
             if self._pending.strip():
-                time.sleep(self._sentence_delay)
+                continue
             else:
                 self._pending = ""
                 break
@@ -149,17 +154,18 @@ class _NormalMessageStreamer:
     def finish(self, content: str | None = None) -> None:
         if content and not self._current_id and not self._pending:
             for sentence in split_display_sentences(content):
-                self._pace_after_previous_sentence()
                 self._show_current(sentence, is_streaming=False)
                 self._current_id = None
+                self._current_text = ""
                 self._index += 1
                 self._has_emitted_sentence = True
             return
         if self._current_id is not None:
             final_text = self._pending.strip()
             if final_text:
-                self._view.update_message_text(self._current_id, final_text, is_streaming=False)
+                self._show_current(final_text, is_streaming=False)
             self._current_id = None
+            self._current_text = ""
             self._pending = ""
 
     def _pace_after_previous_sentence(self) -> None:
@@ -171,20 +177,49 @@ class _NormalMessageStreamer:
         if not visible_text:
             return
         if self._current_id is not None:
-            self._view.update_message_text(self._current_id, visible_text, is_streaming=is_streaming)
+            self._reveal_current_text(visible_text, is_streaming=is_streaming)
             return
+        self._pace_after_previous_sentence()
         message_id = f"{self._base_id}-{self._index}"
         self._current_id = message_id
+        initial_text = visible_text[:1]
+        self._current_text = initial_text
         self._view.append_message(
             ChatMessage(
                 id=message_id,
                 role_id=self._role_id,
-                text=visible_text,
+                text=initial_text,
                 is_user=False,
                 timestamp=datetime.now(),
-                is_streaming=is_streaming,
+                is_streaming=is_streaming or initial_text != visible_text,
             )
         )
+        self._reveal_current_text(visible_text, is_streaming=is_streaming)
+
+    def _reveal_current_text(self, visible_text: str, is_streaming: bool) -> None:
+        if self._current_id is None:
+            return
+        if visible_text == self._current_text:
+            self._view.update_message_text(self._current_id, visible_text, is_streaming=is_streaming)
+            return
+        if not visible_text.startswith(self._current_text):
+            self._current_text = visible_text
+            self._view.update_message_text(self._current_id, visible_text, is_streaming=is_streaming)
+            return
+
+        for index in range(len(self._current_text) + 1, len(visible_text) + 1):
+            self._sleep_character_delay()
+            partial_text = visible_text[:index]
+            self._current_text = partial_text
+            self._view.update_message_text(
+                self._current_id,
+                partial_text,
+                is_streaming=is_streaming or partial_text != visible_text,
+            )
+
+    def _sleep_character_delay(self) -> None:
+        if self._character_delay > 0:
+            time.sleep(self._character_delay)
 
 
 @dataclass(slots=True)
@@ -525,6 +560,7 @@ class AmaduesController(CompanionUICallback):
         settings_storage: Optional[UiSettingsStorage] = None,
         runtime_factory: Optional[Callable[[], AmaduesRuntime]] = None,
         normal_sentence_delay: float = NORMAL_SENTENCE_DELAY_SECONDS,
+        normal_character_delay: float | None = NORMAL_CHARACTER_DELAY_SECONDS,
     ) -> None:
         self.view = view
         self.settings_storage = settings_storage or UiSettingsStorage()
@@ -539,6 +575,7 @@ class AmaduesController(CompanionUICallback):
         self._role_mapping: dict[str, str] = {}
         self._stream_threads: list[threading.Thread] = []
         self._normal_sentence_delay = normal_sentence_delay
+        self._normal_character_delay = 0 if normal_character_delay is None else normal_character_delay
 
     @property
     def initial_settings(self) -> UiSettings:
@@ -706,6 +743,7 @@ class AmaduesController(CompanionUICallback):
                     role_id,
                     assistant_id,
                     sentence_delay=self._normal_sentence_delay,
+                    character_delay=self._normal_character_delay,
                 )
             else:
                 self.view.append_message(
@@ -760,16 +798,14 @@ class AmaduesController(CompanionUICallback):
         if self.view is None:
             return
         if mode == "normal":
-            for index, sentence in enumerate(split_display_sentences(content) or [content]):
-                self.view.append_message(
-                    ChatMessage(
-                        id=f"{assistant_id}-{index}",
-                        role_id=role_id,
-                        text=sentence,
-                        is_user=False,
-                        timestamp=datetime.now(),
-                    )
-                )
+            streamer = _NormalMessageStreamer(
+                self.view,
+                role_id,
+                assistant_id,
+                sentence_delay=self._normal_sentence_delay,
+                character_delay=self._normal_character_delay,
+            )
+            streamer.finish(content)
             return
         self.view.append_message(
             ChatMessage(

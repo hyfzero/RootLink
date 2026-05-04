@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 TEST_FILE = Path(__file__).resolve()
 SRC_DIR = TEST_FILE.parents[2]
@@ -423,6 +424,7 @@ class GuiControlTests(unittest.TestCase):
         controller = AmaduesController(
             runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
             normal_sentence_delay=0,
+            normal_character_delay=0,
         )
         view = StubView()
         controller.bind_view(view)
@@ -447,6 +449,7 @@ class GuiControlTests(unittest.TestCase):
         controller = AmaduesController(
             runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
             normal_sentence_delay=0,
+            normal_character_delay=0,
         )
         view = StubView()
         controller.bind_view(view)
@@ -462,6 +465,7 @@ class GuiControlTests(unittest.TestCase):
         controller = AmaduesController(
             runtime_factory=lambda: AmaduesRuntime(manager, registry),
             normal_sentence_delay=0,
+            normal_character_delay=0,
         )
         view = StubView()
         controller.bind_view(view)
@@ -479,6 +483,7 @@ class GuiControlTests(unittest.TestCase):
         controller = AmaduesController(
             runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
             normal_sentence_delay=0,
+            normal_character_delay=0,
         )
         view = StubView()
         controller.bind_view(view)
@@ -497,6 +502,7 @@ class GuiControlTests(unittest.TestCase):
         controller = AmaduesController(
             runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
             normal_sentence_delay=0,
+            normal_character_delay=0,
         )
         view = StubView()
         controller.bind_view(view)
@@ -508,6 +514,52 @@ class GuiControlTests(unittest.TestCase):
         self.assertNotIn("", [message.text for message in view.appended])
         self.assertFalse(view.appended[0].is_streaming)
 
+    def test_normal_reply_reveals_text_character_by_character(self) -> None:
+        manager = FakeSessionManager(
+            reply={"message_id": "reply-1", "content": "ABC!"},
+            stream_deltas=["ABC!"],
+        )
+        controller = AmaduesController(
+            runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
+            normal_sentence_delay=0,
+            normal_character_delay=0,
+        )
+        view = StubView()
+        controller.bind_view(view)
+
+        controller.on_send_message(AMADUES_UI_ROLE_ID, "hi", "normal")
+        controller.wait_for_streams()
+
+        self.assertEqual(view.appended[0].text, "ABC!")
+        self.assertEqual(
+            view.updated,
+            [
+                (view.appended[0].id, "AB", True),
+                (view.appended[0].id, "ABC", True),
+                (view.appended[0].id, "ABC!", False),
+            ],
+        )
+
+    def test_normal_reply_delays_between_sentence_bubbles_across_chunks(self) -> None:
+        manager = FakeSessionManager(
+            reply={"message_id": "reply-1", "content": "A!B!"},
+            stream_deltas=["A!", "B!"],
+        )
+        controller = AmaduesController(
+            runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
+            normal_sentence_delay=0.2,
+            normal_character_delay=0,
+        )
+        view = StubView()
+        controller.bind_view(view)
+
+        with patch("GUI.control.time.sleep") as sleep:
+            controller.on_send_message(AMADUES_UI_ROLE_ID, "hi", "normal")
+            controller.wait_for_streams()
+
+        self.assertEqual([message.text for message in view.appended], ["A!", "B!"])
+        sleep.assert_called_once_with(0.2)
+
     def test_single_delta_with_multiple_sentences_creates_multiple_bubbles(self) -> None:
         manager = FakeSessionManager(
             reply={"message_id": "reply-1", "content": "第一句。第二句！"},
@@ -516,6 +568,7 @@ class GuiControlTests(unittest.TestCase):
         controller = AmaduesController(
             runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
             normal_sentence_delay=0,
+            normal_character_delay=0,
         )
         view = StubView()
         controller.bind_view(view)
@@ -534,6 +587,7 @@ class GuiControlTests(unittest.TestCase):
         controller = AmaduesController(
             runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
             normal_sentence_delay=0,
+            normal_character_delay=0,
         )
         view = StubView()
         controller.bind_view(view)

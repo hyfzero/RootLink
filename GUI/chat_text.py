@@ -4,6 +4,7 @@ from __future__ import annotations
 
 SENTENCE_DELIMITERS = "。！？!?\n"
 NORMAL_SENTENCE_DELAY_SECONDS = 0.28
+NORMAL_CHARACTER_DELAY_SECONDS = 0.035
 
 
 def consume_complete_sentence(value: str) -> tuple[str | None, str]:
