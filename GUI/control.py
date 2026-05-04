@@ -31,6 +31,7 @@ from .chat_text import (
     consume_complete_sentence,
     split_display_sentences,
 )
+from .character_package import CharacterPackageError, export_character_package, import_character_package
 from .character_creator import CharacterCreationError, CharacterCreator
 from .interfaces import (
     CharacterDraft,
@@ -778,6 +779,44 @@ class AmaduesController(CompanionUICallback):
             self.view.set_active_role(result.brain_id)
             self.view.show_notice(f"Saved character: {draft.name.strip()}")
             self.view.show_page("home")
+
+    def on_character_export_requested(self, role_id: str, destination_path: str = "") -> str:
+        try:
+            brain_id = self._resolve_brain_id(role_id, self._runtime)
+            package_path = Path(destination_path).expanduser() if destination_path else self._default_export_path(brain_id)
+            result = export_character_package(PathResolver.get_data_dir(), brain_id, package_path)
+        except (CharacterPackageError, OSError) as exc:
+            if self.view is not None:
+                self.view.show_notice(str(exc), is_error=True)
+            else:
+                print(f"[ui] export character failed: {exc}")
+            return ""
+
+        if self.view is not None and result.package_path is not None:
+            self.view.show_notice(f"Exported character: {result.package_path}")
+        return result.package_path.as_posix() if result.package_path is not None else ""
+
+    def on_character_import_requested(self, package_path: str) -> str:
+        try:
+            result = import_character_package(PathResolver.get_data_dir(), Path(package_path), overwrite=True)
+        except (CharacterPackageError, OSError) as exc:
+            if self.view is not None:
+                self.view.show_notice(str(exc), is_error=True)
+            else:
+                print(f"[ui] import character failed: {exc}")
+            return ""
+
+        self._invalidate_runtime()
+        if self.view is not None:
+            self._publish_data_roles()
+            self.view.set_active_role(result.brain_id)
+            self.view.show_notice(f"Imported character: {result.brain_id}")
+        return result.brain_id
+
+    def _default_export_path(self, brain_id: str) -> Path:
+        exports_dir = PathResolver.get_app_storage_root()
+        base_dir = (exports_dir / "exports") if exports_dir is not None else (PathResolver.get_data_dir().parent / "exports")
+        return base_dir / f"{brain_id}.amadues"
 
     def on_theme_toggled(self, is_dark: bool) -> None:
         self._settings.is_dark = is_dark

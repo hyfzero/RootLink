@@ -328,6 +328,77 @@ class CompanionAppView(ft.Container, CompanionUIView):
             return
         page.run_task(self._pick_image_file, picker)
 
+    def _begin_export_role(self, role_id: str) -> None:
+        picker = self._ensure_file_picker()
+        if picker is None:
+            self._export_role_to_path(role_id, "")
+            return
+        try:
+            page = self.page
+        except RuntimeError:
+            page = None
+        if page is None:
+            self._export_role_to_path(role_id, "")
+            return
+        page.run_task(self._save_character_package, picker, role_id)
+
+    async def _save_character_package(self, picker: ft.FilePicker, role_id: str) -> None:
+        try:
+            destination = await picker.save_file(
+                dialog_title="\u5bfc\u51fa\u89d2\u8272",
+                file_name=f"{role_id}.amadues",
+                file_type=ft.FilePickerFileType.CUSTOM,
+                allowed_extensions=["amadues", "zip"],
+            )
+        except Exception:
+            self._export_role_to_path(role_id, "")
+            return
+        if not destination:
+            return
+        self._export_role_to_path(role_id, destination)
+
+    def _export_role_to_path(self, role_id: str, destination_path: str) -> None:
+        self._callback.on_character_export_requested(role_id, destination_path)
+
+    def _open_package_import_picker(self) -> None:
+        picker = self._ensure_file_picker()
+        if picker is None:
+            self.show_notice("File picker is unavailable before the page is mounted.", is_error=True)
+            return
+        try:
+            page = self.page
+        except RuntimeError:
+            page = None
+        if page is None:
+            self.show_notice("File picker is unavailable before the page is mounted.", is_error=True)
+            return
+        page.run_task(self._pick_character_package, picker)
+
+    async def _pick_character_package(self, picker: ft.FilePicker) -> None:
+        try:
+            files = await picker.pick_files(
+                allow_multiple=False,
+                file_type=ft.FilePickerFileType.CUSTOM,
+                allowed_extensions=["amadues", "zip"],
+            )
+        except Exception:
+            self.show_notice("Could not open the file picker.", is_error=True)
+            return
+        self._handle_package_pick(files)
+
+    def _handle_package_pick(self, files: object) -> None:
+        selected_files = getattr(files, "files", files)
+        if not selected_files:
+            return
+        file_path = getattr(selected_files[0], "path", "") or ""
+        if not file_path:
+            self.show_notice("Could not read selected file path.", is_error=True)
+            return
+        if Path(file_path).suffix.lower() not in {".amadues", ".zip"}:
+            self.show_notice("Character packages must be AMADUES or ZIP files.", is_error=True)
+            return
+        self._callback.on_character_import_requested(file_path)
+
     async def _pick_image_file(self, picker: ft.FilePicker) -> None:
         try:
             files = await picker.pick_files(
@@ -419,7 +490,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         role_cards.append(self._create_selector_card(colors))
         launching = self._chat_launching_role_id == selected.id
         feature_card = ft.Container(
-            content=RoleFeatureCard(selected, self._is_dark, self._begin_open_chat, self._begin_edit_role),
+            content=RoleFeatureCard(selected, self._is_dark, self._begin_open_chat, self._begin_edit_role, self._begin_export_role),
             scale=0.97 if launching else 1.0,
             opacity=0.72 if launching else 1.0,
             animate_scale=animation("fast", phase="press"),
@@ -484,7 +555,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     spacing=12,
                     controls=[
                         ft.Container(expand=True, content=QuickAction("创建角色", "定制专属陪伴", ft.Icons.ADD, colors, lambda _: self._begin_create())),
-                        ft.Container(expand=True, content=QuickAction("继续话题", "上次聊到哪", ft.Icons.ACCESS_TIME, colors, lambda _: self._begin_open_chat(selected.id))),
+                        ft.Container(expand=True, content=QuickAction("人格导入", "导入完整角色包", ft.Icons.FILE_UPLOAD_OUTLINED, colors, lambda _: self._open_package_import_picker())),
                     ],
                 ),
             ),

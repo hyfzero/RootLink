@@ -149,6 +149,12 @@ class CompanionUICallback(ABC):
     def on_character_update_requested(self, role_id: str, draft: CharacterDraft) -> None:
         pass
 
+    def on_character_export_requested(self, role_id: str, destination_path: str = "") -> str:
+        return ""
+
+    def on_character_import_requested(self, package_path: str) -> str:
+        return ""
+
     def on_theme_toggled(self, is_dark: bool) -> None:
         pass
 

@@ -84,6 +84,9 @@ class EditCallback(CompanionUICallback):
     def __init__(self) -> None:
         self.updated_role_id = ""
         self.updated_draft: CharacterDraft | None = None
+        self.exported_role_id = ""
+        self.exported_destination = ""
+        self.imported_package_path = ""
 
     def load_character_draft(self, role_id: str) -> CharacterDraft | None:
         return CharacterDraft(brain_id=role_id, name="Loaded")
@@ -91,6 +94,15 @@ class EditCallback(CompanionUICallback):
     def on_character_update_requested(self, role_id: str, draft: CharacterDraft) -> None:
         self.updated_role_id = role_id
         self.updated_draft = draft
+
+    def on_character_export_requested(self, role_id: str, destination_path: str = "") -> str:
+        self.exported_role_id = role_id
+        self.exported_destination = destination_path
+        return destination_path or "default.amadues"
+
+    def on_character_import_requested(self, package_path: str) -> str:
+        self.imported_package_path = package_path
+        return "imported"
 
 
 class GuiViewTests(unittest.TestCase):
@@ -140,6 +152,20 @@ class GuiViewTests(unittest.TestCase):
         self.assertEqual(callback.updated_role_id, "amadeus")
         self.assertIsNotNone(callback.updated_draft)
         self.assertEqual(callback.updated_draft.name, "Loaded")
+
+    def test_character_package_actions_call_callbacks(self) -> None:
+        callback = EditCallback()
+        view = CompanionAppView(callback=callback, roles=[make_role()])
+
+        view._export_role_to_path("amadeus", "D:/tmp/amadeus.amadues")
+        self.assertEqual(callback.exported_role_id, "amadeus")
+        self.assertEqual(callback.exported_destination, "D:/tmp/amadeus.amadues")
+
+        class PickedFile:
+            path = "D:/tmp/imported.amadues"
+
+        view._handle_package_pick([PickedFile()])
+        self.assertEqual(callback.imported_package_path, "D:/tmp/imported.amadues")
 
     def test_memory_editor_type_dropdown_uses_opaque_menu_surface(self) -> None:
         colors = CompanionAppView(roles=[make_role()])._colors()

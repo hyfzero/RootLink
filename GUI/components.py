@@ -299,11 +299,12 @@ class RoleFeatureCard(ft.Container):
         is_dark: bool,
         on_chat: Callable[[str], None],
         on_edit: Callable[[str], None] | None = None,
+        on_export: Callable[[str], None] | None = None,
     ) -> None:
         colors = palette(is_dark)
-        edit_button: ft.Control | None = None
+        action_controls: list[ft.Control] = []
         if on_edit is not None:
-            edit_button = ft.Container(
+            action_controls.append(ft.Container(
                 width=38,
                 height=38,
                 border_radius=19,
@@ -316,7 +317,22 @@ class RoleFeatureCard(ft.Container):
                 animate_scale=animation("fast", phase="press"),
                 on_click=animated_click(lambda _: on_edit(role.id)),
                 content=ft.Icon(ft.Icons.EDIT_OUTLINED, size=17, color=colors["text_secondary"]),
-            )
+            ))
+        if on_export is not None:
+            action_controls.append(ft.Container(
+                width=38,
+                height=38,
+                border_radius=19,
+                tooltip="\u5bfc\u51fa\u89d2\u8272",
+                bgcolor=hex_with_alpha("#FFFFFF", 28 if is_dark else 180),
+                border=ft.border.all(1, hex_with_alpha("#FFFFFF", 42 if is_dark else 210)),
+                alignment=ft.Alignment(0, 0),
+                ink=True,
+                scale=1.0,
+                animate_scale=animation("fast", phase="press"),
+                on_click=animated_click(lambda _: on_export(role.id)),
+                content=ft.Icon(ft.Icons.IOS_SHARE, size=17, color=colors["text_secondary"]),
+            ))
         header_controls: list[ft.Control] = [
             ft.Stack(
                 width=86,
@@ -344,8 +360,8 @@ class RoleFeatureCard(ft.Container):
                 ],
             ),
         ]
-        if edit_button is not None:
-            header_controls.append(edit_button)
+        if action_controls:
+            header_controls.append(ft.Row(spacing=8, controls=action_controls))
         super().__init__(
             padding=24,
             border_radius=28,
