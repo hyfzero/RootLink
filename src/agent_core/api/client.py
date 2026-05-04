@@ -31,6 +31,7 @@ from .types import (
 
 # 注册内置适配器
 AdapterRegistry.register(APIProvider.MINIMAX, MiniMaxAdapter)
+AdapterRegistry.register(APIProvider.DEEPSEEK, OpenAIAdapter)
 AdapterRegistry.register(APIProvider.OPENAI, OpenAIAdapter)
 AdapterRegistry.register(APIProvider.ANTHROPIC, AnthropicAdapter)
 AdapterRegistry.register(APIProvider.MOONSHOT, MoonshotAdapter)

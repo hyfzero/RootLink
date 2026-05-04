@@ -20,6 +20,7 @@ class APIProvider(str):
     """支持的 API 提供商枚举。"""
 
     MINIMAX = "minimax"
+    DEEPSEEK = "deepseek"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     MOONSHOT = "moonshot"
@@ -50,6 +51,7 @@ class ModelConfig:
             return self.api_key
         env_map = {
             APIProvider.MINIMAX: "MINIMAX_API_KEY",
+            APIProvider.DEEPSEEK: "DEEPSEEK_API_KEY",
             APIProvider.OPENAI: "OPENAI_API_KEY",
             APIProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
             APIProvider.MOONSHOT: "MOONSHOT_API_KEY",
@@ -68,6 +70,7 @@ class ModelConfig:
             return self.base_url
         defaults = {
             APIProvider.MINIMAX: "https://api.minimaxi.com/v1",
+            APIProvider.DEEPSEEK: "https://api.deepseek.com",
             APIProvider.OPENAI: "https://api.openai.com/v1",
             APIProvider.ANTHROPIC: "https://api.anthropic.com/v1",
             APIProvider.MOONSHOT: "https://api.moonshot.cn/v1",

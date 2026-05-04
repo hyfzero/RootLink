@@ -153,6 +153,30 @@ MINIMAX_MODELS = ProviderCatalog(
     ]
 )
 
+# DeepSeek Provider
+DEEPSEEK_MODELS = ProviderCatalog(
+    models=[
+        ModelInfo(
+            id="deepseek-v4-flash",
+            name="DeepSeek V4 Flash",
+            reasoning=False,
+            input_types=["text"],
+            context_window=128000,
+            max_tokens=8192,
+            cost=ModelCost(),
+        ),
+        ModelInfo(
+            id="deepseek-v4-pro",
+            name="DeepSeek V4 Pro",
+            reasoning=False,
+            input_types=["text"],
+            context_window=128000,
+            max_tokens=8192,
+            cost=ModelCost(),
+        ),
+    ]
+)
+
 # OpenAI Provider
 OPENAI_MODELS = ProviderCatalog(
     models=[
@@ -348,6 +372,7 @@ OPENROUTER_MODELS = ProviderCatalog(
 # 模型目录注册表
 MODEL_CATALOGS: dict[str, ProviderCatalog] = {
     "minimax": MINIMAX_MODELS,
+    "deepseek": DEEPSEEK_MODELS,
     "openai": OPENAI_MODELS,
     "anthropic": ANTHROPIC_MODELS,
     "moonshot": MOONSHOT_MODELS,
@@ -597,6 +622,7 @@ def create_provider_from_catalog(
     # 默认 base URL
     default_urls = {
         "minimax": "https://api.minimaxi.com/v1",
+        "deepseek": "https://api.deepseek.com",
         "openai": "https://api.openai.com/v1",
         "anthropic": "https://api.anthropic.com/v1",
         "moonshot": "https://api.moonshot.cn/v1",

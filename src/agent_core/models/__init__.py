@@ -20,6 +20,7 @@ from .models import (
     print_models_table,
     # 内置目录
     MINIMAX_MODELS,
+    DEEPSEEK_MODELS,
     OPENAI_MODELS,
     ANTHROPIC_MODELS,
     MOONSHOT_MODELS,
@@ -40,6 +41,7 @@ __all__ = [
     "list_available_models",
     "print_models_table",
     "MINIMAX_MODELS",
+    "DEEPSEEK_MODELS",
     "OPENAI_MODELS",
     "ANTHROPIC_MODELS",
     "MOONSHOT_MODELS",

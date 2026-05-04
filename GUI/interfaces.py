@@ -54,6 +54,7 @@ class UiSettings:
     is_dark: bool = True
     token_quality: int = 50
     model_provider: str = "minimax"
+    model_name: str = "MiniMax-M2.5"
     api_key: str = ""
     user_name: str = "用户"
     user_avatar_path: Optional[str] = None

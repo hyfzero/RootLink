@@ -49,8 +49,27 @@ AMADUES_UI_ROLE_ID = AMADUES_BRAIN_ID
 SHINJI_BRAIN_ID = "shinji"
 MINIMAX_PROVIDER = "minimax"
 MINIMAX_MODEL = "MiniMax-M2.5"
+DEEPSEEK_PROVIDER = "deepseek"
+DEEPSEEK_V4_FLASH_MODEL = "deepseek-v4-flash"
+DEEPSEEK_V4_PRO_MODEL = "deepseek-v4-pro"
+DEFAULT_MODEL_BY_PROVIDER = {
+    MINIMAX_PROVIDER: MINIMAX_MODEL,
+    DEEPSEEK_PROVIDER: DEEPSEEK_V4_FLASH_MODEL,
+}
+PROVIDER_BASE_URLS = {
+    MINIMAX_PROVIDER: "https://api.minimaxi.com/v1",
+    DEEPSEEK_PROVIDER: "https://api.deepseek.com",
+}
+PROVIDER_API_TYPES = {
+    MINIMAX_PROVIDER: "openai",
+    DEEPSEEK_PROVIDER: "openai",
+}
+PROVIDER_API_ENUMS = {
+    MINIMAX_PROVIDER: APIProvider.MINIMAX,
+    DEEPSEEK_PROVIDER: APIProvider.DEEPSEEK,
+}
 DEFAULT_ASSISTANT_NAME = "\u963f\u739b\u8fea\u65af"
-CONFIG_NOTICE = "\u8bf7\u5148\u5728\u8bbe\u7f6e\u9875\u4fdd\u5b58 MiniMax API Key\u3002"
+CONFIG_NOTICE = "\u8bf7\u5148\u5728\u8bbe\u7f6e\u9875\u4fdd\u5b58 API Key\u3002"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RESOURCE_DIR = PROJECT_ROOT / "resource"
 DEFAULT_RESPONSE_LIMITS = {"max_tokens": 2000, "max_sentences": 5}
@@ -58,6 +77,29 @@ DEFAULT_RESPONSE_LIMITS = {"max_tokens": 2000, "max_sentences": 5}
 
 class ChatConfigurationError(RuntimeError):
     """Raised when the persisted chat configuration is incomplete."""
+
+
+def _normalize_model_provider(provider_name: str) -> str:
+    provider_name = (provider_name or "").strip().lower()
+    if provider_name in DEFAULT_MODEL_BY_PROVIDER:
+        return provider_name
+    return MINIMAX_PROVIDER
+
+
+def _normalize_model_name(provider_name: str, model_name: str) -> str:
+    provider_name = _normalize_model_provider(provider_name)
+    model_name = (model_name or "").strip()
+    catalog = get_model_catalog(provider_name)
+    if catalog and catalog.find_model(model_name):
+        return model_name
+    return DEFAULT_MODEL_BY_PROVIDER[provider_name]
+
+
+def _provider_display_name(provider_name: str) -> str:
+    return {
+        MINIMAX_PROVIDER: "MiniMax",
+        DEEPSEEK_PROVIDER: "DeepSeek",
+    }.get(provider_name, provider_name)
 
 
 class _NormalMessageStreamer:
@@ -163,30 +205,41 @@ class UiSettingsStorage:
         self.models_storage = ModelsStorage(self.config_dir)
 
     def load_ui_settings(self) -> UiSettings:
-        settings = UiSettings(model_provider=MINIMAX_PROVIDER)
+        data: dict[str, object] = {}
+        chat_config = self.load_chat_config()
         if self.ui_settings_file.exists():
             with open(self.ui_settings_file, "r", encoding="utf-8") as handle:
                 data = json.load(handle)
-            settings = UiSettings(
-                is_dark=data.get("is_dark", settings.is_dark),
-                token_quality=int(data.get("token_quality", settings.token_quality)),
-                model_provider=MINIMAX_PROVIDER,
-                user_name=data.get("user_name", settings.user_name),
-                user_avatar_path=data.get("user_avatar_path"),
-            )
 
-        chat_config = self.load_chat_config()
-        provider_config = chat_config.providers.get(MINIMAX_PROVIDER)
-        settings.model_provider = MINIMAX_PROVIDER
+        provider_name = _normalize_model_provider(
+            str(data.get("model_provider") or chat_config.default_provider or MINIMAX_PROVIDER)
+        )
+        model_name = data.get("model_name")
+        if not model_name and chat_config.default_provider == provider_name:
+            model_name = chat_config.default_model
+        model_name = _normalize_model_name(provider_name, str(model_name or ""))
+
+        settings = UiSettings(
+            is_dark=bool(data.get("is_dark", True)),
+            token_quality=int(data.get("token_quality", 50)),
+            model_provider=provider_name,
+            model_name=model_name,
+            user_name=str(data.get("user_name", UiSettings().user_name)),
+            user_avatar_path=data.get("user_avatar_path") if isinstance(data.get("user_avatar_path"), str) else None,
+        )
+        provider_config = chat_config.providers.get(provider_name)
         settings.api_key = provider_config.api_key if provider_config else ""
         return settings
 
     def save_ui_settings(self, settings: UiSettings) -> None:
         self.config_dir.mkdir(parents=True, exist_ok=True)
+        provider_name = _normalize_model_provider(settings.model_provider)
+        model_name = _normalize_model_name(provider_name, settings.model_name)
         payload = {
             "is_dark": settings.is_dark,
             "token_quality": settings.token_quality,
-            "model_provider": MINIMAX_PROVIDER,
+            "model_provider": provider_name,
+            "model_name": model_name,
             "user_name": settings.user_name,
             "user_avatar_path": settings.user_avatar_path,
         }
@@ -197,15 +250,20 @@ class UiSettingsStorage:
         return self.models_storage.load()
 
     def save_minimax_config(self, api_key: str) -> None:
+        self.save_provider_config(MINIMAX_PROVIDER, api_key, MINIMAX_MODEL)
+
+    def save_provider_config(self, provider_name: str, api_key: str, model_name: str | None = None) -> None:
+        provider_name = _normalize_model_provider(provider_name)
+        model_name = _normalize_model_name(provider_name, model_name or "")
         config = self.models_storage.load()
-        config.providers[MINIMAX_PROVIDER] = ProviderConfig(
-            base_url="https://api.minimaxi.com/v1",
+        config.providers[provider_name] = ProviderConfig(
+            base_url=PROVIDER_BASE_URLS[provider_name],
             api_key=api_key.strip(),
-            api_type="openai",
+            api_type=PROVIDER_API_TYPES[provider_name],
             auth_header=True,
         )
-        config.default_provider = MINIMAX_PROVIDER
-        config.default_model = MINIMAX_MODEL
+        config.default_provider = provider_name
+        config.default_model = model_name
         self.models_storage.save(config)
 
 
@@ -260,21 +318,22 @@ def _reply_tag_emotion(tag: object) -> str:
 def _load_model_config(config_dir: str | Path | None = None) -> ModelConfig:
     storage = ModelsStorage(config_dir)
     config = storage.load()
-    provider_config = config.providers.get(MINIMAX_PROVIDER)
+    provider_name = _normalize_model_provider(config.default_provider or MINIMAX_PROVIDER)
+    provider_config = config.providers.get(provider_name)
     if provider_config is None or not (provider_config.api_key or "").strip():
-        raise ChatConfigurationError("MiniMax API key is not configured.")
+        raise ChatConfigurationError(f"{_provider_display_name(provider_name)} API key is not configured.")
 
-    catalog = get_model_catalog(MINIMAX_PROVIDER)
-    model_name = config.default_model or MINIMAX_MODEL
+    catalog = get_model_catalog(provider_name)
+    model_name = _normalize_model_name(provider_name, config.default_model or "")
     model_info = catalog.find_model(model_name) if catalog else None
     return ModelConfig(
         name=model_name,
-        provider=APIProvider.MINIMAX,
+        provider=PROVIDER_API_ENUMS[provider_name],
         api_key=provider_config.api_key,
         base_url=provider_config.base_url,
         max_tokens=model_info.max_tokens if model_info else 8192,
         temperature=0.7,
-        supports_thinking=bool(model_info.reasoning) if model_info else True,
+        supports_thinking=bool(model_info.reasoning) if model_info else False,
         supports_function_calling=True,
         tokenizer_mode=model_info.tokenizer_mode if model_info else "auto",
         tokenizer_fallback=model_info.tokenizer_fallback if model_info else "hybrid_v1",
@@ -726,8 +785,9 @@ class AmaduesController(CompanionUICallback):
         print(f"[ui] chat mode: {mode}")
 
     def on_settings_saved(self, settings: UiSettings) -> None:
-        settings.model_provider = MINIMAX_PROVIDER
-        self.settings_storage.save_minimax_config(settings.api_key)
+        settings.model_provider = _normalize_model_provider(settings.model_provider)
+        settings.model_name = _normalize_model_name(settings.model_provider, settings.model_name)
+        self.settings_storage.save_provider_config(settings.model_provider, settings.api_key, settings.model_name)
         self.settings_storage.save_ui_settings(settings)
         self._settings = self.settings_storage.load_ui_settings()
         self._invalidate_runtime()

@@ -22,15 +22,21 @@ for path in (str(REPO_ROOT), str(SRC_DIR)):
 from GUI.control import (
     AMADUES_BRAIN_ID,
     AMADUES_UI_ROLE_ID,
+    DEEPSEEK_PROVIDER,
+    DEEPSEEK_V4_FLASH_MODEL,
+    DEEPSEEK_V4_PRO_MODEL,
     MINIMAX_MODEL,
     MINIMAX_PROVIDER,
     AmaduesController,
     AmaduesRuntime,
     UiSettingsStorage,
+    _load_model_config,
     build_amadues_runtime,
 )
 from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUIView, UiSettings
 from GUI.role_loader import load_roles_from_data
+from agent_core.api.adapter import APIProvider, AdapterRegistry
+from agent_core.models import get_model_catalog
 from agent_core.session.path_resolver import PathResolver
 
 
@@ -180,6 +186,7 @@ class GuiControlTests(unittest.TestCase):
                 is_dark=False,
                 token_quality=80,
                 model_provider=MINIMAX_PROVIDER,
+                model_name=MINIMAX_MODEL,
                 api_key="test-key",
                 user_name="Tester",
                 user_avatar_path="avatar.png",
@@ -199,14 +206,59 @@ class GuiControlTests(unittest.TestCase):
             ui_payload = json.loads((Path(config_dir) / "ui_settings.json").read_text(encoding="utf-8"))
             self.assertNotIn("api_key", ui_payload)
             self.assertEqual(ui_payload["user_name"], "Tester")
+            self.assertEqual(ui_payload["model_provider"], MINIMAX_PROVIDER)
+            self.assertEqual(ui_payload["model_name"], MINIMAX_MODEL)
 
             loaded = storage.load_ui_settings()
             self.assertFalse(loaded.is_dark)
             self.assertEqual(loaded.token_quality, 80)
             self.assertEqual(loaded.model_provider, MINIMAX_PROVIDER)
+            self.assertEqual(loaded.model_name, MINIMAX_MODEL)
             self.assertEqual(loaded.api_key, "test-key")
             self.assertEqual(loaded.user_name, "Tester")
             self.assertEqual(loaded.user_avatar_path, "avatar.png")
+
+    def test_ui_settings_storage_persists_deepseek_model_choice(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir:
+            storage = UiSettingsStorage(config_dir)
+            settings = UiSettings(
+                is_dark=True,
+                token_quality=60,
+                model_provider=DEEPSEEK_PROVIDER,
+                model_name=DEEPSEEK_V4_PRO_MODEL,
+                api_key="deepseek-key",
+                user_name="Tester",
+            )
+
+            storage.save_provider_config(settings.model_provider, settings.api_key, settings.model_name)
+            storage.save_ui_settings(settings)
+
+            chat_config = storage.load_chat_config()
+            provider = chat_config.providers[DEEPSEEK_PROVIDER]
+            self.assertEqual(chat_config.default_provider, DEEPSEEK_PROVIDER)
+            self.assertEqual(chat_config.default_model, DEEPSEEK_V4_PRO_MODEL)
+            self.assertEqual(provider.base_url, "https://api.deepseek.com")
+            self.assertEqual(provider.api_key, "deepseek-key")
+            self.assertEqual(provider.api_type, "openai")
+            self.assertTrue(provider.auth_header)
+
+            loaded = storage.load_ui_settings()
+            self.assertEqual(loaded.model_provider, DEEPSEEK_PROVIDER)
+            self.assertEqual(loaded.model_name, DEEPSEEK_V4_PRO_MODEL)
+            self.assertEqual(loaded.api_key, "deepseek-key")
+
+            model_config = _load_model_config(config_dir)
+            self.assertEqual(model_config.provider, APIProvider.DEEPSEEK)
+            self.assertEqual(model_config.name, DEEPSEEK_V4_PRO_MODEL)
+            self.assertEqual(model_config.base_url, "https://api.deepseek.com")
+
+    def test_deepseek_catalog_and_adapter_are_registered(self) -> None:
+        catalog = get_model_catalog(DEEPSEEK_PROVIDER)
+
+        self.assertIsNotNone(catalog)
+        self.assertIsNotNone(catalog.find_model(DEEPSEEK_V4_FLASH_MODEL))
+        self.assertIsNotNone(catalog.find_model(DEEPSEEK_V4_PRO_MODEL))
+        self.assertEqual(AdapterRegistry.get(APIProvider.DEEPSEEK).__class__.__name__, "OpenAIAdapter")
 
     def test_build_amadues_runtime_raises_when_no_brain_exists(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
@@ -530,7 +582,8 @@ class GuiControlTests(unittest.TestCase):
                 UiSettings(
                     is_dark=True,
                     token_quality=50,
-                    model_provider=MINIMAX_PROVIDER,
+                    model_provider=DEEPSEEK_PROVIDER,
+                    model_name=DEEPSEEK_V4_FLASH_MODEL,
                     api_key="new-key",
                     user_name="Tester",
                 )
@@ -539,6 +592,8 @@ class GuiControlTests(unittest.TestCase):
 
             self.assertEqual(calls["count"], 2)
             self.assertEqual(view.applied_settings.api_key, "new-key")
+            self.assertEqual(view.applied_settings.model_provider, DEEPSEEK_PROVIDER)
+            self.assertEqual(view.applied_settings.model_name, DEEPSEEK_V4_FLASH_MODEL)
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ for path in (str(REPO_ROOT), str(SRC_DIR)):
         sys.path.insert(0, path)
 
 from GUI.components import MemoryEditor, MessageBubble
-from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUICallback, MemoryDraft
+from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUICallback, MemoryDraft, UiSettings
 from GUI.views import HOME_SUBTITLE_TEXT, HOME_TITLE_TEXT, CompanionAppView
 
 
@@ -105,6 +105,14 @@ class EditCallback(CompanionUICallback):
         return "imported"
 
 
+class SettingsCallback(CompanionUICallback):
+    def __init__(self) -> None:
+        self.saved_settings: UiSettings | None = None
+
+    def on_settings_saved(self, settings: UiSettings) -> None:
+        self.saved_settings = settings
+
+
 class GuiViewTests(unittest.TestCase):
     def test_home_header_copy_is_fixed(self) -> None:
         self.assertEqual(HOME_TITLE_TEXT, "今天想和谁聊聊天")
@@ -131,6 +139,38 @@ class GuiViewTests(unittest.TestCase):
         self.assertTrue(view._template_dropdown.filled)
         self.assertEqual(view._template_dropdown.fill_color, colors["dropdown_surface"])
         self.assertEqual(view._template_dropdown.menu_style.bgcolor, colors["dropdown_surface"])
+
+    def test_settings_supports_deepseek_flash_and_pro(self) -> None:
+        callback = SettingsCallback()
+        view = CompanionAppView(callback=callback, roles=[make_role()])
+        colors = view._colors()
+
+        view._build_settings_page(colors)
+        provider_keys = [option.key for option in view._provider_dropdown.options]
+        self.assertIn("deepseek", provider_keys)
+        self.assertTrue(view._provider_dropdown.filled)
+        self.assertEqual(view._provider_dropdown.fill_color, colors["dropdown_surface"])
+        self.assertEqual(view._provider_dropdown.menu_style.bgcolor, colors["dropdown_surface"])
+        self.assertTrue(view._model_dropdown.filled)
+        self.assertEqual(view._model_dropdown.fill_color, colors["dropdown_surface"])
+        self.assertEqual(view._model_dropdown.menu_style.bgcolor, colors["dropdown_surface"])
+
+        view._provider_dropdown.value = "deepseek"
+        view._on_settings_provider_changed(None)
+        model_keys = [option.key for option in view._model_dropdown.options]
+        self.assertEqual(model_keys, ["deepseek-v4-flash", "deepseek-v4-pro"])
+        self.assertEqual(view._model_dropdown.value, "deepseek-v4-flash")
+        self.assertEqual(view._settings.model_provider, "deepseek")
+        self.assertEqual(view._settings.model_name, "deepseek-v4-flash")
+
+        view._model_dropdown.value = "deepseek-v4-pro"
+        view._api_key_field.value = "deepseek-key"
+        view._save_settings()
+
+        self.assertIsNotNone(callback.saved_settings)
+        self.assertEqual(callback.saved_settings.model_provider, "deepseek")
+        self.assertEqual(callback.saved_settings.model_name, "deepseek-v4-pro")
+        self.assertEqual(callback.saved_settings.api_key, "deepseek-key")
 
     def test_edit_mode_loads_draft_locks_id_and_saves_update(self) -> None:
         callback = EditCallback()

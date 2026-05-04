@@ -4,6 +4,9 @@ from .app import DemoCallback, main, run_app, run_demo
 from .control import (
     AMADUES_BRAIN_ID,
     AMADUES_UI_ROLE_ID,
+    DEEPSEEK_PROVIDER,
+    DEEPSEEK_V4_FLASH_MODEL,
+    DEEPSEEK_V4_PRO_MODEL,
     MINIMAX_MODEL,
     MINIMAX_PROVIDER,
     AmaduesController,
@@ -26,6 +29,9 @@ from .views import CompanionAppView, default_roles
 __all__ = [
     "AMADUES_BRAIN_ID",
     "AMADUES_UI_ROLE_ID",
+    "DEEPSEEK_PROVIDER",
+    "DEEPSEEK_V4_FLASH_MODEL",
+    "DEEPSEEK_V4_PRO_MODEL",
     "MINIMAX_MODEL",
     "MINIMAX_PROVIDER",
     "AmaduesController",

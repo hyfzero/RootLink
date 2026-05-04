@@ -74,7 +74,21 @@ EMPTY_ROLE = CompanionRole(
 
 SETTINGS_PROVIDERS = [
     ("minimax", "MiniMax"),
+    ("deepseek", "DeepSeek"),
 ]
+
+SETTINGS_MODELS = {
+    "minimax": [("MiniMax-M2.5", "MiniMax M2.5")],
+    "deepseek": [
+        ("deepseek-v4-flash", "DeepSeek V4 Flash"),
+        ("deepseek-v4-pro", "DeepSeek V4 Pro"),
+    ],
+}
+
+DEFAULT_SETTINGS_MODELS = {
+    "minimax": "MiniMax-M2.5",
+    "deepseek": "deepseek-v4-flash",
+}
 
 PORTRAIT_EMOTIONS = [
     ("neutral", "平静"),
@@ -1214,12 +1228,16 @@ class CompanionAppView(ft.Container, CompanionUIView):
             label="模型来源",
             value=self._settings.model_provider,
             options=[ft.dropdown.Option(key, label) for key, label in SETTINGS_PROVIDERS],
-            text_size=12,
-            border_radius=14,
-            border_color=colors["input_border"],
-            bgcolor=colors["input"],
-            color=colors["text"],
+            on_select=self._on_settings_provider_changed,
+            **dropdown_control_style(colors, radius=14, text_size=12),
         )
+        self._model_dropdown = dropdown(
+            label="模型",
+            value=self._settings.model_name,
+            options=self._settings_model_options(self._settings.model_provider),
+            **dropdown_control_style(colors, radius=14, text_size=12),
+        )
+        self._ensure_settings_model_value()
         self._api_key_field = FormField("接口密钥", "sk-...", colors, password=True)
         self._api_key_field.value = self._settings.api_key
 
@@ -1273,20 +1291,49 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _provider_card(self, colors: dict[str, str]) -> ft.Control:
         provider_desc = {
-            "openai": "GPT 系列",
-            "anthropic": "Claude 系列",
-            "google": "Gemini 系列",
-            "deepseek": "DeepSeek 系列",
-            "custom": "自定义 API 地址",
-        }.get(self._provider_dropdown.value or "openai", "GPT 系列")
+            "minimax": "MiniMax M2.5",
+            "deepseek": "DeepSeek V4 Flash / Pro",
+        }.get(self._provider_dropdown.value or "minimax", "MiniMax M2.5")
+        self._provider_desc_text = text(provider_desc, 11, colors["text_tertiary"])
         return ft.Column(
             spacing=8,
             controls=[
                 text("模型来源", 13, colors["text_secondary"]),
                 self._provider_dropdown,
-                text(provider_desc, 11, colors["text_tertiary"]),
+                self._model_dropdown,
+                self._provider_desc_text,
             ],
         )
+
+    def _settings_model_options(self, provider: str | None) -> list[ft.dropdown.Option]:
+        models = SETTINGS_MODELS.get(provider or "minimax", SETTINGS_MODELS["minimax"])
+        return [ft.dropdown.Option(key, label) for key, label in models]
+
+    def _ensure_settings_model_value(self) -> None:
+        provider = self._provider_dropdown.value or "minimax"
+        allowed = {key for key, _label in SETTINGS_MODELS.get(provider, SETTINGS_MODELS["minimax"])}
+        if self._model_dropdown.value not in allowed:
+            self._model_dropdown.value = DEFAULT_SETTINGS_MODELS.get(provider, DEFAULT_SETTINGS_MODELS["minimax"])
+
+    def _on_settings_provider_changed(self, _event: ft.ControlEvent | None = None) -> None:
+        event_control = getattr(_event, "control", None)
+        provider = getattr(event_control, "value", None) or self._provider_dropdown.value or "minimax"
+        self._model_dropdown.options = self._settings_model_options(provider)
+        self._ensure_settings_model_value()
+        self._settings.model_provider = provider
+        self._settings.model_name = self._model_dropdown.value or DEFAULT_SETTINGS_MODELS.get(provider, DEFAULT_SETTINGS_MODELS["minimax"])
+        if hasattr(self, "_provider_desc_text"):
+            self._provider_desc_text.value = {
+                "minimax": "MiniMax M2.5",
+                "deepseek": "DeepSeek V4 Flash / Pro",
+            }.get(provider, "MiniMax M2.5")
+        try:
+            self._provider_dropdown.update()
+            self._model_dropdown.update()
+            if hasattr(self, "_provider_desc_text"):
+                self._provider_desc_text.update()
+        except (AssertionError, RuntimeError):
+            return
 
     def _api_key_card(self, colors: dict[str, str]) -> ft.Control:
         return ft.Column(spacing=8, controls=[text("凭据", 13, colors["text_secondary"]), self._api_key_field])
@@ -1996,6 +2043,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _save_settings(self) -> None:
         self._settings.token_quality = int(self._quality_slider.value or 50)
         self._settings.model_provider = self._provider_dropdown.value or "minimax"
+        self._settings.model_name = self._model_dropdown.value or DEFAULT_SETTINGS_MODELS.get(
+            self._settings.model_provider,
+            DEFAULT_SETTINGS_MODELS["minimax"],
+        )
         self._settings.api_key = self._api_key_field.value or ""
         self._settings.user_name = self._settings_name_field.value or "用户"
         self._profile.name = self._settings.user_name
