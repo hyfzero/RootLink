@@ -1,0 +1,224 @@
+name: Release Windows Android iOS
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  APP_PRODUCT: Amadues Companion
+  APP_ARTIFACT: AmaduesCompanion
+  APP_BUNDLE_ID: com.amadues.companion
+  BUILD_VERSION: 0.1.0
+
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Build Windows app
+        run: >
+          uv run flet pack GUI/app.py
+          --onedir
+          --name ${{ env.APP_ARTIFACT }}
+          --product-name "${{ env.APP_PRODUCT }}"
+          --product-version ${{ env.BUILD_VERSION }}
+          --file-version ${{ env.BUILD_VERSION }}.${{ github.run_number }}
+          --bundle-id ${{ env.APP_BUNDLE_ID }}
+          --distpath dist/windows
+          --pyinstaller-build-args=--paths=src
+          --yes
+
+      - name: Smoke test Windows app
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path "dist/windows/${{ env.APP_ARTIFACT }}/${{ env.APP_ARTIFACT }}.exe"
+          $process = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 8
+          if ($process.HasExited) {
+            throw "Windows app exited during smoke test with code $($process.ExitCode)"
+          }
+          Stop-Process -Id $process.Id -Force
+
+      - name: Archive Windows app
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/windows/${{ env.APP_ARTIFACT }}" -DestinationPath "dist/${{ env.APP_ARTIFACT }}-windows.zip" -Force
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_ARTIFACT }}-windows
+          path: dist/${{ env.APP_ARTIFACT }}-windows.zip
+          if-no-files-found: error
+
+  android:
+    name: Android APK and AAB
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Restore Android signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          mkdir -p "$RUNNER_TEMP/android-signing"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/android-signing/release.jks"
+
+      - name: Build Android APK
+        env:
+          FLET_ANDROID_SIGNING_KEY_STORE: ${{ runner.temp }}/android-signing/release.jks
+          FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FLET_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          FLET_ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: >
+          uv run flet build apk .
+          --yes
+          --module-name main
+          --product "${{ env.APP_PRODUCT }}"
+          --artifact ${{ env.APP_ARTIFACT }}
+          --bundle-id ${{ env.APP_BUNDLE_ID }}
+          --build-version ${{ env.BUILD_VERSION }}
+          --build-number ${{ github.run_number }}
+          --exclude .git .venv .pytest_cache build dist docs figma openclaw __pycache__
+
+      - name: Build Android AAB
+        env:
+          FLET_ANDROID_SIGNING_KEY_STORE: ${{ runner.temp }}/android-signing/release.jks
+          FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FLET_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          FLET_ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: >
+          uv run flet build aab .
+          --yes
+          --module-name main
+          --product "${{ env.APP_PRODUCT }}"
+          --artifact ${{ env.APP_ARTIFACT }}
+          --bundle-id ${{ env.APP_BUNDLE_ID }}
+          --build-version ${{ env.BUILD_VERSION }}
+          --build-number ${{ github.run_number }}
+          --exclude .git .venv .pytest_cache build dist docs figma openclaw __pycache__
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_ARTIFACT }}-android
+          path: |
+            build/apk/*.apk
+            build/aab/*.aab
+          if-no-files-found: error
+
+  ios:
+    name: iOS IPA
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Import iOS signing assets
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          test -n "$IOS_CERTIFICATE_BASE64"
+          test -n "$IOS_PROVISIONING_PROFILE_BASE64"
+          CERT_PATH="$RUNNER_TEMP/ios_distribution.p12"
+          PROFILE_PATH="$RUNNER_TEMP/AmaduesCompanion.mobileprovision"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          echo "$IOS_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
+          echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
+          security create-keychain -p "" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/"
+
+      - name: Build iOS IPA
+        run: >
+          uv run flet build ipa .
+          --yes
+          --module-name main
+          --product "${{ env.APP_PRODUCT }}"
+          --artifact ${{ env.APP_ARTIFACT }}
+          --bundle-id ${{ env.APP_BUNDLE_ID }}
+          --build-version ${{ env.BUILD_VERSION }}
+          --build-number ${{ github.run_number }}
+          --ios-team-id ${{ secrets.APPLE_TEAM_ID }}
+          --ios-export-method app-store
+          --ios-provisioning-profile "${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}"
+          --exclude .git .venv .pytest_cache build dist docs figma openclaw __pycache__
+
+      - name: Upload iOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_ARTIFACT }}-ios
+          path: build/ipa/*.ipa
+          if-no-files-found: error
+
+  github-release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - windows
+      - android
+      - ios
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*
+          fail_on_unmatched_files: true

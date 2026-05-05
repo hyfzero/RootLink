@@ -12,4 +12,26 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pyinstaller>=6.20.0",
+    "pytest>=9.0.3",
+]
+
+[tool.flet]
+product = "Amadues Companion"
+artifact = "AmaduesCompanion"
+org = "com.amadues"
+bundle_id = "com.amadues.companion"
+
+[tool.flet.app]
+path = "."
+module = "main"
+exclude = [
+    ".git",
+    ".venv",
+    ".pytest_cache",
+    "build",
+    "dist",
+    "docs",
+    "figma",
+    "openclaw",
+    "__pycache__",
 ]
