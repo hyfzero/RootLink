@@ -91,6 +91,8 @@ class GuiAppStorageTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(created_paths["data"], Path(app_root) / "data")
             self.assertEqual(created_paths["config"], Path(app_root) / "config")
             self.assertEqual(created_paths["bound"], Path("bound"))
+            self.assertFalse((Path(app_root) / "data" / "amadues").exists())
+            self.assertTrue((Path(app_root) / "data" / "shinji").exists())
             self.assertEqual(len(page.added), 1)
 
     async def test_bootstrap_falls_back_to_flet_storage_env(self) -> None:
@@ -101,6 +103,47 @@ class GuiAppStorageTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(PathResolver.get_data_dir(), Path(app_root) / "data")
             self.assertEqual(PathResolver.get_config_dir(), Path(app_root) / "config")
+
+    async def test_run_app_creates_only_default_shinji_on_empty_storage(self) -> None:
+        with tempfile.TemporaryDirectory() as app_root:
+            with (
+                patch.object(gui_app, "AmaduesController") as controller_type,
+                patch.object(gui_app, "CompanionAppView", FakeView),
+            ):
+                controller = controller_type.return_value
+                controller.initial_settings = SimpleNamespace(is_dark=True)
+
+                await gui_app.run_app(FakePage(app_root))
+
+            data_root = Path(app_root) / "data"
+            self.assertFalse((data_root / "amadues").exists())
+            self.assertTrue((data_root / "shinji" / "persona" / "profile.json").exists())
+            self.assertTrue((data_root / "shinji" / "ui.json").exists())
+
+    async def test_configure_bundled_flet_view_path_uses_packaged_client(self) -> None:
+        with tempfile.TemporaryDirectory() as bundle_root:
+            view_dir = Path(bundle_root) / "flet_desktop" / "app" / "flet"
+            view_dir.mkdir(parents=True)
+            view_path = view_dir / "flet.exe"
+            view_path.write_bytes(b"exe")
+            (view_dir / "zlib.dll").write_bytes(b"VCRUNTIME140D.dll ucrtbased.dll")
+
+            previous_view_path = os.environ.get("FLET_VIEW_PATH")
+            os.environ.pop("FLET_VIEW_PATH", None)
+            try:
+                with (
+                    patch.object(gui_app.sys, "_MEIPASS", bundle_root, create=True),
+                    patch.object(gui_app.os, "name", "nt"),
+                ):
+                    gui_app._configure_bundled_flet_view_path()
+
+                self.assertEqual(os.environ["FLET_VIEW_PATH"], str(view_dir))
+                self.assertFalse((view_dir / "zlib.dll").exists())
+            finally:
+                if previous_view_path is None:
+                    os.environ.pop("FLET_VIEW_PATH", None)
+                else:
+                    os.environ["FLET_VIEW_PATH"] = previous_view_path
 
 
 if __name__ == "__main__":

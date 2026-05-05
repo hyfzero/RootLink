@@ -17,15 +17,46 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 if __package__ in (None, ""):
-    from GUI.control import AmaduesController
+    from GUI.control import AmaduesController, ensure_default_startup_data
     from GUI.interfaces import CharacterDraft, ChatMessage, CompanionUICallback, UiSettings
     from GUI.views import CompanionAppView
     from agent_core.session import PathResolver
 else:
     from .control import AmaduesController
+    from .control import ensure_default_startup_data
     from .interfaces import CharacterDraft, ChatMessage, CompanionUICallback, UiSettings
     from .views import CompanionAppView
     from agent_core.session import PathResolver
+
+
+def _remove_debug_flet_zlib(view_dir: Path) -> None:
+    zlib_path = view_dir / "zlib.dll"
+    if os.name != "nt" or not zlib_path.exists():
+        return
+    try:
+        payload = zlib_path.read_bytes()
+    except OSError:
+        return
+    if b"VCRUNTIME140D.dll" not in payload and b"ucrtbased.dll" not in payload:
+        return
+    try:
+        zlib_path.unlink()
+    except OSError:
+        pass
+
+
+def _configure_bundled_flet_view_path() -> None:
+    current_path = os.environ.get("FLET_VIEW_PATH")
+    if current_path and (Path(current_path) / "flet.exe").exists():
+        return
+    bundle_root = Path(getattr(sys, "_MEIPASS", "") or "")
+    if not bundle_root:
+        return
+    view_path = bundle_root / "flet_desktop" / "app" / "flet" / "flet.exe"
+    if not view_path.exists():
+        return
+    _remove_debug_flet_zlib(view_path.parent)
+    os.environ["FLET_VIEW_PATH"] = str(view_path.parent)
 
 
 def _configure_page(page: ft.Page, *, is_dark: bool) -> None:
@@ -121,6 +152,7 @@ async def run_demo(page: ft.Page) -> None:
 
 async def run_app(page: ft.Page) -> None:
     await _bootstrap_app_storage(page)
+    ensure_default_startup_data()
     controller = AmaduesController()
     _configure_page(page, is_dark=controller.initial_settings.is_dark)
     view = CompanionAppView(callback=controller, is_dark=controller.initial_settings.is_dark)
@@ -129,6 +161,7 @@ async def run_app(page: ft.Page) -> None:
 
 
 def main() -> None:
+    _configure_bundled_flet_view_path()
     ft.run(run_app)
 
 

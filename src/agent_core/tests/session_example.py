@@ -192,7 +192,7 @@ def create_default_brain(
     # 2. 如果没有加载成功，创建默认配置
     if persona is None:
         profile = PersonaProfile(
-            name="阿玛迪斯",
+            name="Amadues",
             age=20,
             gender="unknown",
             personality_traits=["智能", "友善", "好奇"],

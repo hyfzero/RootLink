@@ -28,6 +28,7 @@ from GUI.control import (
     DEEPSEEK_V4_PRO_MODEL,
     MINIMAX_MODEL,
     MINIMAX_PROVIDER,
+    SHINJI_BRAIN_ID,
     AmaduesController,
     AmaduesRuntime,
     UiSettingsStorage,
@@ -273,6 +274,36 @@ class GuiControlTests(unittest.TestCase):
                 build_amadues_runtime(config_dir=config_dir)
 
             self.assertEqual(list(Path(data_dir).iterdir()), [])
+
+    def test_build_amadues_runtime_defaults_to_shinji(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
+            os.environ[PathResolver.ENV_CONFIG_DIR] = config_dir
+            os.environ[PathResolver.ENV_DATA_DIR] = data_dir
+
+            storage = UiSettingsStorage(config_dir)
+            storage.save_minimax_config("runtime-key")
+
+            for brain_id, name in ((AMADUES_BRAIN_ID, "Amadues"), (SHINJI_BRAIN_ID, "Shinji")):
+                persona_dir = Path(data_dir) / brain_id / "persona"
+                persona_dir.mkdir(parents=True)
+                (persona_dir / "profile.json").write_text(
+                    json.dumps({"name": name, "background": f"{name} background"}),
+                    encoding="utf-8",
+                )
+                (persona_dir / "memories.json").write_text(
+                    json.dumps(
+                        {
+                            "episodic_memories": [],
+                            "preference_memories": [],
+                            "fact_memories": [],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+            runtime = build_amadues_runtime(config_dir=config_dir)
+
+            self.assertEqual(runtime.brain_registry.current_brain_id(), SHINJI_BRAIN_ID)
 
     def test_bind_view_keeps_roles_empty_when_data_directory_has_no_brain(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:

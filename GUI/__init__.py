@@ -13,6 +13,7 @@ from .control import (
     ChatConfigurationError,
     UiSettingsStorage,
     build_amadues_runtime,
+    ensure_default_startup_data,
 )
 from .interfaces import (
     CharacterDraft,
@@ -49,6 +50,7 @@ __all__ = [
     "UserProfile",
     "build_amadues_runtime",
     "default_roles",
+    "ensure_default_startup_data",
     "main",
     "run_app",
     "run_demo",

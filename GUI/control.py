@@ -69,7 +69,7 @@ PROVIDER_API_ENUMS = {
     MINIMAX_PROVIDER: APIProvider.MINIMAX,
     DEEPSEEK_PROVIDER: APIProvider.DEEPSEEK,
 }
-DEFAULT_ASSISTANT_NAME = "\u963f\u739b\u8fea\u65af"
+DEFAULT_ASSISTANT_NAME = "Amadues"
 CONFIG_NOTICE = "\u8bf7\u5148\u5728\u8bbe\u7f6e\u9875\u4fdd\u5b58 API Key\u3002"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RESOURCE_DIR = PROJECT_ROOT / "resource"
@@ -518,9 +518,13 @@ def _ensure_default_shinji_data(brain_id: str = SHINJI_BRAIN_ID) -> Path:
     return brain_dir
 
 
+def ensure_default_startup_data() -> Path:
+    return _ensure_default_shinji_data()
+
+
 def build_amadues_runtime(
     config_dir: str | Path | None = None,
-    brain_id: str = AMADUES_BRAIN_ID,
+    brain_id: str = SHINJI_BRAIN_ID,
 ) -> AmaduesRuntime:
     model_config = _load_model_config(config_dir)
     chat_agent = ChatAgent(config=model_config)
