@@ -1,0 +1,6 @@
+Running build hooks...Running build hooks...Running package command
+Extra PyPi indexes: [https://pypi.flet.dev]
+Created temp directory: C:\Users\YY\AppData\Local\Temp\serious_python_tempdc00a2d2
+Copying Python app from D:\Godot\amadues to a temp directory
+Configured Android/arm64-v8a platform with sitecustomize.py
+Installing [Pillow, flet[all]] with pip command to D:\Godot\amadues\build\site-packages\arm64-v8a
