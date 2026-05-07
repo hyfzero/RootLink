@@ -19,7 +19,7 @@ for path in (str(REPO_ROOT), str(SRC_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from GUI.components import MemoryEditor, MessageBubble
+from GUI.components import MemoryEditor, MessageBubble, RoleFeatureCard
 from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUICallback, MemoryDraft, UiSettings
 from GUI.views import HOME_SUBTITLE_TEXT, HOME_TITLE_TEXT, CompanionAppView
 
@@ -38,6 +38,24 @@ def make_role() -> CompanionRole:
         last_message="last",
         last_time="now",
     )
+
+
+def collect_text_values(control) -> list[str]:
+    values: list[str] = []
+    seen: set[int] = set()
+
+    def visit(item) -> None:
+        if item is None or id(item) in seen:
+            return
+        seen.add(id(item))
+        if isinstance(item, ft.Text):
+            values.append(item.value)
+        visit(getattr(item, "content", None))
+        for child in getattr(item, "controls", []) or []:
+            visit(child)
+
+    visit(control)
+    return values
 
 
 class FakePage:
@@ -117,6 +135,39 @@ class GuiViewTests(unittest.TestCase):
     def test_home_header_copy_is_fixed(self) -> None:
         self.assertEqual(HOME_TITLE_TEXT, "今天想和谁聊聊天")
         self.assertEqual(HOME_SUBTITLE_TEXT, "在一切的根部，我们彼此相连")
+
+    def test_role_feature_card_hides_personality_tags(self) -> None:
+        role = make_role()
+        role.tags = ["敏感", "克制", "共情"]
+
+        card = RoleFeatureCard(role, True, lambda _role_id: None)
+
+        text_values = collect_text_values(card)
+        self.assertIn("Amadeus", text_values)
+        self.assertNotIn("敏感", text_values)
+        self.assertNotIn("克制", text_values)
+        self.assertNotIn("共情", text_values)
+
+    def test_home_quick_actions_stack_on_narrow_width(self) -> None:
+        page = FakePage()
+        page.width = 393
+        view = TrackingCompanionAppView(page)
+
+        actions = view._home_quick_actions(view._colors())
+
+        self.assertIsInstance(actions, ft.Column)
+        self.assertEqual(len(actions.controls), 2)
+
+    def test_did_mount_rebuilds_with_real_page_width(self) -> None:
+        fake_page = FakePage()
+        fake_page.width = 393
+        view = TrackingCompanionAppView()
+
+        view._fake_page = fake_page
+        view.did_mount()
+
+        self.assertEqual(view.content.controls[0].width, 393)
+        self.assertEqual(fake_page.task_calls, 1)
 
     def test_create_dropdown_uses_opaque_menu_surface(self) -> None:
         view = CompanionAppView(roles=[make_role()])
@@ -495,7 +546,7 @@ class GuiViewTests(unittest.TestCase):
 
         view.did_mount()
 
-        self.assertEqual(fake_page.task_calls, 2)
+        self.assertEqual(fake_page.task_calls, 3)
         self.assertEqual(view.scroll_calls, 2)
 
     def test_build_normal_chat_uses_reversed_list_view(self) -> None:

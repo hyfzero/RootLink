@@ -200,6 +200,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def did_mount(self) -> None:
         self._ensure_file_picker()
+        self.refresh_layout()
+        self._schedule_initial_layout_refresh()
         self._trigger_scroll_to_latest()
 
     @property
@@ -289,6 +291,27 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if resolved_width <= 0:
             return MOBILE_WIDTH
         return min(MOBILE_WIDTH, resolved_width)
+
+    def refresh_layout(self) -> None:
+        self._safe_update()
+
+    def _schedule_initial_layout_refresh(self) -> None:
+        try:
+            page = self.page
+        except RuntimeError:
+            return
+        run_task = getattr(page, "run_task", None)
+        if not callable(run_task):
+            return
+        try:
+            run_task(self._refresh_layout_after_mount)
+        except TypeError:
+            return
+
+    async def _refresh_layout_after_mount(self) -> None:
+        for delay in (0, 0.05, 0.2):
+            await asyncio.sleep(delay)
+            self.refresh_layout()
 
     def _safe_update(self) -> None:
         self._build()
@@ -556,13 +579,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._stagger(
                 "home",
                 4,
-                ft.Row(
-                    spacing=12,
-                    controls=[
-                        ft.Container(expand=True, content=QuickAction("创建角色", "定制专属陪伴", ft.Icons.ADD, colors, lambda _: self._begin_create())),
-                        ft.Container(expand=True, content=QuickAction("人格导入", "导入完整角色包", ft.Icons.FILE_UPLOAD_OUTLINED, colors, lambda _: self._open_package_import_picker())),
-                    ],
-                ),
+                self._home_quick_actions(colors),
             ),
             self._stagger(
                 "home",
@@ -575,6 +592,18 @@ class CompanionAppView(ft.Container, CompanionUIView):
             ft.Container(height=28),
         ]
         return self._page_column([ft.Container(padding=ft.padding.only(left=20, right=20, top=32, bottom=20), content=ft.Column(spacing=28, controls=controls))])
+
+    def _home_quick_actions(self, colors: dict[str, str]) -> ft.Control:
+        actions = [
+            QuickAction("创建角色", "定制专属陪伴", ft.Icons.ADD, colors, lambda _: self._begin_create()),
+            QuickAction("人格导入", "导入完整角色包", ft.Icons.FILE_UPLOAD_OUTLINED, colors, lambda _: self._open_package_import_picker()),
+        ]
+        if self._content_width() < 420:
+            return ft.Column(spacing=12, controls=actions)
+        return ft.Row(
+            spacing=12,
+            controls=[ft.Container(expand=True, content=action) for action in actions],
+        )
 
     def _build_empty_home_page(self, colors: dict[str, str]) -> ft.Control:
         controls = [

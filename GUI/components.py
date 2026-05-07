@@ -356,7 +356,6 @@ class RoleFeatureCard(ft.Container):
                 controls=[
                     text(role.name, 20, colors["text"], ft.FontWeight.W_500),
                     text(role.type, 13, hex_with_alpha(role.accent_color, 220)),
-                    ft.Row(spacing=6, wrap=True, controls=[pill(tag, role.accent_color, is_dark) for tag in role.tags]),
                 ],
             ),
         ]

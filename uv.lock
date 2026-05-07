@@ -31,7 +31,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "charset-normalizer", specifier = "<3" },
+    { name = "charset-normalizer", specifier = "==2.1.1" },
     { name = "flet", specifier = ">=0.84.0" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "requests", specifier = ">=2.32.0" },

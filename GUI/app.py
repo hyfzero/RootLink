@@ -64,10 +64,26 @@ def _configure_page(page: ft.Page, *, is_dark: bool) -> None:
     page.theme_mode = ft.ThemeMode.DARK if is_dark else ft.ThemeMode.LIGHT
     page.padding = 0
     page.spacing = 0
+    if not _is_desktop_platform(page):
+        return
     page.window_width = 480
     page.window_height = 860
     page.window_min_width = 360
     page.window_min_height = 640
+
+
+def _is_desktop_platform(page: ft.Page) -> bool:
+    platform = getattr(page, "platform", None)
+    platform_value = getattr(platform, "value", platform)
+    return str(platform_value).lower() in {"windows", "macos", "linux"}
+
+
+def _bind_layout_resize(page: ft.Page, view: CompanionAppView) -> None:
+    def _handle_resize(_event) -> None:
+        view.refresh_layout()
+
+    page.on_resize = _handle_resize
+    page.on_media_change = _handle_resize
 
 
 class DemoCallback(CompanionUICallback):
@@ -147,6 +163,7 @@ async def run_demo(page: ft.Page) -> None:
     callback = DemoCallback()
     view = CompanionAppView(callback=callback, is_dark=True)
     callback.view = view
+    _bind_layout_resize(page, view)
     page.add(view)
 
 
@@ -157,6 +174,7 @@ async def run_app(page: ft.Page) -> None:
     _configure_page(page, is_dark=controller.initial_settings.is_dark)
     view = CompanionAppView(callback=controller, is_dark=controller.initial_settings.is_dark)
     controller.bind_view(view)
+    _bind_layout_resize(page, view)
     page.add(view)
 
 
