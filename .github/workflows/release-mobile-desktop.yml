@@ -13,7 +13,7 @@ env:
   APP_PRODUCT: Amadues Companion
   APP_ARTIFACT: AmaduesCompanion
   APP_BUNDLE_ID: com.amadues.companion
-  BUILD_VERSION: 0.1.0
+  BUILD_VERSION: 0.1.5
 
 jobs:
   windows:
@@ -88,13 +88,28 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
+      - name: Validate Android signing secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64" || (echo "Missing ANDROID_KEYSTORE_BASE64 secret" && exit 1)
+          test -n "$ANDROID_KEYSTORE_PASSWORD" || (echo "Missing ANDROID_KEYSTORE_PASSWORD secret" && exit 1)
+          test -n "$ANDROID_KEY_PASSWORD" || (echo "Missing ANDROID_KEY_PASSWORD secret" && exit 1)
+          test -n "$ANDROID_KEY_ALIAS" || (echo "Missing ANDROID_KEY_ALIAS secret" && exit 1)
+
       - name: Restore Android signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          test -n "$ANDROID_KEYSTORE_BASE64"
           mkdir -p "$RUNNER_TEMP/android-signing"
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/android-signing/release.jks"
+
+      - name: Accept Android SDK licenses
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
 
       - name: Build Android APK
         env:
@@ -157,14 +172,26 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
+      - name: Validate iOS signing secrets
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_PROVISIONING_PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
+        run: |
+          test -n "$APPLE_TEAM_ID" || (echo "Missing APPLE_TEAM_ID secret" && exit 1)
+          test -n "$IOS_CERTIFICATE_BASE64" || (echo "Missing IOS_CERTIFICATE_BASE64 secret" && exit 1)
+          test -n "$IOS_CERTIFICATE_PASSWORD" || (echo "Missing IOS_CERTIFICATE_PASSWORD secret" && exit 1)
+          test -n "$IOS_PROVISIONING_PROFILE_BASE64" || (echo "Missing IOS_PROVISIONING_PROFILE_BASE64 secret" && exit 1)
+          test -n "$IOS_PROVISIONING_PROFILE_NAME" || (echo "Missing IOS_PROVISIONING_PROFILE_NAME secret" && exit 1)
+
       - name: Import iOS signing assets
         env:
           IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
           IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
         run: |
-          test -n "$IOS_CERTIFICATE_BASE64"
-          test -n "$IOS_PROVISIONING_PROFILE_BASE64"
           CERT_PATH="$RUNNER_TEMP/ios_distribution.p12"
           PROFILE_PATH="$RUNNER_TEMP/AmaduesCompanion.mobileprovision"
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
@@ -176,7 +203,7 @@ jobs:
           security import "$CERT_PATH" -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
           security default-keychain -s "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/"
 

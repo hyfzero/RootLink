@@ -1,16 +1,19 @@
 [project]
 name = "amadues"
-version = "0.1.0"
+version = "0.1.5"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "flet[all]>=0.84.0",
+    "charset-normalizer<3",
+    "flet>=0.84.0",
     "Pillow>=10.0.0",
+    "requests>=2.32.0",
 ]
 
 [dependency-groups]
 dev = [
+    "flet[all]>=0.84.0",
     "pyinstaller>=6.20.0",
     "pytest>=9.0.3",
 ]
