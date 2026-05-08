@@ -86,6 +86,18 @@ def _bind_layout_resize(page: ft.Page, view: CompanionAppView) -> None:
     page.on_media_change = _handle_resize
 
 
+def _bind_system_back(page: ft.Page, view: CompanionAppView) -> None:
+    def _handle_view_pop(_event) -> None:
+        if view.go_back():
+            return
+        window = getattr(page, "window", None)
+        close = getattr(window, "close", None)
+        if callable(close):
+            close()
+
+    page.on_view_pop = _handle_view_pop
+
+
 class DemoCallback(CompanionUICallback):
     """A non-business callback for local UI smoke testing."""
 
@@ -164,6 +176,7 @@ async def run_demo(page: ft.Page) -> None:
     view = CompanionAppView(callback=callback, is_dark=True)
     callback.view = view
     _bind_layout_resize(page, view)
+    _bind_system_back(page, view)
     page.add(view)
 
 
@@ -175,6 +188,7 @@ async def run_app(page: ft.Page) -> None:
     view = CompanionAppView(callback=controller, is_dark=controller.initial_settings.is_dark)
     controller.bind_view(view)
     _bind_layout_resize(page, view)
+    _bind_system_back(page, view)
     page.add(view)
 
 

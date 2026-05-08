@@ -200,7 +200,10 @@ class CompanionUIView(ABC):
     def apply_settings(self, settings: UiSettings) -> None:
         raise NotImplementedError
 
-    def show_page(self, page: str) -> None:
+    def go_back(self) -> bool:
+        raise NotImplementedError
+
+    def show_page(self, page: str, *, add_to_history: bool = True) -> None:
         raise NotImplementedError
 
     def clear_chat(self) -> None:

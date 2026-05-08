@@ -183,6 +183,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._portrait_preview_session_id = uuid.uuid4().hex
         self._portrait_preview_paths: dict[str, str] = {}
         self.motion_enabled = True
+        self._page_history: list[str] = []
         self._page_seed = {page: 0 for page in self.VALID_PAGES}
         self._chat_launching_role_id: Optional[str] = None
         self._chat_entry_seed = 0
@@ -265,7 +266,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         content_width = self._content_width()
         self._last_content_width = content_width
         self._last_content_width_from_page = self._has_page_for_layout()
-        self.content = ft.Row(
+        page_shell: ft.Control = ft.Row(
             expand=True,
             alignment=ft.MainAxisAlignment.CENTER,
             vertical_alignment=ft.CrossAxisAlignment.START,
@@ -284,6 +285,12 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 )
             ],
         )
+        if self._is_mobile_platform():
+            page_shell = ft.GestureDetector(
+                content=page_shell,
+                on_horizontal_drag_end=self._handle_horizontal_back_drag,
+            )
+        self.content = page_shell
 
     def _content_width(self) -> int:
         try:
@@ -307,6 +314,18 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _is_mobile_keyboard_sensitive_page(self) -> bool:
         return self._page_name in {"chat", "create"} and self._is_mobile_platform()
+
+    def _handle_horizontal_back_drag(self, event) -> None:
+        velocity = getattr(event, "primary_velocity", None)
+        if velocity is None:
+            velocity = getattr(getattr(event, "velocity", None), "x", 0)
+        try:
+            velocity_value = float(velocity or 0)
+        except (TypeError, ValueError):
+            return
+        if abs(velocity_value) < 300:
+            return
+        self.go_back()
 
     def refresh_layout(self) -> None:
         content_width = self._content_width()
@@ -339,6 +358,38 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._build()
         try:
             self.update()
+        except (AssertionError, RuntimeError):
+            pass
+        self._sync_platform_navigation_stack()
+
+    def _sync_platform_navigation_stack(self) -> None:
+        try:
+            page = self.page
+        except RuntimeError:
+            return
+        page_views = getattr(page, "views", None)
+        if not isinstance(page_views, list):
+            return
+        stack = [name for name in [*self._page_history, self._page_name] if name in self.VALID_PAGES]
+        if not stack or stack[0] != "home":
+            stack.insert(0, "home")
+        compact_stack: list[str] = []
+        for name in stack:
+            if not compact_stack or compact_stack[-1] != name:
+                compact_stack.append(name)
+        views = [
+            ft.View(
+                route=f"/{index}-{name}",
+                controls=[self] if index == len(compact_stack) - 1 else [],
+                padding=0,
+                spacing=0,
+            )
+            for index, name in enumerate(compact_stack)
+        ]
+        try:
+            page.views = views
+            page.route = views[-1].route
+            page.update()
         except (AssertionError, RuntimeError):
             pass
 
@@ -842,7 +893,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                             content=ft.Row(
                                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                                 controls=[
-                                    round_icon_button(ft.Icons.ARROW_BACK, colors, lambda _: self.show_page("home"), 36),
+                                    round_icon_button(ft.Icons.ARROW_BACK, colors, lambda _: self.go_back(), 36),
                                     ft.Container(expand=True, alignment=ft.alignment.center, content=text("暂无角色", 15, colors["text"], ft.FontWeight.W_500)),
                                     ft.Container(width=36),
                                 ],
@@ -881,7 +932,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             content=ft.Row(
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 controls=[
-                    round_icon_button(ft.Icons.ARROW_BACK, colors, lambda _: self.show_page("home"), 36),
+                    round_icon_button(ft.Icons.ARROW_BACK, colors, lambda _: self.go_back(), 36),
                     ft.Row(
                         expand=True,
                         alignment=ft.MainAxisAlignment.CENTER,
@@ -1396,7 +1447,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._api_key_field.value = self._settings.api_key
 
         controls = [
-            self._stagger("settings", 0, self._header("设置", colors, lambda _: self.show_page("home")), offset_y=0.02),
+            self._stagger("settings", 0, self._header("设置", colors, lambda _: self.go_back()), offset_y=0.02),
             self._stagger("settings", 1, self._settings_profile_card(colors)),
             self._stagger("settings", 2, section_card(self._quality_card(colors), colors)),
             self._stagger("settings", 3, section_card(self._provider_card(colors), colors)),
@@ -1512,7 +1563,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         )
         title = "\u7f16\u8f91\u89d2\u8272" if self._create_mode == "edit" else "\u521b\u5efa\u89d2\u8272"
         controls = [
-            self._stagger("create", 0, self._header(title, colors, lambda _: self.show_page("home")), offset_y=0.02),
+            self._stagger("create", 0, self._header(title, colors, lambda _: self.go_back()), offset_y=0.02),
             self._stagger("create", 1, self._create_progress(colors)),
             self._stagger("create", 2, ft.Container(content=step_switcher), offset_y=0.03),
             self._stagger("create", 3, self._create_footer(colors), offset_y=0.03),
@@ -2087,7 +2138,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             content=ft.Row(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                controls=[round_icon_button(ft.Icons.CHEVRON_LEFT, colors, on_back or (lambda _: self.show_page("home"))), text(title, 20, colors["text"], ft.FontWeight.W_500), ft.Container(width=40)],
+                controls=[round_icon_button(ft.Icons.CHEVRON_LEFT, colors, on_back or (lambda _: self.go_back())), text(title, 20, colors["text"], ft.FontWeight.W_500), ft.Container(width=40)],
             ),
         )
 
@@ -2234,7 +2285,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._settings.user_name = self._settings_name_field.value or "用户"
         self._profile.name = self._settings.user_name
         self._callback.on_settings_saved(self._settings)
-        self.show_page("home")
+        self.show_page("home", add_to_history=False)
 
     def _set_emotion(self, emotion_id: str) -> None:
         self._emotion_id = emotion_id
@@ -2599,9 +2650,27 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._profile.avatar_path = settings.user_avatar_path
         self._safe_update()
 
-    def show_page(self, page: str) -> None:
+    def go_back(self) -> bool:
+        if self._page_name == "create" and self._create_step > 1:
+            self._previous_step()
+            return True
+        while self._page_history:
+            previous = self._page_history.pop()
+            if previous in self.VALID_PAGES and previous != self._page_name:
+                self.show_page(previous, add_to_history=False)
+                return True
+        if self._page_name != "home":
+            self.show_page("home", add_to_history=False)
+            return True
+        return False
+
+    def show_page(self, page: str, *, add_to_history: bool = True) -> None:
         if page not in self.VALID_PAGES:
             raise ValueError(f"Unknown page: {page}")
+        current_page = self._page_name
+        if add_to_history and page != "home" and current_page != page:
+            if not self._page_history or self._page_history[-1] != current_page:
+                self._page_history.append(current_page)
         self._page_name = page
         if page == "chat":
             if not self._roles:

@@ -20,6 +20,7 @@ for path in (str(REPO_ROOT), str(SRC_DIR)):
         sys.path.insert(0, path)
 
 from GUI.components import ChatInputBar, MemoryEditor, MessageBubble, RoleFeatureCard
+from GUI.app import _bind_system_back
 from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUICallback, MemoryDraft, UiSettings
 from GUI.views import HOME_SUBTITLE_TEXT, HOME_TITLE_TEXT, CompanionAppView
 
@@ -67,6 +68,10 @@ class FakePage:
         self.height = 860
         self.platform = "windows"
         self.clipboard_text = ""
+        self.on_view_pop = None
+        self.window = FakeWindow()
+        self.views = [ft.View(route="/", controls=[])]
+        self.route = "/"
 
     def run_task(self, coro_func, *args) -> None:
         self.task_calls += 1
@@ -80,6 +85,14 @@ class FakePage:
 
     def set_clipboard(self, value: str) -> None:
         self.clipboard_text = value
+
+
+class FakeWindow:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class FakeShareResult:
@@ -307,6 +320,65 @@ class GuiViewTests(unittest.TestCase):
         view.refresh_layout()
 
         self.assertEqual(rebuilds, 0)
+
+    def test_page_history_go_back_returns_to_previous_page(self) -> None:
+        fake_page = FakePage()
+        view = TrackingCompanionAppView(fake_page)
+
+        view.show_page("settings")
+
+        self.assertEqual(view._page_name, "settings")
+        self.assertEqual(len(fake_page.views), 2)
+        self.assertEqual(fake_page.views[-1].controls, [view])
+        self.assertTrue(view.go_back())
+        self.assertEqual(view._page_name, "home")
+        self.assertEqual(len(fake_page.views), 1)
+        self.assertEqual(fake_page.views[-1].controls, [view])
+        self.assertFalse(view.go_back())
+
+    def test_create_page_go_back_steps_before_leaving_page(self) -> None:
+        view = TrackingCompanionAppView(FakePage())
+        view.show_page("create")
+        view._create_step = 2
+
+        self.assertTrue(view.go_back())
+
+        self.assertEqual(view._page_name, "create")
+        self.assertEqual(view._create_step, 1)
+
+        self.assertTrue(view.go_back())
+        self.assertEqual(view._page_name, "home")
+
+    def test_mobile_horizontal_swipe_goes_back_without_exiting(self) -> None:
+        fake_page = FakePage()
+        fake_page.platform = ft.PagePlatform.ANDROID
+        view = TrackingCompanionAppView(fake_page)
+        view.show_page("chat")
+        event = type("DragEndEvent", (), {"primary_velocity": -900, "velocity": None})()
+
+        self.assertIsInstance(view.content, ft.GestureDetector)
+
+        view._handle_horizontal_back_drag(event)
+
+        self.assertEqual(view._page_name, "home")
+
+    def test_system_back_handler_uses_view_history_before_closing_window(self) -> None:
+        fake_page = FakePage()
+        view = TrackingCompanionAppView(fake_page)
+        view.show_page("chat")
+        _bind_system_back(fake_page, view)
+
+        self.assertEqual(len(fake_page.views), 2)
+
+        fake_page.on_view_pop(None)
+
+        self.assertEqual(view._page_name, "home")
+        self.assertEqual(len(fake_page.views), 1)
+        self.assertFalse(fake_page.window.closed)
+
+        fake_page.on_view_pop(None)
+
+        self.assertTrue(fake_page.window.closed)
 
     def test_create_dropdown_uses_opaque_menu_surface(self) -> None:
         view = CompanionAppView(roles=[make_role()])
