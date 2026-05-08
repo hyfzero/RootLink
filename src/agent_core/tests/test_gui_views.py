@@ -132,11 +132,15 @@ class FakeListView:
 
 class EditCallback(CompanionUICallback):
     def __init__(self) -> None:
+        self.opened_role_id = ""
         self.updated_role_id = ""
         self.updated_draft: CharacterDraft | None = None
         self.exported_role_id = ""
         self.exported_destination = ""
         self.imported_package_path = ""
+
+    def on_open_chat(self, role_id: str) -> None:
+        self.opened_role_id = role_id
 
     def load_character_draft(self, role_id: str) -> CharacterDraft | None:
         return CharacterDraft(brain_id=role_id, name="Loaded")
@@ -235,6 +239,34 @@ class GuiViewTests(unittest.TestCase):
         view.refresh_layout()
 
         self.assertEqual(rebuilds, 1)
+
+    def test_mobile_home_role_card_opens_chat_instead_of_only_selecting_role(self) -> None:
+        callback = EditCallback()
+        fake_page = FakePage()
+        fake_page.platform = ft.PagePlatform.ANDROID
+        view = TrackingCompanionAppView(fake_page, callback)
+
+        view._handle_home_role_select("amadeus")
+
+        self.assertEqual(callback.opened_role_id, "amadeus")
+        self.assertEqual(view._page_name, "chat")
+        self.assertEqual(view._active_role_id, "amadeus")
+
+    def test_chat_avatar_long_press_opens_character_editor_without_tooltip(self) -> None:
+        callback = EditCallback()
+        fake_page = FakePage()
+        view = TrackingCompanionAppView(fake_page, callback)
+        avatar_control = view._editable_chat_avatar(make_role(), view._colors())
+
+        self.assertIsInstance(avatar_control, ft.GestureDetector)
+        self.assertIsNotNone(avatar_control.on_long_press)
+        self.assertIsNone(getattr(avatar_control.content, "tooltip", None))
+
+        avatar_control.on_long_press(None)
+
+        self.assertEqual(view._page_name, "create")
+        self.assertEqual(view._create_mode, "edit")
+        self.assertEqual(view._editing_role_id, "amadeus")
 
     def test_mobile_create_page_ignores_keyboard_resize_even_if_reported_width_changes(self) -> None:
         fake_page = FakePage()

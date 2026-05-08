@@ -631,7 +631,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if not self._roles:
             return self._build_empty_home_page(colors)
         selected = self.active_role
-        role_cards = [RoleSelectorCard(role, role.id == selected.id, self._is_dark, self.set_active_role) for role in self._roles]
+        role_cards = [RoleSelectorCard(role, role.id == selected.id, self._is_dark, self._handle_home_role_select) for role in self._roles]
         role_cards.append(self._create_selector_card(colors))
         recent_roles = self._recent_roles()
         launching = self._chat_launching_role_id == selected.id
@@ -961,9 +961,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _editable_chat_avatar(self, role: CompanionRole, colors: dict[str, str]) -> ft.Control:
         return ft.GestureDetector(
-            on_long_press_start=lambda _: self._begin_edit_role(role.id),
+            on_long_press=lambda _: self._begin_edit_role(role.id),
             content=ft.Container(
-                tooltip="\u957f\u6309\u7f16\u8f91\u89d2\u8272",
                 content=avatar(role.avatar_path, 36, colors["card_border"], self._is_dark),
             ),
         )
@@ -2147,6 +2146,12 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if not any(role.id == role_id for role in self._roles):
             return
         self._active_role_id = role_id
+
+    def _handle_home_role_select(self, role_id: str) -> None:
+        if self._is_mobile_platform():
+            self._open_chat(role_id)
+            return
+        self.set_active_role(role_id)
 
     def _begin_open_chat(self, role_id: str) -> None:
         self._prepare_chat(role_id)
