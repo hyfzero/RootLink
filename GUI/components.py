@@ -543,11 +543,22 @@ class MessageBubble(ft.Container):
 class ChatInputBar(ft.Container):
     """Bottom input row used by both chat modes."""
 
-    def __init__(self, role: CompanionRole, is_dark: bool, mode: str, on_send: Callable[[str], None], on_voice: Optional[Callable] = None) -> None:
+    def __init__(
+        self,
+        role: CompanionRole,
+        is_dark: bool,
+        mode: str,
+        on_send: Callable[[str], None],
+        on_voice: Optional[Callable] = None,
+        initial_value: str = "",
+        on_change: Optional[Callable[[str], None]] = None,
+    ) -> None:
         self._colors = palette(is_dark)
         self._on_send = on_send
+        self._on_change = on_change
         placeholder = "写下你的回应..." if mode == "immersive" else "给她发消息..."
         self._field = ft.TextField(
+            value=initial_value,
             hint_text=placeholder,
             text_size=15,
             color=self._colors["text"],
@@ -561,6 +572,7 @@ class ChatInputBar(ft.Container):
             bgcolor=ft.Colors.TRANSPARENT,
             cursor_color=role.accent_color,
             content_padding=ft.padding.symmetric(horizontal=18, vertical=12),
+            on_change=self._handle_change,
             on_submit=self._handle_send,
             expand=True,
         )
@@ -613,11 +625,19 @@ class ChatInputBar(ft.Container):
             ),
         )
 
+    def _handle_change(self, event) -> None:
+        if self._on_change is None:
+            return
+        control = getattr(event, "control", None)
+        self._on_change(getattr(control, "value", self._field.value) or "")
+
     def _handle_send(self, event) -> None:
         value = (self._field.value or "").strip()
         if not value:
             return
         self._field.value = ""
+        if self._on_change is not None:
+            self._on_change("")
         self._on_send(value)
         try:
             self.update()

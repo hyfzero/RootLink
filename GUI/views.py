@@ -164,6 +164,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._create_step_direction = 1
         self._emotion_id = "neutral"
         self._file_picker: Optional[ft.FilePicker] = None
+        self._share: Optional[ft.Share] = None
         self._file_picker_target: tuple[str, str] | None = None
         self._trait_field: Optional[ft.TextField] = None
         self._interest_field: Optional[ft.TextField] = None
@@ -185,6 +186,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._page_seed = {page: 0 for page in self.VALID_PAGES}
         self._chat_launching_role_id: Optional[str] = None
         self._chat_entry_seed = 0
+        self._chat_input_drafts: dict[tuple[str, str], str] = {}
         self._chat_list_view: Optional[ft.ListView] = None
         self._chat_status_text: Optional[ft.Text] = None
         self._immersive_dialogue_text: Optional[ft.Text] = None
@@ -196,6 +198,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._immersive_index = 0
         self._immersive_display_text = ""
         self._immersive_typewriter_generation = 0
+        self._last_content_width: int | None = None
+        self._last_content_width_from_page = False
         self._build()
 
     def did_mount(self) -> None:
@@ -259,6 +263,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         page_content.key = f"page-{self._page_name}-{self._page_seed[self._page_name]}-{self._active_role_id}-{self._chat_mode}-{self._create_mode}-{self._editing_role_id}-{self._create_step}"
         self.gradient = app_gradient(self._is_dark)
         content_width = self._content_width()
+        self._last_content_width = content_width
+        self._last_content_width_from_page = self._has_page_for_layout()
         self.content = ft.Row(
             expand=True,
             alignment=ft.MainAxisAlignment.CENTER,
@@ -292,7 +298,23 @@ class CompanionAppView(ft.Container, CompanionUIView):
             return MOBILE_WIDTH
         return min(MOBILE_WIDTH, resolved_width)
 
+    def _has_page_for_layout(self) -> bool:
+        try:
+            self.page
+            return True
+        except RuntimeError:
+            return False
+
+    def _is_mobile_keyboard_sensitive_page(self) -> bool:
+        return self._page_name in {"chat", "create"} and self._is_mobile_platform()
+
     def refresh_layout(self) -> None:
+        content_width = self._content_width()
+        if self._last_content_width == content_width:
+            return
+        if self._last_content_width_from_page and self._is_mobile_keyboard_sensitive_page():
+            self._last_content_width = content_width
+            return
         self._safe_update()
 
     def _schedule_initial_layout_refresh(self) -> None:
@@ -340,6 +362,25 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 pass
         return self._file_picker
 
+    def _ensure_share(self) -> ft.Share | None:
+        if self._share is None:
+            self._share = ft.Share()
+        try:
+            page = self.page
+        except RuntimeError:
+            return None
+        registry = getattr(page, "_services", None)
+        register_service = getattr(registry, "register_service", None)
+        registered_services = getattr(registry, "_services", None)
+        if callable(register_service) and (
+            not isinstance(registered_services, list) or self._share not in registered_services
+        ):
+            try:
+                register_service(self._share)
+            except Exception:
+                pass
+        return self._share
+
     def _open_image_picker(self, target: str, emotion_id: str = "") -> None:
         picker = self._ensure_file_picker()
         if picker is None:
@@ -356,6 +397,20 @@ class CompanionAppView(ft.Container, CompanionUIView):
         page.run_task(self._pick_image_file, picker)
 
     def _begin_export_role(self, role_id: str) -> None:
+        if self._is_mobile_platform():
+            self.show_notice("正在导出角色...")
+            try:
+                page = self.page
+            except RuntimeError:
+                page = None
+            run_task = getattr(page, "run_task", None) if page is not None else None
+            if callable(run_task):
+                run_task(self._export_and_share_character_package, role_id)
+            else:
+                package_path = self._export_role_to_path(role_id, "")
+                if package_path:
+                    self.show_notice(f"角色已导出：{package_path}")
+            return
         picker = self._ensure_file_picker()
         if picker is None:
             self._export_role_to_path(role_id, "")
@@ -384,8 +439,71 @@ class CompanionAppView(ft.Container, CompanionUIView):
             return
         self._export_role_to_path(role_id, destination)
 
-    def _export_role_to_path(self, role_id: str, destination_path: str) -> None:
-        self._callback.on_character_export_requested(role_id, destination_path)
+    async def _export_and_share_character_package(self, role_id: str) -> None:
+        package_path = self._export_role_to_path(role_id, "")
+        if not package_path:
+            self.show_notice("导出角色失败", is_error=True)
+            return
+        share = self._ensure_share()
+        if share is None:
+            await self._show_export_share_fallback(package_path)
+            return
+        try:
+            result = await share.share_files(
+                [ft.ShareFile(path=package_path, name=Path(package_path).name)],
+                title="导出角色",
+                text="Amadues character package",
+            )
+        except Exception:
+            await self._show_export_share_fallback(package_path)
+            return
+        status = str(getattr(getattr(result, "status", ""), "value", getattr(result, "status", ""))).lower()
+        if status == "unavailable":
+            await self._show_export_share_fallback(package_path)
+        elif status == "dismissed":
+            self.show_notice(f"角色已导出：{package_path}")
+
+    async def _show_export_share_fallback(self, package_path: str) -> None:
+        copied = await self._copy_export_path_to_clipboard(package_path)
+        suffix = "，路径已复制" if copied else ""
+        self.show_notice(f"角色已导出：{package_path}{suffix}")
+
+    async def _copy_export_path_to_clipboard(self, package_path: str) -> bool:
+        try:
+            page = self.page
+        except RuntimeError:
+            return False
+        setter = getattr(page, "set_clipboard", None)
+        if callable(setter):
+            try:
+                setter(package_path)
+                return True
+            except Exception:
+                return False
+        try:
+            clipboard = getattr(page, "clipboard", None)
+            set_value = getattr(clipboard, "set", None)
+            if not callable(set_value):
+                return False
+            result = set_value(package_path)
+            if asyncio.iscoroutine(result):
+                await result
+            return True
+        except Exception:
+            return False
+
+    def _export_role_to_path(self, role_id: str, destination_path: str) -> str:
+        return self._callback.on_character_export_requested(role_id, destination_path)
+
+    def _is_mobile_platform(self) -> bool:
+        try:
+            page = self.page
+        except RuntimeError:
+            return False
+        platform = getattr(page, "platform", None)
+        platform_value = getattr(platform, "value", platform)
+        normalized = str(platform_value).lower()
+        return normalized in {"android", "ios"} or "android" in normalized or "ios" in normalized
 
     def _open_package_import_picker(self) -> None:
         picker = self._ensure_file_picker()
@@ -801,7 +919,15 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 duration_name="normal",
                 key=f"chat-header-{self._chat_entry_seed}-{self._chat_mode_seed}",
             )
-        input_bar: ft.Control = ChatInputBar(role=role, is_dark=self._is_dark, mode=self._chat_mode, on_send=self._send_message, on_voice=lambda _: self._callback.on_voice_requested())
+        input_bar: ft.Control = ChatInputBar(
+            role=role,
+            is_dark=self._is_dark,
+            mode=self._chat_mode,
+            on_send=self._send_message,
+            on_voice=lambda _: self._callback.on_voice_requested(),
+            initial_value=self._chat_input_value(role.id, self._chat_mode),
+            on_change=lambda value, role_id=role.id, mode=self._chat_mode: self._set_chat_input_value(role_id, mode, value),
+        )
         if self.motion_enabled:
             input_bar = MotionEntry(
                 content=input_bar,
@@ -1456,6 +1582,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._brain_id_field = FormField("角色标识", "companion-id", colors, solid=True)
         self._brain_id_field.value = self._draft.brain_id
         self._brain_id_field.disabled = self._create_mode == "edit"
+        self._brain_id_field.on_change = lambda _: self._sync_basic_draft()
         self._template_dropdown = dropdown(
             label="模板",
             value=self._draft.template or "default",
@@ -1463,10 +1590,13 @@ class CompanionAppView(ft.Container, CompanionUIView):
             **dropdown_control_style(colors, radius=18, text_size=13),
         )
         self._template_dropdown.disabled = self._create_mode == "edit"
+        self._template_dropdown.on_change = lambda _: self._sync_basic_draft()
         self._name_field = FormField("名称", "角色名称", colors, solid=True)
         self._name_field.value = self._draft.name
+        self._name_field.on_change = lambda _: self._sync_basic_draft()
         self._description_field = FormField("描述", "简短描述这个角色", colors, multiline=True, solid=True)
         self._description_field.value = self._draft.description
+        self._description_field.on_change = lambda _: self._sync_basic_draft()
         return section_card(
             ft.Column(
                 spacing=12,
@@ -1738,6 +1868,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _personality_step(self, colors: dict[str, str]) -> ft.Control:
         self._age_field = FormField("年龄", "可选", colors, solid=True)
         self._age_field.value = self._draft.age
+        self._age_field.on_change = lambda _: self._sync_personality_draft()
         self._gender_dropdown = dropdown(
             label="性别",
             value=self._draft.gender or "unknown",
@@ -1745,9 +1876,12 @@ class CompanionAppView(ft.Container, CompanionUIView):
             **dropdown_control_style(colors, radius=18, text_size=13),
         )
         self._birthday_field = FormField("生日", "YYYY-MM-DD", colors, solid=True)
+        self._gender_dropdown.on_change = lambda _: self._sync_personality_draft()
         self._birthday_field.value = self._draft.birthday
+        self._birthday_field.on_change = lambda _: self._sync_personality_draft()
         self._background_field = FormField("背景", "角色经历与上下文", colors, multiline=True, solid=True)
         self._background_field.value = self._draft.background
+        self._background_field.on_change = lambda _: self._sync_personality_draft()
         self._style_dropdown = dropdown(
             label="语言风格预设",
             value=self._draft.speaking_style_preset or "friendly",
@@ -1756,6 +1890,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         )
         self._trait_field = FormField("添加特质", "例如：耐心", colors, solid=True)
         self._interest_field = FormField("添加兴趣", "例如：钢琴", colors, solid=True)
+        self._style_dropdown.on_change = lambda _: self._sync_personality_draft()
         self._trait_chips = self._chip_wrap(self._draft.personality_traits, colors, self._remove_trait)
         self._interest_chips = self._chip_wrap(self._draft.interests, colors, self._remove_interest)
         return ft.Column(
@@ -2063,9 +2198,23 @@ class CompanionAppView(ft.Container, CompanionUIView):
             if mode == "normal":
                 self._trigger_scroll_to_latest()
 
+    def _chat_input_key(self, role_id: str, mode: str) -> tuple[str, str]:
+        return (role_id, mode)
+
+    def _chat_input_value(self, role_id: str, mode: str) -> str:
+        return self._chat_input_drafts.get(self._chat_input_key(role_id, mode), "")
+
+    def _set_chat_input_value(self, role_id: str, mode: str, value: str) -> None:
+        key = self._chat_input_key(role_id, mode)
+        if value:
+            self._chat_input_drafts[key] = value
+        else:
+            self._chat_input_drafts.pop(key, None)
+
     def _send_message(self, value: str) -> None:
         if not self._active_role_id:
             return
+        self._set_chat_input_value(self._active_role_id, self._chat_mode, "")
         self.append_message(ChatMessage(f"user-{len(self._messages) + 1}", self._active_role_id, value, True, datetime.now()))
         self._callback.on_send_message(self._active_role_id, value, self._chat_mode)
 
@@ -2092,18 +2241,26 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 return label
         return "当前"
 
+    def _sync_basic_draft(self) -> None:
+        if not hasattr(self, "_brain_id_field"):
+            return
+        self._draft.brain_id = self._brain_id_field.value or ""
+        self._draft.template = self._template_dropdown.value or "default"
+        self._draft.name = self._name_field.value or ""
+        self._draft.description = self._description_field.value or ""
+
+    def _sync_personality_draft(self) -> None:
+        if not hasattr(self, "_age_field"):
+            return
+        self._draft.age = self._age_field.value or ""
+        self._draft.gender = self._gender_dropdown.value or "unknown"
+        self._draft.birthday = self._birthday_field.value or ""
+        self._draft.background = self._background_field.value or ""
+        self._draft.speaking_style_preset = self._style_dropdown.value or "friendly"
+
     def _persist_current_step(self) -> None:
-        if hasattr(self, "_brain_id_field"):
-            self._draft.brain_id = self._brain_id_field.value or ""
-            self._draft.template = self._template_dropdown.value or "default"
-            self._draft.name = self._name_field.value or ""
-            self._draft.description = self._description_field.value or ""
-        if hasattr(self, "_age_field"):
-            self._draft.age = self._age_field.value or ""
-            self._draft.gender = self._gender_dropdown.value or "unknown"
-            self._draft.birthday = self._birthday_field.value or ""
-            self._draft.background = self._background_field.value or ""
-            self._draft.speaking_style_preset = self._style_dropdown.value or "friendly"
+        self._sync_basic_draft()
+        self._sync_personality_draft()
         if self._memory_editors:
             self._draft.memories = [editor.to_draft() for editor in self._memory_editors]
         if hasattr(self, "_vocabulary_dropdown"):
@@ -2476,8 +2633,12 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 bgcolor="#B42318" if is_error else self.active_role.accent_color,
             )
             page = self.page
-            page.snack_bar = snack_bar
             snack_bar.open = True
-            page.update()
+            show_dialog = getattr(page, "show_dialog", None)
+            if callable(show_dialog):
+                show_dialog(snack_bar)
+            else:
+                page.snack_bar = snack_bar
+                page.update()
         except Exception:
             print(f"[ui] {'error' if is_error else 'notice'}: {message}")

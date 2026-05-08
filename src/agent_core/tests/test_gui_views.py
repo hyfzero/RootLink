@@ -19,7 +19,7 @@ for path in (str(REPO_ROOT), str(SRC_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from GUI.components import MemoryEditor, MessageBubble, RoleFeatureCard
+from GUI.components import ChatInputBar, MemoryEditor, MessageBubble, RoleFeatureCard
 from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUICallback, MemoryDraft, UiSettings
 from GUI.views import HOME_SUBTITLE_TEXT, HOME_TITLE_TEXT, CompanionAppView
 
@@ -61,20 +61,52 @@ def collect_text_values(control) -> list[str]:
 class FakePage:
     def __init__(self) -> None:
         self.task_calls = 0
+        self.dialogs: list[object] = []
+        self.snack_bar = None
+        self.width = 428
+        self.height = 860
+        self.platform = "windows"
+        self.clipboard_text = ""
 
-    def run_task(self, coro_func) -> None:
+    def run_task(self, coro_func, *args) -> None:
         self.task_calls += 1
-        asyncio.run(coro_func())
+        asyncio.run(coro_func(*args))
 
     def update(self, *_controls) -> None:
         return None
 
+    def show_dialog(self, dialog) -> None:
+        self.dialogs.append(dialog)
+
+    def set_clipboard(self, value: str) -> None:
+        self.clipboard_text = value
+
+
+class FakeShareResult:
+    def __init__(self, status: str = "success") -> None:
+        self.status = status
+
+
+class FakeShare:
+    def __init__(self, status: str = "success", should_fail: bool = False) -> None:
+        self.status = status
+        self.should_fail = should_fail
+        self.files: list[object] = []
+        self.kwargs: dict[str, object] = {}
+
+    async def share_files(self, files, **kwargs) -> FakeShareResult:
+        if self.should_fail:
+            raise RuntimeError("share failed")
+        self.files = list(files)
+        self.kwargs = kwargs
+        return FakeShareResult(self.status)
+
 
 class TrackingCompanionAppView(CompanionAppView):
-    def __init__(self, page: FakePage | None = None) -> None:
+    def __init__(self, page: FakePage | None = None, callback: CompanionUICallback | None = None) -> None:
         self.scroll_calls = 0
         self._fake_page = page
-        super().__init__(roles=[make_role()])
+        super().__init__(callback=callback, roles=[make_role()])
 
     @property
     def page(self):  # type: ignore[override]
@@ -169,6 +201,81 @@ class GuiViewTests(unittest.TestCase):
         self.assertEqual(view.content.controls[0].width, 393)
         self.assertEqual(fake_page.task_calls, 1)
 
+    def test_refresh_layout_skips_keyboard_height_resize_when_width_is_unchanged(self) -> None:
+        fake_page = FakePage()
+        fake_page.width = 393
+        fake_page.height = 860
+        view = TrackingCompanionAppView(fake_page)
+        rebuilds = 0
+
+        def rebuild() -> None:
+            nonlocal rebuilds
+            rebuilds += 1
+
+        view._safe_update = rebuild  # type: ignore[method-assign]
+
+        fake_page.height = 560
+        view.refresh_layout()
+
+        self.assertEqual(rebuilds, 0)
+
+    def test_refresh_layout_rebuilds_when_width_changes(self) -> None:
+        fake_page = FakePage()
+        fake_page.width = 393
+        view = TrackingCompanionAppView(fake_page)
+        rebuilds = 0
+
+        def rebuild() -> None:
+            nonlocal rebuilds
+            rebuilds += 1
+
+        view._safe_update = rebuild  # type: ignore[method-assign]
+
+        fake_page.width = 412
+        view.refresh_layout()
+
+        self.assertEqual(rebuilds, 1)
+
+    def test_mobile_create_page_ignores_keyboard_resize_even_if_reported_width_changes(self) -> None:
+        fake_page = FakePage()
+        fake_page.platform = ft.PagePlatform.ANDROID
+        fake_page.width = 393
+        view = TrackingCompanionAppView(fake_page)
+        view._page_name = "create"
+        rebuilds = 0
+
+        def rebuild() -> None:
+            nonlocal rebuilds
+            rebuilds += 1
+
+        view._safe_update = rebuild  # type: ignore[method-assign]
+
+        fake_page.width = 391
+        fake_page.height = 560
+        view.refresh_layout()
+
+        self.assertEqual(rebuilds, 0)
+
+    def test_mobile_chat_page_ignores_keyboard_resize_even_if_reported_width_changes(self) -> None:
+        fake_page = FakePage()
+        fake_page.platform = ft.PagePlatform.ANDROID
+        fake_page.width = 393
+        view = TrackingCompanionAppView(fake_page)
+        view.show_page("chat")
+        rebuilds = 0
+
+        def rebuild() -> None:
+            nonlocal rebuilds
+            rebuilds += 1
+
+        view._safe_update = rebuild  # type: ignore[method-assign]
+
+        fake_page.width = 391
+        fake_page.height = 560
+        view.refresh_layout()
+
+        self.assertEqual(rebuilds, 0)
+
     def test_create_dropdown_uses_opaque_menu_surface(self) -> None:
         view = CompanionAppView(roles=[make_role()])
         colors = view._colors()
@@ -244,6 +351,43 @@ class GuiViewTests(unittest.TestCase):
         self.assertIsNotNone(callback.updated_draft)
         self.assertEqual(callback.updated_draft.name, "Loaded")
 
+    def test_create_form_fields_sync_to_draft_on_change(self) -> None:
+        view = CompanionAppView(roles=[make_role()])
+        colors = view._colors()
+
+        view._basic_step(colors)
+        view._brain_id_field.value = "new-id"
+        view._brain_id_field.on_change(None)
+        view._template_dropdown.value = "strict"
+        view._template_dropdown.on_change(None)
+        view._name_field.value = "New Name"
+        view._name_field.on_change(None)
+        view._description_field.value = "New description"
+        view._description_field.on_change(None)
+
+        self.assertEqual(view._draft.brain_id, "new-id")
+        self.assertEqual(view._draft.template, "strict")
+        self.assertEqual(view._draft.name, "New Name")
+        self.assertEqual(view._draft.description, "New description")
+
+        view._personality_step(colors)
+        view._age_field.value = "18"
+        view._age_field.on_change(None)
+        view._gender_dropdown.value = "female"
+        view._gender_dropdown.on_change(None)
+        view._birthday_field.value = "2026-05-08"
+        view._birthday_field.on_change(None)
+        view._background_field.value = "Background"
+        view._background_field.on_change(None)
+        view._style_dropdown.value = "direct"
+        view._style_dropdown.on_change(None)
+
+        self.assertEqual(view._draft.age, "18")
+        self.assertEqual(view._draft.gender, "female")
+        self.assertEqual(view._draft.birthday, "2026-05-08")
+        self.assertEqual(view._draft.background, "Background")
+        self.assertEqual(view._draft.speaking_style_preset, "direct")
+
     def test_character_package_actions_call_callbacks(self) -> None:
         callback = EditCallback()
         view = CompanionAppView(callback=callback, roles=[make_role()])
@@ -257,6 +401,63 @@ class GuiViewTests(unittest.TestCase):
 
         view._handle_package_pick([PickedFile()])
         self.assertEqual(callback.imported_package_path, "D:/tmp/imported.amadues")
+
+    def test_mobile_export_uses_share_sheet_after_default_export(self) -> None:
+        callback = EditCallback()
+        fake_page = FakePage()
+        fake_page.platform = ft.PagePlatform.ANDROID
+        view = TrackingCompanionAppView(fake_page, callback)
+        share = FakeShare()
+        view._ensure_share = lambda: share  # type: ignore[method-assign]
+
+        view._begin_export_role("amadeus")
+
+        self.assertEqual(callback.exported_role_id, "amadeus")
+        self.assertEqual(callback.exported_destination, "")
+        self.assertEqual(fake_page.task_calls, 1)
+        self.assertEqual(len(share.files), 1)
+        self.assertEqual(share.files[0].path, "default.amadues")
+        self.assertEqual(share.kwargs["title"], "导出角色")
+        self.assertGreaterEqual(len(fake_page.dialogs), 1)
+
+    def test_mobile_export_share_failure_shows_fallback_and_copies_path(self) -> None:
+        callback = EditCallback()
+        fake_page = FakePage()
+        fake_page.platform = ft.PagePlatform.ANDROID
+        view = TrackingCompanionAppView(fake_page, callback)
+        share = FakeShare(should_fail=True)
+        view._ensure_share = lambda: share  # type: ignore[method-assign]
+
+        view._begin_export_role("amadeus")
+
+        self.assertEqual(callback.exported_role_id, "amadeus")
+        self.assertEqual(callback.exported_destination, "")
+        self.assertEqual(fake_page.task_calls, 1)
+        self.assertEqual(fake_page.clipboard_text, "default.amadues")
+        self.assertGreaterEqual(len(fake_page.dialogs), 2)
+
+    def test_desktop_export_uses_save_dialog(self) -> None:
+        callback = EditCallback()
+        fake_page = FakePage()
+        fake_page.platform = "windows"
+        view = TrackingCompanionAppView(fake_page, callback)
+
+        class FakePicker:
+            def __init__(self) -> None:
+                self.save_calls = 0
+
+            async def save_file(self, **_kwargs) -> str:
+                self.save_calls += 1
+                return "D:/tmp/amadeus.amadues"
+
+        picker = FakePicker()
+        view._ensure_file_picker = lambda: picker  # type: ignore[method-assign]
+
+        view._begin_export_role("amadeus")
+
+        self.assertEqual(fake_page.task_calls, 1)
+        self.assertEqual(picker.save_calls, 1)
+        self.assertEqual(callback.exported_destination, "D:/tmp/amadeus.amadues")
 
     def test_memory_editor_type_dropdown_uses_opaque_menu_surface(self) -> None:
         colors = CompanionAppView(roles=[make_role()])._colors()
@@ -283,6 +484,38 @@ class GuiViewTests(unittest.TestCase):
         view._prepare_chat(role.id)
 
         self.assertEqual(view._messages, [])
+
+    def test_chat_input_bar_preserves_draft_and_clears_after_send(self) -> None:
+        role = make_role()
+        sent: list[str] = []
+        changes: list[str] = []
+        bar = ChatInputBar(role, True, "normal", sent.append, initial_value="draft", on_change=changes.append)
+
+        self.assertEqual(bar._field.value, "draft")
+
+        bar._field.value = "changed"
+        bar._handle_change(type("Event", (), {"control": bar._field})())
+
+        self.assertEqual(changes[-1], "changed")
+
+        bar._field.value = "hello"
+        bar._handle_send(None)
+
+        self.assertEqual(sent, ["hello"])
+        self.assertEqual(changes[-1], "")
+
+    def test_chat_input_draft_is_scoped_and_cleared_on_send(self) -> None:
+        role = make_role()
+        view = CompanionAppView(roles=[role])
+        view._active_role_id = role.id
+        view._chat_mode = "normal"
+        view._set_chat_input_value(role.id, "normal", "draft")
+
+        self.assertEqual(view._chat_input_value(role.id, "normal"), "draft")
+
+        view._send_message("hello")
+
+        self.assertEqual(view._chat_input_value(role.id, "normal"), "")
 
     def test_immersive_chat_without_reply_stays_empty(self) -> None:
         role = make_role()
