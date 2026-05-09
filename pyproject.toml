@@ -19,8 +19,8 @@ dev = [
 ]
 
 [tool.flet]
-product = "Amadues Companion"
-artifact = "AmaduesCompanion"
+product = "RootLink"
+artifact = "RootLink"
 org = "com.amadues"
 bundle_id = "com.amadues.companion"
 

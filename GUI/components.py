@@ -67,7 +67,7 @@ def round_icon_button(icon: str, colors: dict[str, str], on_click: Optional[Call
         height=size,
         border_radius=size / 2,
         bgcolor=colors["card"],
-        border=ft.border.all(1, colors["card_border"]),
+        border=ft.Border.all(1, colors["card_border"]),
         alignment=ft.Alignment(0, 0),
         ink=True,
         scale=1.0,
@@ -86,7 +86,7 @@ def avatar(path: str, size: int = 48, ring_color: Optional[str] = None, is_dark:
         border_radius=size / 2,
         clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         bgcolor=hex_with_alpha("#FFFFFF", 0x10 if is_dark else 0x22) if not has_image else None,
-        border=ft.border.all(1, ring_color or hex_with_alpha("#FFFFFF", 0x1A)),
+        border=ft.Border.all(1, ring_color or hex_with_alpha("#FFFFFF", 0x1A)),
         shadow=soft_shadow(is_dark, None, "card") if size >= 72 else None,
         alignment=ft.Alignment(0, 0),
         content=ft.Image(src=path, width=size, height=size, fit=IMAGE_COVER)
@@ -97,7 +97,7 @@ def avatar(path: str, size: int = 48, ring_color: Optional[str] = None, is_dark:
 
 def pill(label: str, color: str, is_dark: bool) -> ft.Container:
     return ft.Container(
-        padding=ft.padding.symmetric(horizontal=10, vertical=5),
+        padding=ft.Padding.symmetric(horizontal=10, vertical=5),
         border_radius=16,
         bgcolor=hex_with_alpha(color, 28 if is_dark else 38),
         content=text(label, 11, hex_with_alpha(color, 238 if is_dark else 255)),
@@ -119,13 +119,13 @@ def dropdown_control_style(colors: dict[str, str], radius: int = 18, text_size: 
         "bgcolor": surface,
         "filled": True,
         "fill_color": surface,
-        "content_padding": ft.padding.symmetric(horizontal=14, vertical=10),
+        "content_padding": ft.Padding.symmetric(horizontal=14, vertical=10),
         "menu_style": ft.MenuStyle(
             bgcolor=surface,
             elevation=12,
             shadow_color=hex_with_alpha("#000000", 0x40 if is_dark else 0x22),
             side=ft.BorderSide(1, border_color),
-            padding=ft.padding.symmetric(vertical=6),
+            padding=ft.Padding.symmetric(vertical=6),
         ),
     }
 
@@ -149,7 +149,7 @@ def section_card(content: ft.Control, colors: dict[str, str], padding: int = 20,
         padding=padding,
         border_radius=radius,
         bgcolor=bgcolor,
-        border=ft.border.all(1, border_color),
+        border=ft.Border.all(1, border_color),
         shadow=soft_shadow(is_dark, None, "card"),
         content=content,
     )
@@ -314,7 +314,7 @@ class RoleFeatureCard(ft.Container):
                 border_radius=19,
                 tooltip="\u7f16\u8f91\u89d2\u8272",
                 bgcolor=hex_with_alpha("#FFFFFF", 28 if is_dark else 180),
-                border=ft.border.all(1, hex_with_alpha("#FFFFFF", 42 if is_dark else 210)),
+                border=ft.Border.all(1, hex_with_alpha("#FFFFFF", 42 if is_dark else 210)),
                 alignment=ft.Alignment(0, 0),
                 ink=True,
                 scale=1.0,
@@ -329,7 +329,7 @@ class RoleFeatureCard(ft.Container):
                 border_radius=19,
                 tooltip="\u5bfc\u51fa\u89d2\u8272",
                 bgcolor=hex_with_alpha("#FFFFFF", 28 if is_dark else 180),
-                border=ft.border.all(1, hex_with_alpha("#FFFFFF", 42 if is_dark else 210)),
+                border=ft.Border.all(1, hex_with_alpha("#FFFFFF", 42 if is_dark else 210)),
                 alignment=ft.Alignment(0, 0),
                 ink=True,
                 scale=1.0,
@@ -350,7 +350,7 @@ class RoleFeatureCard(ft.Container):
                         bottom=2,
                         border_radius=9,
                         bgcolor=role.accent_color,
-                        border=ft.border.all(2, "#1E1A2E" if is_dark else "#EBE9F3"),
+                        border=ft.Border.all(2, "#1E1A2E" if is_dark else "#EBE9F3"),
                     ),
                 ],
             ),
@@ -367,7 +367,7 @@ class RoleFeatureCard(ft.Container):
         super().__init__(
             padding=24,
             border_radius=28,
-            border=ft.border.all(1, hex_with_alpha(role.accent_color, 32 if is_dark else 48)),
+            border=ft.Border.all(1, hex_with_alpha(role.accent_color, 32 if is_dark else 48)),
             gradient=glass_gradient(role.accent_color, is_dark),
             shadow=soft_shadow(is_dark, role.accent_color, "card"),
             opacity=1.0,
@@ -432,7 +432,7 @@ class RoleSelectorCard(ft.Container):
             padding=14,
             border_radius=18,
             opacity=1 if selected else 0.65,
-            border=ft.border.all(1, hex_with_alpha(role.accent_color, 96) if selected else colors["card_border"]),
+            border=ft.Border.all(1, hex_with_alpha(role.accent_color, 96) if selected else colors["card_border"]),
             gradient=glass_gradient(role.accent_color, is_dark, selected),
             shadow=soft_shadow(is_dark, role.accent_color if selected else None, "card") if selected else None,
             ink=True,
@@ -462,7 +462,7 @@ class RecentChatRow(ft.Container):
             padding=16,
             border_radius=18,
             bgcolor=colors["card"],
-            border=ft.border.all(1, colors["card_border"]),
+            border=ft.Border.all(1, colors["card_border"]),
             shadow=soft_shadow(is_dark, None, "card"),
             ink=True,
             scale=1.0,
@@ -494,7 +494,7 @@ class QuickAction(ft.Container):
             padding=14,
             border_radius=18,
             bgcolor=colors["card"],
-            border=ft.border.all(1, colors["card_border"]),
+            border=ft.Border.all(1, colors["card_border"]),
             shadow=soft_shadow(is_dark, None, "card"),
             ink=True,
             scale=1.0,
@@ -523,10 +523,10 @@ class MessageBubble(ft.Container):
             controls=[
                 ft.Container(
                     expand=True,
-                    padding=ft.padding.symmetric(horizontal=14, vertical=10),
-                    border_radius=ft.border_radius.only(top_left=20 if is_user else 12, top_right=12 if is_user else 20, bottom_left=20, bottom_right=20),
+                    padding=ft.Padding.symmetric(horizontal=14, vertical=10),
+                    border_radius=ft.BorderRadius.only(top_left=20 if is_user else 12, top_right=12 if is_user else 20, bottom_left=20, bottom_right=20),
                     bgcolor=bubble_bg,
-                    border=ft.border.all(1, hex_with_alpha(role.accent_color, 0x30 if is_dark else 0x40) if is_user else colors["message_border"]),
+                    border=ft.Border.all(1, hex_with_alpha(role.accent_color, 0x30 if is_dark else 0x40) if is_user else colors["message_border"]),
                     shadow=soft_shadow(is_dark, role.accent_color if is_user else None, "card"),
                     content=text(message.text, 14, colors["text"], max_lines=None),
                 ),
@@ -586,7 +586,7 @@ class ChatInputBar(ft.Container):
             filled=False,
             bgcolor=ft.Colors.TRANSPARENT,
             cursor_color=role.accent_color,
-            content_padding=ft.padding.symmetric(horizontal=18, vertical=12),
+            content_padding=ft.Padding.symmetric(horizontal=18, vertical=12),
             on_change=self._handle_change,
             on_submit=self._handle_send,
             expand=True,
@@ -596,7 +596,7 @@ class ChatInputBar(ft.Container):
             border_radius=24,
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
             bgcolor=self._colors["input"],
-            border=ft.border.all(1, self._colors["input_border"]),
+            border=ft.Border.all(1, self._colors["input_border"]),
             content=self._field,
         )
         mic_button = ft.Container(
@@ -604,7 +604,7 @@ class ChatInputBar(ft.Container):
             height=42,
             border_radius=21,
             bgcolor=self._colors["input_button"],
-            border=ft.border.all(1, self._colors["input_border"]),
+            border=ft.Border.all(1, self._colors["input_border"]),
             alignment=ft.Alignment(0, 0),
             ink=True,
             scale=1.0,
@@ -626,9 +626,9 @@ class ChatInputBar(ft.Container):
             content=ft.Icon(ft.Icons.ARROW_UPWARD, size=21, color="#FFFFFF"),
         )
         super().__init__(
-            padding=ft.padding.only(left=14, right=14, top=10, bottom=18),
+            padding=ft.Padding.only(left=14, right=14, top=10, bottom=18),
             bgcolor=self._colors["input_bar"],
-            border=ft.border.only(top=ft.BorderSide(1, self._colors["card_border"])),
+            border=ft.Border.only(top=ft.BorderSide(1, self._colors["card_border"])),
             content=ft.Row(
                 spacing=10,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -682,7 +682,7 @@ class FormField(ft.TextField):
             bgcolor=fill_color,
             filled=True,
             fill_color=fill_color,
-            content_padding=ft.padding.symmetric(horizontal=14, vertical=12),
+            content_padding=ft.Padding.symmetric(horizontal=14, vertical=12),
         )
 
 
@@ -711,7 +711,7 @@ class MemoryEditor(ft.Container):
             padding=16,
             border_radius=24,
             bgcolor=colors.get("surface_solid_alt", colors["card"]),
-            border=ft.border.all(1, colors.get("dropdown_border", colors["card_border"])),
+            border=ft.Border.all(1, colors.get("dropdown_border", colors["card_border"])),
             shadow=soft_shadow(is_dark_palette(colors), None, "card"),
             content=ft.Column(
                 spacing=10,

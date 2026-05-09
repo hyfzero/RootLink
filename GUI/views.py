@@ -698,17 +698,17 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 "home",
                 0,
                 ft.Container(
-                    padding=ft.padding.only(bottom=2),
+                    padding=ft.Padding.only(bottom=2),
                     content=ft.Row(
                         alignment=ft.MainAxisAlignment.END,
                         spacing=12,
                         controls=[
                             ft.Container(expand=True),
                             ft.Container(
-                                padding=ft.padding.symmetric(horizontal=15, vertical=10),
+                                padding=ft.Padding.symmetric(horizontal=15, vertical=10),
                                 border_radius=22,
                                 bgcolor=colors["card"],
-                                border=ft.border.all(1, colors["card_border"]),
+                                border=ft.Border.all(1, colors["card_border"]),
                                 ink=True,
                                 scale=1.0,
                                 animate_scale=animation("fast", phase="press"),
@@ -760,7 +760,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             ),
             ft.Container(height=28),
         ]
-        return self._page_column([ft.Container(padding=ft.padding.only(left=20, right=20, top=32, bottom=20), content=ft.Column(spacing=28, controls=controls))])
+        return self._page_column([ft.Container(padding=ft.Padding.only(left=20, right=20, top=32, bottom=20), content=ft.Column(spacing=28, controls=controls))])
 
     def _home_quick_actions(self, colors: dict[str, str]) -> ft.Control:
         actions = [
@@ -780,17 +780,17 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 "home",
                 0,
                 ft.Container(
-                    padding=ft.padding.only(bottom=2),
+                    padding=ft.Padding.only(bottom=2),
                     content=ft.Row(
                         alignment=ft.MainAxisAlignment.END,
                         spacing=12,
                         controls=[
                             ft.Container(expand=True),
                             ft.Container(
-                                padding=ft.padding.symmetric(horizontal=15, vertical=10),
+                                padding=ft.Padding.symmetric(horizontal=15, vertical=10),
                                 border_radius=22,
                                 bgcolor=colors["card"],
-                                border=ft.border.all(1, colors["card_border"]),
+                                border=ft.Border.all(1, colors["card_border"]),
                                 ink=True,
                                 scale=1.0,
                                 animate_scale=animation("fast", phase="press"),
@@ -854,7 +854,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             ),
             ft.Container(height=28),
         ]
-        return self._page_column([ft.Container(padding=ft.padding.only(left=20, right=20, top=32, bottom=20), content=ft.Column(spacing=28, controls=controls))])
+        return self._page_column([ft.Container(padding=ft.Padding.only(left=20, right=20, top=32, bottom=20), content=ft.Column(spacing=28, controls=controls))])
 
     def _create_selector_card(self, colors: dict[str, str]) -> ft.Container:
         return ft.Container(
@@ -862,7 +862,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             padding=14,
             border_radius=18,
             bgcolor=colors["card"],
-            border=ft.border.all(2, colors["card_border"]),
+            border=ft.Border.all(2, colors["card_border"]),
             ink=True,
             scale=1.0,
             animate_scale=animation("fast", phase="press"),
@@ -888,8 +888,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     spacing=0,
                     controls=[
                         ft.Container(
-                            padding=ft.padding.only(left=16, right=16, top=26, bottom=12),
-                            border=ft.border.only(bottom=ft.BorderSide(1, colors["card_border"])),
+                            padding=ft.Padding.only(left=16, right=16, top=26, bottom=12),
+                            border=ft.Border.only(bottom=ft.BorderSide(1, colors["card_border"])),
                             content=ft.Row(
                                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                                 controls=[
@@ -901,7 +901,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         ),
                         ft.Container(
                             expand=True,
-                            padding=ft.padding.symmetric(horizontal=16, vertical=20),
+                            padding=ft.Padding.symmetric(horizontal=16, vertical=20),
                             content=section_card(
                                 ft.Column(
                                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -927,8 +927,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
             overflow=ft.TextOverflow.ELLIPSIS,
         )
         header = ft.Container(
-            padding=ft.padding.only(left=16, right=16, top=26, bottom=12),
-            border=ft.border.only(bottom=ft.BorderSide(1, colors["card_border"])),
+            padding=ft.Padding.only(left=16, right=16, top=26, bottom=12),
+            border=ft.Border.only(bottom=ft.BorderSide(1, colors["card_border"])),
             content=ft.Row(
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 controls=[
@@ -1023,7 +1023,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             padding=4,
             border_radius=16,
             bgcolor=colors["card"],
-            border=ft.border.all(1, colors["card_border"]),
+            border=ft.Border.all(1, colors["card_border"]),
             content=ft.Row(
                 spacing=4,
                 controls=[
@@ -1040,7 +1040,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             height=32,
             border_radius=16,
             bgcolor=hex_with_alpha(self.active_role.accent_color, 58 if active else 0) if active else None,
-            border=ft.border.all(1, hex_with_alpha(self.active_role.accent_color, 70) if active else colors["card_border"]),
+            border=ft.Border.all(1, hex_with_alpha(self.active_role.accent_color, 70) if active else colors["card_border"]),
             tooltip=tooltip,
             alignment=ft.Alignment(0, 0),
             ink=True,
@@ -1315,7 +1315,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         )
         return ft.Container(
             expand=True,
-            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            padding=ft.Padding.symmetric(horizontal=16, vertical=10),
             content=self._chat_list_view,
         )
 
@@ -1326,10 +1326,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
             controls=[
                 avatar(role.avatar_path, 32, colors["card_border"], self._is_dark),
                 ft.Container(
-                    padding=ft.padding.symmetric(horizontal=12, vertical=10),
+                    padding=ft.Padding.symmetric(horizontal=12, vertical=10),
                     border_radius=14,
                     bgcolor=colors["message"],
-                    border=ft.border.all(1, colors["message_border"]),
+                    border=ft.Border.all(1, colors["message_border"]),
                     content=TypingDots(colors["text_secondary"]),
                 ),
             ],
@@ -1347,10 +1347,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
         dialogue: ft.Control = ft.Container(
             height=168,
             margin=ft.margin.only(left=16, right=16, bottom=12),
-            padding=ft.padding.symmetric(horizontal=18, vertical=16),
+            padding=ft.Padding.symmetric(horizontal=18, vertical=16),
             border_radius=24,
             gradient=glass_gradient(role.accent_color, self._is_dark, strong=True),
-            border=ft.border.all(1, hex_with_alpha(role.accent_color, 0x36 if self._is_dark else 0x48)),
+            border=ft.Border.all(1, hex_with_alpha(role.accent_color, 0x36 if self._is_dark else 0x48)),
             shadow=soft_shadow(self._is_dark, role.accent_color, "card"),
             ink=True,
             scale=1.0,
@@ -1386,7 +1386,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         expand=True,
                         alignment=ft.Alignment(0, 1),
                         clip_behavior=ft.ClipBehavior.HARD_EDGE,
-                        padding=ft.padding.only(left=10, right=10, top=10),
+                        padding=ft.Padding.only(left=10, right=10, top=10),
                         content=portrait,
                     ),
                     dialogue,
@@ -1455,7 +1455,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._stagger("settings", 5, self._primary_button("保存", self.active_role.accent_color, lambda _: self._save_settings())),
             ft.Container(height=28),
         ]
-        return self._page_column([ft.Container(padding=ft.padding.symmetric(horizontal=20), content=ft.Column(spacing=14, controls=controls))])
+        return self._page_column([ft.Container(padding=ft.Padding.symmetric(horizontal=20), content=ft.Column(spacing=14, controls=controls))])
 
     def _settings_profile_card(self, colors: dict[str, str]) -> ft.Control:
         image_path = self._settings.user_avatar_path or self.active_role.avatar_path
@@ -1569,7 +1569,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._stagger("create", 3, self._create_footer(colors), offset_y=0.03),
             ft.Container(height=24),
         ]
-        return self._page_column([ft.Container(padding=ft.padding.only(left=20, right=20, top=4, bottom=20), content=ft.Column(spacing=18, controls=controls))])
+        return self._page_column([ft.Container(padding=ft.Padding.only(left=20, right=20, top=4, bottom=20), content=ft.Column(spacing=18, controls=controls))])
 
     def _create_progress(self, colors: dict[str, str]) -> ft.Control:
         bars: list[ft.Control] = []
@@ -1664,10 +1664,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
             selected = emotion_id == self._emotion_id
             chips.append(
                 ft.Container(
-                    padding=ft.padding.symmetric(horizontal=10, vertical=7),
+                    padding=ft.Padding.symmetric(horizontal=10, vertical=7),
                     border_radius=14,
                     bgcolor=hex_with_alpha(self.active_role.accent_color, 58 if selected else 0),
-                    border=ft.border.all(1, hex_with_alpha(self.active_role.accent_color, 80) if selected else colors["card_border"]),
+                    border=ft.Border.all(1, hex_with_alpha(self.active_role.accent_color, 80) if selected else colors["card_border"]),
                     ink=True,
                     scale=1.0,
                     animate_scale=animation("fast", phase="press"),
@@ -1693,7 +1693,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                                 border_radius=41,
                                 clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
                                 bgcolor=colors["muted"],
-                                border=ft.border.all(1, colors["card_border"]),
+                                border=ft.Border.all(1, colors["card_border"]),
                                 content=ft.Image(src=avatar_path, fit=IMAGE_COVER)
                                 if avatar_path
                                 else ft.Icon(ft.Icons.PERSON, size=28, color=colors["text_tertiary"]),
@@ -1722,7 +1722,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         border_radius=18,
                         clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
                         bgcolor=colors["muted"],
-                        border=ft.border.all(1, colors["card_border"]),
+                        border=ft.Border.all(1, colors["card_border"]),
                         alignment=ft.Alignment(0, 0),
                         content=ft.Image(src=preview_path, fit=IMAGE_CONTAIN)
                         if preview_path
@@ -1748,10 +1748,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
         edit = self._draft.portrait_edits.get(self._emotion_id)
         if edit is None or not edit.source_path:
             return ft.Container(
-                padding=ft.padding.symmetric(horizontal=14, vertical=12),
+                padding=ft.Padding.symmetric(horizontal=14, vertical=12),
                 border_radius=14,
                 bgcolor=hex_with_alpha(self.active_role.accent_color, 28),
-                border=ft.border.all(1, hex_with_alpha(self.active_role.accent_color, 58)),
+                border=ft.Border.all(1, hex_with_alpha(self.active_role.accent_color, 58)),
                 content=ft.Row(
                     spacing=8,
                     controls=[
@@ -1770,20 +1770,20 @@ class CompanionAppView(ft.Container, CompanionUIView):
         warning = ft.Container()
         if edit.warning:
             warning = ft.Container(
-                padding=ft.padding.symmetric(horizontal=12, vertical=9),
+                padding=ft.Padding.symmetric(horizontal=12, vertical=9),
                 border_radius=12,
                 bgcolor=hex_with_alpha("#F59E0B", 34),
-                border=ft.border.all(1, hex_with_alpha("#F59E0B", 78)),
+                border=ft.Border.all(1, hex_with_alpha("#F59E0B", 78)),
                 content=text(edit.warning, 11, colors["text_secondary"]),
             )
 
         status = ft.Container()
         if self._portrait_rendering_emotion_id == self._emotion_id:
             status = ft.Container(
-                padding=ft.padding.symmetric(horizontal=12, vertical=9),
+                padding=ft.Padding.symmetric(horizontal=12, vertical=9),
                 border_radius=12,
                 bgcolor=hex_with_alpha(self.active_role.accent_color, 28),
-                border=ft.border.all(1, hex_with_alpha(self.active_role.accent_color, 58)),
+                border=ft.Border.all(1, hex_with_alpha(self.active_role.accent_color, 58)),
                 content=ft.Row(
                     spacing=8,
                     controls=[
@@ -1811,7 +1811,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             padding=14,
             border_radius=18,
             bgcolor=colors["input"],
-            border=ft.border.all(1, colors["input_border"]),
+            border=ft.Border.all(1, colors["input_border"]),
             content=ft.Column(
                 spacing=10,
                 controls=[
@@ -1842,7 +1842,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                                     text("选一块纯背景作为清理参考", 11, colors["text_tertiary"]),
                                 ],
                             ),
-                            ft.Container(width=18, height=18, border_radius=9, bgcolor=self._portrait_color_hex(edit.background_color), border=ft.border.all(1, colors["card_border"])),
+                            ft.Container(width=18, height=18, border_radius=9, bgcolor=self._portrait_color_hex(edit.background_color), border=ft.Border.all(1, colors["card_border"])),
                         ],
                     ),
                     ft.Row(
@@ -1887,10 +1887,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _portrait_preset_button(self, preset_id: str, label: str, edit: PortraitEditDraft, colors: dict[str, str]) -> ft.Control:
         selected = self._portrait_preset_id(edit) == preset_id
         return ft.Container(
-            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=8),
             border_radius=12,
             bgcolor=hex_with_alpha(self.active_role.accent_color, 48) if selected else colors["card_strong"],
-            border=ft.border.all(1, hex_with_alpha(self.active_role.accent_color, 88) if selected else colors["card_border"]),
+            border=ft.Border.all(1, hex_with_alpha(self.active_role.accent_color, 88) if selected else colors["card_border"]),
             ink=True,
             scale=1.0,
             animate_scale=animation("fast", phase="press"),
@@ -1900,10 +1900,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _mini_button(self, label: str, colors: dict[str, str], on_click) -> ft.Control:
         return ft.Container(
-            padding=ft.padding.symmetric(horizontal=10, vertical=7),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=7),
             border_radius=12,
             bgcolor=colors["card_strong"],
-            border=ft.border.all(1, colors["card_border"]),
+            border=ft.Border.all(1, colors["card_border"]),
             ink=True,
             scale=1.0,
             animate_scale=animation("fast", phase="press"),
@@ -2086,10 +2086,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
         for item in values:
             chips.append(
                 ft.Container(
-                    padding=ft.padding.symmetric(horizontal=10, vertical=6),
+                    padding=ft.Padding.symmetric(horizontal=10, vertical=6),
                     border_radius=14,
                     bgcolor=colors["muted"],
-                    border=ft.border.all(1, colors["card_border"]),
+                    border=ft.Border.all(1, colors["card_border"]),
                     content=ft.Row(
                         spacing=6,
                         tight=True,
@@ -2134,7 +2134,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _header(self, title: str, colors: dict[str, str], on_back=None) -> ft.Container:
         return ft.Container(
-            padding=ft.padding.only(left=0, right=0, top=26, bottom=16),
+            padding=ft.Padding.only(left=0, right=0, top=26, bottom=16),
             content=ft.Row(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -2177,7 +2177,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             height=48,
             border_radius=18,
             bgcolor=fill_color,
-            border=ft.border.all(1, border_color),
+            border=ft.Border.all(1, border_color),
             shadow=None if subtle else soft_shadow(self._is_dark, None, "card"),
             alignment=ft.Alignment(0, 0),
             ink=True,

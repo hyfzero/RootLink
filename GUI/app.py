@@ -60,7 +60,7 @@ def _configure_bundled_flet_view_path() -> None:
 
 
 def _configure_page(page: ft.Page, *, is_dark: bool) -> None:
-    page.title = "Amadues Companion"
+    page.title = "RootLink"
     page.theme_mode = ft.ThemeMode.DARK if is_dark else ft.ThemeMode.LIGHT
     page.padding = 0
     page.spacing = 0
