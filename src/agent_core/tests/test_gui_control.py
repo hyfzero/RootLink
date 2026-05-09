@@ -34,6 +34,7 @@ from GUI.control import (
     UiSettingsStorage,
     _load_model_config,
     build_amadues_runtime,
+    ensure_default_startup_data,
 )
 from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUIView, UiSettings
 from GUI.role_loader import load_roles_from_data
@@ -305,6 +306,17 @@ class GuiControlTests(unittest.TestCase):
 
             self.assertEqual(runtime.brain_registry.current_brain_id(), SHINJI_BRAIN_ID)
 
+    def test_default_startup_data_uses_updated_shinji_description(self) -> None:
+        ensure_default_startup_data()
+
+        profile_path = Path(self._data_tmp.name) / SHINJI_BRAIN_ID / "persona" / "profile.json"
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        ui_path = Path(self._data_tmp.name) / SHINJI_BRAIN_ID / "ui.json"
+        ui_data = json.loads(ui_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(profile["background"], "14岁时被任命为EVA初号机驾驶员，成为第三适格者")
+        self.assertEqual(ui_data["intro"], "14岁时被任命为EVA初号机驾驶员，成为第三适格者")
+
     def test_bind_view_keeps_roles_empty_when_data_directory_has_no_brain(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
             os.environ[PathResolver.ENV_CONFIG_DIR] = config_dir
@@ -429,8 +441,8 @@ class GuiControlTests(unittest.TestCase):
 
             self.assertIn(AMADUES_UI_ROLE_ID, view.role_messages)
             notice = view.role_messages[AMADUES_UI_ROLE_ID][0]
-            self.assertIn("MiniMax", notice.text)
             self.assertIn("API Key", notice.text)
+            self.assertNotIn("MiniMax", notice.text)
 
     def test_open_chat_loads_today_messages(self) -> None:
         timestamp = 1_700_000_000

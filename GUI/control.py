@@ -71,6 +71,7 @@ PROVIDER_API_ENUMS = {
 }
 DEFAULT_ASSISTANT_NAME = "Amadues"
 CONFIG_NOTICE = "\u8bf7\u5148\u5728\u8bbe\u7f6e\u9875\u4fdd\u5b58 API Key\u3002"
+MISSING_API_KEY_NOTICE = f"API Key \u5c1a\u672a\u914d\u7f6e\u3002{CONFIG_NOTICE}"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RESOURCE_DIR = PROJECT_ROOT / "resource"
 DEFAULT_RESPONSE_LIMITS = {"max_tokens": 2000, "max_sentences": 5}
@@ -459,7 +460,7 @@ def _ensure_default_shinji_data(brain_id: str = SHINJI_BRAIN_ID) -> Path:
                 "害怕被拒绝",
                 "渴望被理解",
             ],
-            "background": "第三新东京市的 EVA 驾驶员。习惯把真实想法压低，不主动打扰别人，也不擅长直接说出自己的需要。面对压力时容易退缩，但仍会认真倾听他人的话，并试着用温和、笨拙的方式回应。",
+            "background": "14岁时被任命为EVA初号机驾驶员，成为第三适格者",
             "speaking_style": "gentle",
             "birthday": "6月6日",
             "interests": ["听音乐", "拉大提琴", "安静的地方", "被需要的感觉"],
@@ -498,7 +499,7 @@ def _ensure_default_shinji_data(brain_id: str = SHINJI_BRAIN_ID) -> Path:
         {
             "type": "内向倾听型",
             "tags": ["敏感", "克制", "共情"],
-            "intro": "不太会热闹地安慰你，但会认真听你说完。",
+            "intro": "14岁时被任命为EVA初号机驾驶员，成为第三适格者",
             "status_text": "",
             "accent_color": "#AEB8C7",
             "avatar": "assets/avatar.png",
@@ -695,7 +696,7 @@ class AmaduesController(CompanionUICallback):
         except ChatConfigurationError:
             self._replace_role_messages(
                 role_id,
-                [self._notice(role_id, f"MiniMax \u5c1a\u672a\u914d\u7f6e\u3002{CONFIG_NOTICE}")],
+                [self._notice(role_id, MISSING_API_KEY_NOTICE)],
             )
         except Exception as exc:
             self._replace_role_messages(
@@ -785,7 +786,7 @@ class AmaduesController(CompanionUICallback):
                     raise RuntimeError(str(event.get("error", "unknown streaming error")))
         except ChatConfigurationError:
             self.view.append_message(
-                self._notice(role_id, f"MiniMax \u5c1a\u672a\u914d\u7f6e\u3002{CONFIG_NOTICE}")
+                self._notice(role_id, MISSING_API_KEY_NOTICE)
             )
         except Exception as exc:
             self.view.append_message(self._notice(role_id, f"\u6d88\u606f\u53d1\u9001\u5931\u8d25\uff1a{exc}"))

@@ -19,7 +19,7 @@ for path in (str(REPO_ROOT), str(SRC_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from GUI.components import ChatInputBar, MemoryEditor, MessageBubble, RoleFeatureCard
+from GUI.components import ChatInputBar, MemoryEditor, MessageBubble, RoleFeatureCard, RoleSelectorCard
 from GUI.app import _bind_system_back
 from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUICallback, MemoryDraft, UiSettings
 from GUI.views import HOME_SUBTITLE_TEXT, HOME_TITLE_TEXT, CompanionAppView
@@ -185,8 +185,9 @@ class GuiViewTests(unittest.TestCase):
         self.assertEqual(HOME_TITLE_TEXT, "今天想和谁聊聊天")
         self.assertEqual(HOME_SUBTITLE_TEXT, "在一切的根部，我们彼此相连")
 
-    def test_role_feature_card_hides_personality_tags(self) -> None:
+    def test_role_feature_card_shows_traits_instead_of_type(self) -> None:
         role = make_role()
+        role.type = "内向倾听型"
         role.tags = ["敏感", "克制", "共情"]
 
         card = RoleFeatureCard(role, True, lambda _role_id: None)
@@ -196,6 +197,18 @@ class GuiViewTests(unittest.TestCase):
         self.assertNotIn("敏感", text_values)
         self.assertNotIn("克制", text_values)
         self.assertNotIn("共情", text_values)
+        self.assertNotIn("内向倾听型", text_values)
+
+    def test_role_selector_card_shows_traits_instead_of_type(self) -> None:
+        role = make_role()
+        role.type = "内向倾听型"
+        role.tags = ["敏感", "克制", "共情"]
+
+        card = RoleSelectorCard(role, True, True, lambda _role_id: None)
+
+        text_values = collect_text_values(card)
+        self.assertIn("敏感 · 克制 · 共情", text_values)
+        self.assertNotIn("内向倾听型", text_values)
 
     def test_home_quick_actions_stack_on_narrow_width(self) -> None:
         page = FakePage()

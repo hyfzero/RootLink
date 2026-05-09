@@ -57,6 +57,10 @@ def text(value: str, size: int, color: str, weight: ft.FontWeight | str | None =
     return ft.Text(value, size=size, color=color, weight=weight, font_family=UI_FONT_FAMILY, **kwargs)
 
 
+def _role_tags(role: CompanionRole, limit: int) -> list[str]:
+    return [tag.strip() for tag in role.tags[:limit] if tag.strip()]
+
+
 def round_icon_button(icon: str, colors: dict[str, str], on_click: Optional[Callable] = None, size: int = 40) -> ft.Container:
     return ft.Container(
         width=size,
@@ -355,7 +359,6 @@ class RoleFeatureCard(ft.Container):
                 spacing=7,
                 controls=[
                     text(role.name, 20, colors["text"], ft.FontWeight.W_500),
-                    text(role.type, 13, hex_with_alpha(role.accent_color, 220)),
                 ],
             ),
         ]
@@ -409,6 +412,21 @@ class RoleSelectorCard(ft.Container):
 
     def __init__(self, role: CompanionRole, selected: bool, is_dark: bool, on_select: Callable[[str], None]) -> None:
         colors = palette(is_dark)
+        tags = _role_tags(role, 3)
+        label_controls: list[ft.Control] = [
+            text(role.name, 13, colors["text"], ft.FontWeight.W_500, text_align=ft.TextAlign.CENTER),
+        ]
+        if tags:
+            label_controls.append(
+                text(
+                    " · ".join(tags),
+                    10,
+                    colors["text_tertiary"],
+                    max_lines=1,
+                    overflow=ft.TextOverflow.ELLIPSIS,
+                    text_align=ft.TextAlign.CENTER,
+                )
+            )
         super().__init__(
             width=140,
             padding=14,
@@ -430,10 +448,7 @@ class RoleSelectorCard(ft.Container):
                     ft.Column(
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                         spacing=2,
-                        controls=[
-                            text(role.name, 13, colors["text"], ft.FontWeight.W_500, text_align=ft.TextAlign.CENTER),
-                            text(role.type, 10, colors["text_tertiary"], max_lines=1, overflow=ft.TextOverflow.ELLIPSIS, text_align=ft.TextAlign.CENTER),
-                        ],
+                        controls=label_controls,
                     ),
                 ],
             ),
