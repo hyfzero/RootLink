@@ -1505,7 +1505,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
         controls = [
             self._stagger("settings", 0, self._header("设置", colors, lambda _: self.go_back()), offset_y=0.02),
-            self._stagger("settings", 1, self._settings_profile_card(colors)),
+            # self._stagger("settings", 1, self._settings_profile_card(colors)),
             self._stagger("settings", 2, section_card(self._quality_card(colors), colors)),
             self._stagger("settings", 3, section_card(self._provider_card(colors), colors)),
             self._stagger("settings", 4, section_card(self._api_key_card(colors), colors)),
