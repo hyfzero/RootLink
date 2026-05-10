@@ -19,7 +19,7 @@ for path in (str(REPO_ROOT), str(SRC_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from GUI.components import ChatInputBar, MemoryEditor, MessageBubble, RoleFeatureCard, RoleSelectorCard
+from GUI.components import ChatInputBar, MemoryEditor, MessageBubble, RoleFeatureCard, RoleSelectorCard, animated_click
 from GUI.app import _bind_system_back
 from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUICallback, MemoryDraft, UiSettings
 from GUI.views import HOME_SUBTITLE_TEXT, HOME_TITLE_TEXT, CompanionAppView
@@ -87,6 +87,31 @@ class FakePage:
         self.clipboard_text = value
 
 
+class DeferredTaskPage(FakePage):
+    def __init__(self) -> None:
+        super().__init__()
+        self.tasks: list[tuple[object, tuple[object, ...]]] = []
+
+    def run_task(self, coro_func, *args) -> None:
+        self.task_calls += 1
+        self.tasks.append((coro_func, args))
+
+
+class FakeTapControl:
+    def __init__(self, page: FakePage | None) -> None:
+        self.page = page
+        self.scale = 1.0
+        self.update_calls = 0
+
+    def update(self) -> None:
+        self.update_calls += 1
+
+
+class FakeTapEvent:
+    def __init__(self, control: FakeTapControl) -> None:
+        self.control = control
+
+
 class FakeWindow:
     def __init__(self) -> None:
         self.closed = False
@@ -127,7 +152,7 @@ class TrackingCompanionAppView(CompanionAppView):
             raise RuntimeError("Control must be added to the page first")
         return self._fake_page
 
-    async def _scroll_chat_to_latest_async(self) -> None:
+    async def _scroll_chat_to_latest_async(self, generation: int | None = None) -> None:
         self.scroll_calls += 1
 
 
@@ -178,6 +203,14 @@ class SettingsCallback(CompanionUICallback):
 
     def on_settings_saved(self, settings: UiSettings) -> None:
         self.saved_settings = settings
+
+
+class ModeCallback(CompanionUICallback):
+    def __init__(self) -> None:
+        self.modes: list[str] = []
+
+    def on_chat_mode_changed(self, mode: str) -> None:
+        self.modes.append(mode)
 
 
 class GuiViewTests(unittest.TestCase):
@@ -248,6 +281,75 @@ class GuiViewTests(unittest.TestCase):
         view.refresh_layout()
 
         self.assertEqual(rebuilds, 0)
+
+    def test_animated_click_suppresses_repeated_taps_until_restore_finishes(self) -> None:
+        page = DeferredTaskPage()
+        control = FakeTapControl(page)
+        calls = 0
+
+        def handler(_) -> None:
+            nonlocal calls
+            calls += 1
+
+        wrapped = animated_click(handler)
+        event = FakeTapEvent(control)
+
+        wrapped(event)
+        wrapped(event)
+
+        self.assertEqual(calls, 1)
+        self.assertEqual(page.task_calls, 1)
+        self.assertEqual(control.update_calls, 1)
+        self.assertEqual(control.scale, 0.96)
+
+        coro_func, args = page.tasks.pop()
+        asyncio.run(coro_func(*args))
+        wrapped(event)
+
+        self.assertEqual(calls, 2)
+        self.assertEqual(page.task_calls, 2)
+
+    def test_mode_button_uses_icon_button_and_enters_immersive_mode(self) -> None:
+        page = FakePage()
+        callback = ModeCallback()
+        view = TrackingCompanionAppView(page=page, callback=callback)
+        button = view._mode_button("immersive", ft.Icons.AUTO_AWESOME, "沉浸陪伴", view._colors())
+
+        self.assertIsInstance(button, ft.IconButton)
+        button.on_click(FakeTapEvent(FakeTapControl(page)))
+
+        self.assertEqual(view._chat_mode, "immersive")
+        self.assertEqual(callback.modes, ["immersive"])
+
+    def test_reselecting_current_chat_mode_is_idempotent(self) -> None:
+        page = FakePage()
+        callback = ModeCallback()
+        view = TrackingCompanionAppView(page=page, callback=callback)
+
+        view._set_chat_mode("immersive")
+        mode_seed = view._chat_mode_seed
+        view._set_chat_mode("immersive")
+
+        self.assertEqual(callback.modes, ["immersive"])
+        self.assertEqual(view._chat_mode_seed, mode_seed)
+
+    def test_stale_immersive_typewriter_task_does_not_update_dialogue(self) -> None:
+        role = make_role()
+        page = DeferredTaskPage()
+        view = TrackingCompanionAppView(page=page)
+        view._page_name = "chat"
+        view._chat_mode = "immersive"
+        view._active_role_id = role.id
+        view._messages = [ChatMessage("assistant-1", role.id, "第一句。", False, datetime.now())]
+        view._immersive_dialogue_text = ft.Text("")
+        view._reset_immersive_state(role)
+
+        view._schedule_immersive_typewriter()
+        view._immersive_typewriter_generation += 1
+        coro_func, args = page.tasks.pop()
+        asyncio.run(coro_func(*args))
+
+        self.assertEqual(view._immersive_dialogue_text.value, "")
 
     def test_refresh_layout_rebuilds_when_width_changes(self) -> None:
         fake_page = FakePage()

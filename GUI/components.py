@@ -24,31 +24,72 @@ _DROPDOWN_ACCEPTS_MENU_STYLE = "menu_style" in inspect.signature(ft.Dropdown).pa
 def animated_click(handler: Optional[Callable], pressed_scale: float = 0.96) -> Callable:
     """Wrap click handlers with a short tap-scale feedback animation."""
 
-    def _handle(event) -> None:
-        control = event.control
-        try:
-            control.scale = pressed_scale
-            control.update()
-        except (AssertionError, RuntimeError):
-            pass
+    press_active = False
 
-        if handler:
-            handler(event)
+    def _control_page(control) -> object | None:
+        try:
+            return control.page
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
+            return None
+
+    def _safe_update_control(control) -> bool:
+        try:
+            control.update()
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
+            return False
+        return True
+
+    def _handle(event) -> None:
+        nonlocal press_active
+        if press_active:
+            return
+        press_active = True
+
+        control = getattr(event, "control", None)
+        page = _control_page(control) if control is not None else None
+        if control is not None:
+            try:
+                control.scale = pressed_scale
+            except (AssertionError, RuntimeError, TypeError, AttributeError):
+                pass
+            if page is not None:
+                _safe_update_control(control)
+
+        handler_error = None
+        try:
+            if handler:
+                handler(event)
+        except Exception as exc:
+            handler_error = exc
 
         async def _restore() -> None:
+            nonlocal press_active
             await asyncio.sleep(0.08)
-            try:
-                control.scale = 1.0
-                control.update()
-            except (AssertionError, RuntimeError):
-                pass
+            if control is not None:
+                try:
+                    control.scale = 1.0
+                except (AssertionError, RuntimeError, TypeError, AttributeError):
+                    pass
+                if _control_page(control) is not None:
+                    _safe_update_control(control)
+            press_active = False
 
-        try:
-            page = control.page
-        except RuntimeError:
-            page = None
-        if page:
-            page.run_task(_restore)
+        run_task = getattr(page, "run_task", None) if page is not None else None
+        if callable(run_task):
+            try:
+                run_task(_restore)
+            except (AssertionError, RuntimeError, TypeError, AttributeError):
+                press_active = False
+        else:
+            if control is not None:
+                try:
+                    control.scale = 1.0
+                except (AssertionError, RuntimeError, TypeError, AttributeError):
+                    pass
+            press_active = False
+
+        if handler_error is not None:
+            raise handler_error
 
     return _handle
 
@@ -170,6 +211,7 @@ class MotionEntry(ft.Container):
     ) -> None:
         self._delay_ms = delay_ms
         self._alive = True
+        self._entry_generation = 0
         self._initial_offset = offset or ft.Offset(0, 0.05)
         super().__init__(
             key=key,
@@ -183,25 +225,35 @@ class MotionEntry(ft.Container):
         )
 
     def did_mount(self) -> None:
+        self._alive = True
+        self._entry_generation += 1
         try:
-            self.page.run_task(self._enter)
-        except RuntimeError:
+            page = self.page
+            run_task = getattr(page, "run_task", None)
+            if callable(run_task):
+                run_task(self._enter, self._entry_generation)
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
             pass
 
     def will_unmount(self) -> None:
         self._alive = False
+        self._entry_generation += 1
 
-    async def _enter(self) -> None:
+    async def _enter(self, generation: int) -> None:
         if self._delay_ms > 0:
             await asyncio.sleep(self._delay_ms / 1000)
-        if not self._alive:
+        if not self._alive or generation != self._entry_generation:
+            return
+        try:
+            self.page
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
             return
         self.opacity = 1
         self.offset = ft.Offset(0, 0)
         self.scale = 1
         try:
             self.update()
-        except (AssertionError, RuntimeError):
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
             pass
 
 
@@ -250,18 +302,24 @@ class TypingDots(ft.Row):
     def __init__(self, color: str) -> None:
         self._phase = 0
         self._alive = True
+        self._pulse_generation = 0
         self._color = color
         super().__init__(spacing=5, tight=True, controls=self._build_dots())
 
     def did_mount(self) -> None:
         self._alive = True
+        self._pulse_generation += 1
         try:
-            self.page.run_task(self._pulse_loop)
-        except RuntimeError:
+            page = self.page
+            run_task = getattr(page, "run_task", None)
+            if callable(run_task):
+                run_task(self._pulse_loop, self._pulse_generation)
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
             pass
 
     def will_unmount(self) -> None:
         self._alive = False
+        self._pulse_generation += 1
 
     def _build_dots(self) -> list[ft.Control]:
         dots: list[ft.Control] = []
@@ -281,16 +339,17 @@ class TypingDots(ft.Row):
             )
         return dots
 
-    async def _pulse_loop(self) -> None:
-        while self._alive:
+    async def _pulse_loop(self, generation: int) -> None:
+        while self._alive and generation == self._pulse_generation:
             await asyncio.sleep(0.42)
-            if not self._alive:
+            if not self._alive or generation != self._pulse_generation:
                 break
             self._phase = (self._phase + 1) % 3
             self.controls = self._build_dots()
             try:
+                self.page
                 self.update()
-            except (AssertionError, RuntimeError):
+            except (AssertionError, RuntimeError, TypeError, AttributeError):
                 break
 
 

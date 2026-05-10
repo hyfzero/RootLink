@@ -199,6 +199,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._immersive_index = 0
         self._immersive_display_text = ""
         self._immersive_typewriter_generation = 0
+        self._scroll_generation = 0
         self._last_content_width: int | None = None
         self._last_content_width_from_page = False
         self._build()
@@ -1033,22 +1034,29 @@ class CompanionAppView(ft.Container, CompanionUIView):
             ),
         )
 
-    def _mode_button(self, mode: str, icon: str, tooltip: str, colors: dict[str, str]) -> ft.Container:
+    def _mode_button(self, mode: str, icon: str, tooltip: str, colors: dict[str, str]) -> ft.IconButton:
         active = self._chat_mode == mode
-        return ft.Container(
+        border_color = hex_with_alpha(self.active_role.accent_color, 70) if active else colors["card_border"]
+        return ft.IconButton(
+            icon=icon,
+            icon_size=16,
+            icon_color=colors["text"] if active else colors["text_secondary"],
+            bgcolor=hex_with_alpha(self.active_role.accent_color, 58) if active else None,
+            tooltip=tooltip,
             width=32,
             height=32,
-            border_radius=16,
-            bgcolor=hex_with_alpha(self.active_role.accent_color, 58 if active else 0) if active else None,
-            border=ft.Border.all(1, hex_with_alpha(self.active_role.accent_color, 70) if active else colors["card_border"]),
-            tooltip=tooltip,
             alignment=ft.Alignment(0, 0),
-            ink=True,
+            padding=0,
+            splash_radius=18,
             scale=1.0,
             animate_scale=animation("fast", phase="press"),
             animate_opacity=animation("normal"),
+            style=ft.ButtonStyle(
+                padding=0,
+                side=ft.BorderSide(1, border_color),
+                shape=ft.RoundedRectangleBorder(radius=16),
+            ),
             on_click=animated_click(lambda _: self._set_chat_mode(mode)),
-            content=ft.Icon(icon, size=16, color=colors["text"] if active else colors["text_secondary"]),
         )
 
     def _latest_role_reply_text(self, role: CompanionRole) -> str:
@@ -1134,26 +1142,38 @@ class CompanionAppView(ft.Container, CompanionUIView):
         except RuntimeError:
             return
         self._pending_scroll_to_latest = False
+        self._scroll_generation += 1
+        generation = self._scroll_generation
 
         async def _scroll_now() -> None:
-            await self._scroll_chat_to_latest_async()
+            await self._scroll_chat_to_latest_async(generation)
 
         async def _after_mount() -> None:
             await asyncio.sleep(0.05)
-            await self._scroll_chat_to_latest_async()
+            await self._scroll_chat_to_latest_async(generation)
 
-        page.run_task(_scroll_now)
-        page.run_task(_after_mount)
+        run_task = getattr(page, "run_task", None)
+        if not callable(run_task):
+            return
+        try:
+            run_task(_scroll_now)
+            run_task(_after_mount)
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
+            return
 
-    async def _scroll_chat_to_latest_async(self) -> None:
+    async def _scroll_chat_to_latest_async(self, generation: int | None = None) -> None:
+        if generation is not None and generation != self._scroll_generation:
+            return
         if self._chat_mode != "normal" or self._chat_list_view is None:
             return
         if not self._has_normal_chat_content(self.active_role.id):
             return
         try:
             await self._chat_list_view.scroll_to(offset=0, duration=0)
+            if generation is not None and generation != self._scroll_generation:
+                return
             self._chat_list_view.update()
-        except (AssertionError, RuntimeError):
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
             pass
 
     def _split_immersive_sentences(self, value: str) -> list[str]:
@@ -1200,14 +1220,30 @@ class CompanionAppView(ft.Container, CompanionUIView):
             return self._current_immersive_text(role)
         return self._immersive_display_text
 
-    def _set_immersive_dialogue_text(self, value: str) -> None:
-        if self._immersive_dialogue_text is None:
-            return
-        self._immersive_dialogue_text.value = value
+    def _set_immersive_dialogue_text(
+        self,
+        value: str,
+        *,
+        expected_control: ft.Text | None = None,
+        generation: int | None = None,
+    ) -> bool:
+        dialogue_text = self._immersive_dialogue_text
+        if dialogue_text is None:
+            return False
+        if expected_control is not None and dialogue_text is not expected_control:
+            return False
+        if generation is not None and generation != self._immersive_typewriter_generation:
+            return False
+        dialogue_text.value = value
         try:
-            self._immersive_dialogue_text.update()
-        except (AssertionError, RuntimeError):
-            self._safe_update()
+            dialogue_text.page
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
+            return True
+        try:
+            dialogue_text.update()
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
+            return False
+        return True
 
     def _schedule_immersive_typewriter(self) -> None:
         if self._chat_mode != "immersive" or self._immersive_dialogue_text is None:
@@ -1221,9 +1257,21 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
         self._immersive_typewriter_generation += 1
         generation = self._immersive_typewriter_generation
+        dialogue_text = self._immersive_dialogue_text
+        role_id = self.active_role.id
+        mode_seed = self._chat_mode_seed
 
         async def _run_typewriter() -> None:
+            await asyncio.sleep(0)
             while generation == self._immersive_typewriter_generation:
+                if (
+                    self._page_name != "chat"
+                    or self._chat_mode != "immersive"
+                    or self._chat_mode_seed != mode_seed
+                    or self.active_role.id != role_id
+                    or self._immersive_dialogue_text is not dialogue_text
+                ):
+                    return
                 target = self._current_immersive_text(self.active_role)
                 if self._immersive_display_text == target:
                     return
@@ -1232,10 +1280,21 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     self._immersive_display_text = target[:next_length]
                 else:
                     self._immersive_display_text = target[:1]
-                self._set_immersive_dialogue_text(self._immersive_display_text)
+                if not self._set_immersive_dialogue_text(
+                    self._immersive_display_text,
+                    expected_control=dialogue_text,
+                    generation=generation,
+                ):
+                    return
                 await asyncio.sleep(0.025)
 
-        page.run_task(_run_typewriter)
+        run_task = getattr(page, "run_task", None)
+        if not callable(run_task):
+            return
+        try:
+            run_task(_run_typewriter)
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
+            return
 
     def _advance_immersive_text(self, _) -> None:
         if self._chat_mode != "immersive" or not self._immersive_segments:
@@ -1287,7 +1346,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._chat_list_view.controls = self._build_normal_chat_controls(self._colors(), role)
             try:
                 self._chat_list_view.update()
-            except (AssertionError, RuntimeError):
+            except (AssertionError, RuntimeError, TypeError, AttributeError):
                 return False
             self._trigger_scroll_to_latest()
             return True
@@ -1295,10 +1354,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if self._immersive_dialogue_text is None:
             return False
         self._reset_immersive_state(role)
-        self._immersive_dialogue_text.value = self._visible_immersive_text(role)
-        try:
-            self._immersive_dialogue_text.update()
-        except (AssertionError, RuntimeError):
+        if not self._set_immersive_dialogue_text(self._visible_immersive_text(role)):
             return False
         self._schedule_immersive_typewriter()
         return True
@@ -1346,7 +1402,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         portrait: ft.Control = self._immersive_portrait_container
         dialogue: ft.Control = ft.Container(
             height=168,
-            margin=ft.margin.only(left=16, right=16, bottom=12),
+            margin=ft.Margin(left=16, right=16, bottom=12),
             padding=ft.Padding.symmetric(horizontal=18, vertical=16),
             border_radius=24,
             gradient=glass_gradient(role.accent_color, self._is_dark, strong=True),
