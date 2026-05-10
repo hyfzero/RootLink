@@ -185,8 +185,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self.motion_enabled = True
         self._page_history: list[str] = []
         self._page_seed = {page: 0 for page in self.VALID_PAGES}
-        self._chat_launching_role_id: Optional[str] = None
         self._chat_entry_seed = 0
+        self._suppress_next_chat_entry_motion = False
         self._chat_input_drafts: dict[tuple[str, str], str] = {}
         self._chat_list_view: Optional[ft.ListView] = None
         self._chat_status_text: Optional[ft.Text] = None
@@ -686,13 +686,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         role_cards = [RoleSelectorCard(role, role.id == selected.id, self._is_dark, self._handle_home_role_select) for role in self._roles]
         role_cards.append(self._create_selector_card(colors))
         recent_roles = self._recent_roles()
-        launching = self._chat_launching_role_id == selected.id
         feature_card = ft.Container(
             content=RoleFeatureCard(selected, self._is_dark, self._begin_open_chat, self._begin_edit_role, self._begin_export_role),
-            scale=0.97 if launching else 1.0,
-            opacity=0.72 if launching else 1.0,
-            animate_scale=animation("fast", phase="press"),
-            animate_opacity=animation("fast", phase="exit"),
         )
         controls = [
             self._stagger(
@@ -881,6 +876,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
         )
 
     def _build_chat_page(self, colors: dict[str, str]) -> ft.Control:
+        suppress_entry_motion = self._suppress_next_chat_entry_motion
+        self._suppress_next_chat_entry_motion = False
+        section_motion_enabled = self.motion_enabled and not suppress_entry_motion
         if not self._roles:
             return ft.Container(
                 gradient=character_chat_gradient("", self._is_dark),
@@ -954,7 +952,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             ),
         )
         body = self._build_normal_chat(colors, role) if self._chat_mode == "normal" else self._build_immersive_chat(colors, role)
-        if self.motion_enabled:
+        if section_motion_enabled:
             body = MotionEntry(
                 content=body,
                 delay_ms=100,
@@ -964,7 +962,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 key=f"chat-body-{self._chat_mode}-{self._chat_mode_seed}-{self._chat_entry_seed}",
             )
         body.expand = True
-        if self.motion_enabled:
+        if section_motion_enabled:
             header = MotionEntry(
                 content=header,
                 offset=ft.Offset(0, -0.03),
@@ -980,13 +978,23 @@ class CompanionAppView(ft.Container, CompanionUIView):
             initial_value=self._chat_input_value(role.id, self._chat_mode),
             on_change=lambda value, role_id=role.id, mode=self._chat_mode: self._set_chat_input_value(role_id, mode, value),
         )
-        if self.motion_enabled:
+        if section_motion_enabled:
             input_bar = MotionEntry(
                 content=input_bar,
                 delay_ms=180,
                 offset=ft.Offset(0, 0.04),
                 duration_name="normal",
                 key=f"chat-input-{self._chat_entry_seed}-{self._chat_mode_seed}",
+            )
+        body_host: ft.Control = body
+        if section_motion_enabled:
+            body_host = ft.AnimatedSwitcher(
+                content=body,
+                duration=MOTION["normal"],
+                reverse_duration=MOTION["fast"],
+                switch_in_curve=ft.AnimationCurve.FAST_OUT_SLOWIN,
+                switch_out_curve=ft.AnimationCurve.EASE_IN_OUT,
+                transition=ft.AnimatedSwitcherTransition.FADE,
             )
         return ft.Container(
             gradient=character_chat_gradient(role.id if self._chat_mode == "immersive" else "", self._is_dark),
@@ -997,14 +1005,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     header,
                     ft.Container(
                         expand=True,
-                        content=ft.AnimatedSwitcher(
-                            content=body,
-                            duration=MOTION["normal"],
-                            reverse_duration=MOTION["fast"],
-                            switch_in_curve=ft.AnimationCurve.FAST_OUT_SLOWIN,
-                            switch_out_curve=ft.AnimationCurve.EASE_IN_OUT,
-                            transition=ft.AnimatedSwitcherTransition.FADE,
-                        ),
+                        content=body_host,
                     ),
                     input_bar,
                 ],
@@ -2263,36 +2264,15 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _begin_open_chat(self, role_id: str) -> None:
         self._prepare_chat(role_id)
         self._callback.on_open_chat(role_id)
-        if not self.motion_enabled:
-            self._chat_entry_seed += 1
-            self.show_page("chat")
-            return
-        self._chat_launching_role_id = role_id
-        self._safe_update()
-
-        async def _finish_open() -> None:
-            await asyncio.sleep(MOTION["fast"] / 1000)
-            if self._chat_launching_role_id != role_id:
-                return
-            self._chat_launching_role_id = None
-            self._chat_entry_seed += 1
-            self.show_page("chat")
-
-        try:
-            page = self.page
-        except RuntimeError:
-            page = None
-        if page:
-            page.run_task(_finish_open)
-        else:
-            self._chat_launching_role_id = None
-            self._chat_entry_seed += 1
-            self.show_page("chat")
+        self._chat_entry_seed += 1
+        self._suppress_next_chat_entry_motion = True
+        self.show_page("chat")
 
     def _open_chat(self, role_id: str) -> None:
         self._prepare_chat(role_id)
         self._callback.on_open_chat(role_id)
         self._chat_entry_seed += 1
+        self._suppress_next_chat_entry_motion = True
         self.show_page("chat")
 
     def _set_chat_mode(self, mode: str) -> None:

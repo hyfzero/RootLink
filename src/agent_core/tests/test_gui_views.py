@@ -19,7 +19,7 @@ for path in (str(REPO_ROOT), str(SRC_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from GUI.components import ChatInputBar, MemoryEditor, MessageBubble, RoleFeatureCard, RoleSelectorCard, animated_click
+from GUI.components import ChatInputBar, MemoryEditor, MessageBubble, MotionEntry, RoleFeatureCard, RoleSelectorCard, animated_click
 from GUI.app import _bind_system_back
 from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUICallback, MemoryDraft, UiSettings
 from GUI.views import HOME_SUBTITLE_TEXT, HOME_TITLE_TEXT, CompanionAppView
@@ -51,6 +51,23 @@ def collect_text_values(control) -> list[str]:
         seen.add(id(item))
         if isinstance(item, ft.Text):
             values.append(item.value)
+        visit(getattr(item, "content", None))
+        for child in getattr(item, "controls", []) or []:
+            visit(child)
+
+    visit(control)
+    return values
+
+
+def collect_controls(control) -> list[object]:
+    values: list[object] = []
+    seen: set[int] = set()
+
+    def visit(item) -> None:
+        if item is None or id(item) in seen:
+            return
+        seen.add(id(item))
+        values.append(item)
         visit(getattr(item, "content", None))
         for child in getattr(item, "controls", []) or []:
             visit(child)
@@ -379,6 +396,41 @@ class GuiViewTests(unittest.TestCase):
         self.assertEqual(callback.opened_role_id, "amadeus")
         self.assertEqual(view._page_name, "chat")
         self.assertEqual(view._active_role_id, "amadeus")
+
+    def test_begin_open_chat_enters_chat_without_delayed_launch_animation(self) -> None:
+        callback = EditCallback()
+        fake_page = DeferredTaskPage()
+        view = TrackingCompanionAppView(fake_page, callback)
+
+        view._begin_open_chat("amadeus")
+
+        self.assertEqual(callback.opened_role_id, "amadeus")
+        self.assertEqual(view._page_name, "chat")
+        self.assertEqual(view._active_role_id, "amadeus")
+        task_names = [getattr(coro_func, "__qualname__", "") for coro_func, _args in fake_page.tasks]
+        self.assertFalse(any("_finish_open" in task_name for task_name in task_names))
+
+    def test_initial_chat_entry_suppresses_nested_section_motion(self) -> None:
+        view = TrackingCompanionAppView(FakePage())
+        view._suppress_next_chat_entry_motion = True
+
+        chat_page = view._build_chat_page(view._colors())
+        controls = collect_controls(chat_page)
+
+        self.assertFalse(any(isinstance(control, MotionEntry) for control in controls))
+        self.assertFalse(any(isinstance(control, ft.AnimatedSwitcher) for control in controls))
+        self.assertFalse(view._suppress_next_chat_entry_motion)
+
+    def test_chat_mode_change_keeps_section_motion_after_initial_entry(self) -> None:
+        view = TrackingCompanionAppView(FakePage())
+        view._suppress_next_chat_entry_motion = True
+        view._build_chat_page(view._colors())
+
+        chat_page = view._build_chat_page(view._colors())
+        controls = collect_controls(chat_page)
+
+        self.assertTrue(any(isinstance(control, MotionEntry) for control in controls))
+        self.assertTrue(any(isinstance(control, ft.AnimatedSwitcher) for control in controls))
 
     def test_chat_avatar_long_press_opens_character_editor_without_tooltip(self) -> None:
         callback = EditCallback()
