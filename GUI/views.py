@@ -91,7 +91,7 @@ DEFAULT_SETTINGS_MODELS = {
 }
 
 PORTRAIT_EMOTIONS = [
-    ("neutral", "平静"),
+    ("neutral", "默认"),
     ("happy", "开心"),
     ("sad", "难过"),
     ("angry", "生气"),
@@ -178,6 +178,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._portrait_offset_x_slider: Optional[ft.Slider] = None
         self._portrait_offset_y_slider: Optional[ft.Slider] = None
         self._portrait_advanced_open = False
+        self._portrait_extra_open = False
         self._portrait_preview_generation = 0
         self._portrait_rendering_emotion_id = ""
         self._portrait_preview_session_id = uuid.uuid4().hex
@@ -231,6 +232,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._create_step_direction = 1
         self._emotion_id = "neutral"
         self._portrait_advanced_open = False
+        self._portrait_extra_open = False
         self._portrait_rendering_emotion_id = ""
         self._portrait_preview_generation += 1
         self._portrait_preview_session_id = uuid.uuid4().hex
@@ -254,6 +256,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._editing_role_id = role_id
         self._draft = draft
         self._reset_create_navigation()
+        self._portrait_extra_open = self._draft_has_extra_portraits()
         self.show_page("create")
 
     def _build(self) -> None:
@@ -1717,7 +1720,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _portrait_step(self, colors: dict[str, str]) -> ft.Control:
         chips = []
-        for emotion_id, label in PORTRAIT_EMOTIONS:
+        visible_emotions = PORTRAIT_EMOTIONS if self._portrait_extra_open else [PORTRAIT_EMOTIONS[0]]
+        for emotion_id, label in visible_emotions:
             selected = emotion_id == self._emotion_id
             chips.append(
                 ft.Container(
@@ -1732,6 +1736,30 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     content=text(label, 11, colors["text"] if selected else colors["text_secondary"]),
                 )
             )
+        emotion_row_controls: list[ft.Control] = chips
+        if not self._portrait_extra_open:
+            emotion_row_controls.append(
+                ft.Container(
+                    padding=ft.Padding.symmetric(horizontal=10, vertical=7),
+                    border_radius=14,
+                    bgcolor=colors.get("surface_solid", colors["card"]),
+                    border=ft.Border.all(1, colors.get("dropdown_border", colors["card_border"])),
+                    ink=True,
+                    scale=1.0,
+                    animate_scale=animation("fast", phase="press"),
+                    on_click=animated_click(lambda _: self._show_more_portrait_emotions()),
+                    content=ft.Row(
+                        spacing=5,
+                        tight=True,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Icon(ft.Icons.ADD, size=13, color=colors["text_secondary"]),
+                            text("更多表情", 11, colors["text_secondary"], max_lines=1),
+                        ],
+                    ),
+                )
+            )
+        emotion_controls: list[ft.Control] = [ft.Row(spacing=8, wrap=True, controls=emotion_row_controls)]
         avatar_path = self._draft.avatar_path
         preview_path = self._draft.portraits.get(self._emotion_id, "")
         return section_card(
@@ -1773,7 +1801,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                             ),
                         ],
                     ),
-                    ft.Row(spacing=8, wrap=True, controls=chips),
+                    *emotion_controls,
                     ft.Container(
                         height=260,
                         border_radius=18,
@@ -2326,6 +2354,14 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _set_emotion(self, emotion_id: str) -> None:
         self._emotion_id = emotion_id
         self._safe_update()
+
+    def _show_more_portrait_emotions(self) -> None:
+        self._portrait_extra_open = True
+        self._safe_update()
+
+    def _draft_has_extra_portraits(self) -> bool:
+        emotion_ids = set(self._draft.portraits) | set(self._draft.portrait_edits)
+        return any(emotion_id != "neutral" for emotion_id in emotion_ids)
 
     def _current_emotion_label(self) -> str:
         for emotion_id, label in PORTRAIT_EMOTIONS:

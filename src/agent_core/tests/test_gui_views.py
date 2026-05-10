@@ -260,6 +260,30 @@ class GuiViewTests(unittest.TestCase):
         self.assertIn("敏感 · 克制 · 共情", text_values)
         self.assertNotIn("内向倾听型", text_values)
 
+    def test_portrait_step_defaults_to_neutral_only(self) -> None:
+        view = CompanionAppView(roles=[make_role()])
+
+        card = view._portrait_step(view._colors())
+
+        text_values = collect_text_values(card)
+        self.assertIn("默认", text_values)
+        self.assertIn("更多表情", text_values)
+        self.assertNotIn("开心", text_values)
+        self.assertNotIn("难过", text_values)
+
+    def test_portrait_step_shows_extra_emotions_after_request(self) -> None:
+        view = CompanionAppView(roles=[make_role()])
+        view._safe_update = lambda: None  # type: ignore[method-assign]
+
+        view._show_more_portrait_emotions()
+        card = view._portrait_step(view._colors())
+
+        text_values = collect_text_values(card)
+        self.assertIn("默认", text_values)
+        self.assertIn("开心", text_values)
+        self.assertIn("难过", text_values)
+        self.assertNotIn("更多表情", text_values)
+
     def test_home_quick_actions_stack_on_narrow_width(self) -> None:
         page = FakePage()
         page.width = 393
