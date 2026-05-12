@@ -22,13 +22,12 @@ from agent_core.brain import (
 )
 from agent_core.session import PathResolver
 
-from .interfaces import CharacterDraft, MemoryDraft
+from .interfaces import CharacterDraft, DEFAULT_ACCENT_PALETTE, MemoryDraft
 from .interfaces import PortraitEditDraft, PortraitLayoutDraft
 
 
 ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 VALID_BRAIN_ID = re.compile(r"^[A-Za-z0-9_-]+$")
-DEFAULT_ACCENT_PALETTE = ["#B6A8C9", "#8FB7B3", "#E1A95F", "#C98E8E", "#88A0C8", "#A9B86E"]
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RESOURCE_DIR = PROJECT_ROOT / "resource"
 DEFAULT_RESPONSE_LIMITS = {"max_tokens": 2000, "max_sentences": 5}
@@ -39,7 +38,7 @@ MEMORY_KEYS_BY_TYPE = {
     "fact": "fact_memories",
 }
 SUMMARY_MEMORY_KEYS = ("daily_summary_memories", "monthly_summary_memories")
-PRESERVED_UI_KEYS = ("type", "status_text", "accent_color", "last_message", "last_time")
+PRESERVED_UI_KEYS = ("type", "status_text", "last_message", "last_time")
 PRESERVED_PROFILE_KEYS = ("relationship_state", "relationship_score", "relationship_updated_at")
 
 
@@ -100,7 +99,7 @@ class CharacterCreator:
         portraits = {
             str(emotion): self._resolve_brain_path(brain_dir, path)
             for emotion, path in dict(ui_data.get("portraits") or {}).items()
-            if str(path).strip()
+            if str(path).strip() and not self._is_versioned_asset_stem(str(emotion))
         }
         portraits.update(self._discover_portrait_assets(brain_dir, portraits.keys()))
         standing_path = self._resolve_brain_path(brain_dir, ui_data.get("standing_image", ""))
@@ -117,6 +116,7 @@ class CharacterCreator:
             template="default",
             name=profile.name,
             description=str(ui_data.get("intro") or profile.background or ""),
+            accent_color=str(ui_data.get("accent_color") or ""),
             avatar_path=avatar_path,
             portraits=portraits,
             portrait_layout=self._parse_portrait_layout(ui_data.get("portrait_layout")),
@@ -180,6 +180,7 @@ class CharacterCreator:
                 draft,
                 cleanup_avatar=True,
                 cleanup_portrait_keys=old_portrait_keys,
+                version_assets=True,
             )
             ui_payload = self._merge_ui(
                 existing_ui,
@@ -297,7 +298,7 @@ class CharacterCreator:
             "tags": tags,
             "intro": intro,
             "status_text": "",
-            "accent_color": self._accent_color(brain_id),
+            "accent_color": self._draft_accent_color(brain_id, draft),
             "avatar": avatar_rel,
             "standing_image": portraits_rel.get("neutral", ""),
             "portraits": portraits_rel,
@@ -318,12 +319,13 @@ class CharacterCreator:
         *,
         cleanup_avatar: bool = False,
         cleanup_portrait_keys: set[str] | None = None,
+        version_assets: bool = False,
     ) -> tuple[str, dict[str, str]]:
         avatar_source = draft.avatar_path.strip()
         portrait_sources = {
             str(emotion): str(source).strip()
             for emotion, source in draft.portraits.items()
-            if str(source).strip()
+            if str(source).strip() and not self._is_versioned_asset_stem(str(emotion))
         }
         if cleanup_avatar:
             self._cleanup_stem(brain_dir / "assets", "avatar", brain_dir, keep_source=avatar_source)
@@ -337,7 +339,7 @@ class CharacterCreator:
 
         avatar_rel = ""
         if avatar_source:
-            avatar_rel = self._copy_image(avatar_source, brain_dir / "assets", "avatar", brain_dir)
+            avatar_rel = self._copy_image(avatar_source, brain_dir / "assets", "avatar", brain_dir, versioned=version_assets)
 
         portraits: dict[str, str] = {}
         for emotion, source in portrait_sources.items():
@@ -346,11 +348,12 @@ class CharacterCreator:
                 brain_dir / "assets" / "portraits",
                 str(emotion),
                 brain_dir,
+                versioned=version_assets,
             )
 
         return avatar_rel, portraits
 
-    def _copy_image(self, source: str, target_dir: Path, stem: str, brain_dir: Path) -> str:
+    def _copy_image(self, source: str, target_dir: Path, stem: str, brain_dir: Path, *, versioned: bool = False) -> str:
         source_path = Path(source)
         if not source_path.exists() or not source_path.is_file():
             raise CharacterCreationError(f"Image file not found: {source}")
@@ -358,8 +361,13 @@ class CharacterCreator:
         if suffix not in ALLOWED_IMAGE_EXTENSIONS:
             raise CharacterCreationError("Images must be PNG, JPG, JPEG, or WebP.")
 
-        target = target_dir / f"{stem}{suffix}"
         source_resolved = source_path.resolve()
+        brain_root = brain_dir.resolve()
+        if versioned and self._is_inside(source_resolved, brain_root):
+            return source_resolved.relative_to(brain_root).as_posix()
+
+        target_stem = f"{stem}-{uuid.uuid4().hex[:8]}" if versioned else stem
+        target = target_dir / f"{target_stem}{suffix}"
         target_resolved = target.resolve()
         if source_resolved != target_resolved:
             shutil.copy2(source_path, target)
@@ -370,11 +378,15 @@ class CharacterCreator:
             return
         brain_root = brain_dir.resolve()
         keep_resolved = Path(keep_source).resolve() if keep_source else None
-        for suffix in ALLOWED_IMAGE_EXTENSIONS:
-            target = (target_dir / f"{stem}{suffix}").resolve()
-            if not self._is_inside(target, brain_root) or not target.exists():
+        for target in target_dir.iterdir():
+            if target.suffix.lower() not in ALLOWED_IMAGE_EXTENSIONS:
                 continue
-            if keep_resolved is not None and target == keep_resolved:
+            if target.stem != stem and not target.stem.startswith(f"{stem}-"):
+                continue
+            resolved = target.resolve()
+            if not self._is_inside(resolved, brain_root) or not target.exists():
+                continue
+            if keep_resolved is not None and resolved == keep_resolved:
                 continue
             target.unlink()
 
@@ -408,10 +420,17 @@ class CharacterCreator:
             return {}
         portraits: dict[str, str] = {}
         for path in sorted(portrait_dir.iterdir()):
-            if path.suffix.lower() not in ALLOWED_IMAGE_EXTENSIONS or path.stem in existing_keys:
+            if (
+                path.suffix.lower() not in ALLOWED_IMAGE_EXTENSIONS
+                or path.stem in existing_keys
+                or self._is_versioned_asset_stem(path.stem)
+            ):
                 continue
             portraits[path.stem] = path.as_posix()
         return portraits
+
+    def _is_versioned_asset_stem(self, value: str) -> bool:
+        return re.search(r"-[0-9a-fA-F]{8}$", value.strip()) is not None
 
     def _parse_portrait_layout(self, data: object) -> PortraitLayoutDraft | None:
         if not isinstance(data, dict) or not data:
@@ -548,6 +567,10 @@ class CharacterCreator:
     def _accent_color(self, brain_id: str) -> str:
         index = sum(ord(char) for char in brain_id) % len(DEFAULT_ACCENT_PALETTE)
         return DEFAULT_ACCENT_PALETTE[index]
+
+    def _draft_accent_color(self, brain_id: str, draft: CharacterDraft) -> str:
+        accent_color = draft.accent_color.strip()
+        return accent_color if accent_color else self._accent_color(brain_id)
 
     def _json_safe(self, value: object) -> object:
         if value is None:

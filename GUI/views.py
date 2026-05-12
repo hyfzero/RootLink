@@ -36,6 +36,7 @@ from .components import (
     text,
 )
 from .interfaces import (
+    CARD_COLOR_PRESETS,
     CharacterDraft,
     ChatMessage,
     CompanionRole,
@@ -177,6 +178,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._portrait_scale_slider: Optional[ft.Slider] = None
         self._portrait_offset_x_slider: Optional[ft.Slider] = None
         self._portrait_offset_y_slider: Optional[ft.Slider] = None
+        self._portrait_value_labels: dict[str, ft.Text] = {}
+        self._portrait_preview_container: Optional[ft.Container] = None
         self._portrait_advanced_open = False
         self._portrait_extra_open = False
         self._portrait_preview_generation = 0
@@ -239,6 +242,11 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._portrait_preview_paths = {}
         self._memory_editors = []
         self._memory_list = None
+        self._portrait_value_labels = {}
+        self._portrait_preview_container = None
+
+    def _create_accent_color(self) -> str:
+        return self._draft.accent_color.strip() or self.active_role.accent_color
 
     def _begin_create(self) -> None:
         self._create_mode = "create"
@@ -1632,6 +1640,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         return self._page_column([ft.Container(padding=ft.Padding.only(left=20, right=20, top=4, bottom=20), content=ft.Column(spacing=18, controls=controls))])
 
     def _create_progress(self, colors: dict[str, str]) -> ft.Control:
+        accent_color = self._create_accent_color()
         bars: list[ft.Control] = []
         for index in range(1, 6):
             active = index <= self._create_step
@@ -1640,7 +1649,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                     expand=True,
                     height=8,
                     border_radius=999,
-                    bgcolor=hex_with_alpha(self.active_role.accent_color, 210 if active else 42),
+                    bgcolor=hex_with_alpha(accent_color, 210 if active else 42),
                     opacity=1.0 if active else 0.82,
                     animate_opacity=animation("normal"),
                     animate_scale=animation("normal"),
@@ -1666,13 +1675,14 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _create_footer(self, colors: dict[str, str]) -> ft.Control:
         final_label = "\u4fdd\u5b58" if self._create_mode == "edit" else "\u521b\u5efa"
+        accent_color = self._create_accent_color()
         return ft.Row(
             spacing=10,
             controls=[
                 ft.Container(expand=True, content=self._secondary_button("上一步", colors, lambda _: self._previous_step(), ft.Icons.CHEVRON_LEFT, subtle=self._create_step == 1)),
                 ft.Container(
                     expand=True,
-                    content=self._primary_button(final_label if self._create_step == 5 else "下一步", self.active_role.accent_color, lambda _: self._next_step(), ft.Icons.CHECK if self._create_step == 5 else ft.Icons.CHEVRON_RIGHT),
+                    content=self._primary_button(final_label if self._create_step == 5 else "下一步", accent_color, lambda _: self._next_step(), ft.Icons.CHECK if self._create_step == 5 else ft.Icons.CHEVRON_RIGHT),
                 ),
             ],
         )
@@ -1710,12 +1720,53 @@ class CompanionAppView(ft.Container, CompanionUIView):
         return section_card(
             ft.Column(
                 spacing=12,
-                controls=[text("基础信息", 18, colors["text"], ft.FontWeight.W_500), self._brain_id_field, self._template_dropdown, self._name_field, self._description_field],
+                controls=[
+                    text("基础信息", 18, colors["text"], ft.FontWeight.W_500),
+                    self._brain_id_field,
+                    self._template_dropdown,
+                    self._name_field,
+                    self._description_field,
+                    self._card_color_selector(colors),
+                ],
             ),
             colors,
             padding=22,
             solid=True,
             radius=28,
+        )
+
+    def _card_color_selector(self, colors: dict[str, str]) -> ft.Control:
+        selected_color = self._draft.accent_color.strip()
+        controls: list[ft.Control] = []
+        for _, label, color in CARD_COLOR_PRESETS:
+            selected = selected_color == color
+            controls.append(
+                ft.Container(
+                    padding=ft.Padding.symmetric(horizontal=10, vertical=8),
+                    border_radius=14,
+                    bgcolor=hex_with_alpha(color, 42) if selected else colors["card_strong"],
+                    border=ft.Border.all(1, hex_with_alpha(color, 120) if selected else colors["card_border"]),
+                    ink=True,
+                    scale=1.0,
+                    animate_scale=animation("fast", phase="press"),
+                    on_click=animated_click(lambda _, value=color: self._set_draft_accent_color(value)),
+                    content=ft.Row(
+                        spacing=7,
+                        tight=True,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Container(width=14, height=14, border_radius=7, bgcolor=color, border=ft.Border.all(1, hex_with_alpha("#FFFFFF", 90))),
+                            text(label, 11, colors["text"] if selected else colors["text_secondary"], max_lines=1),
+                        ],
+                    ),
+                )
+            )
+        return ft.Column(
+            spacing=8,
+            controls=[
+                text("卡片配色", 13, colors["text"], ft.FontWeight.W_500),
+                ft.Row(spacing=8, wrap=True, controls=controls),
+            ],
         )
 
     def _portrait_step(self, colors: dict[str, str]) -> ft.Control:
@@ -1762,6 +1813,15 @@ class CompanionAppView(ft.Container, CompanionUIView):
         emotion_controls: list[ft.Control] = [ft.Row(spacing=8, wrap=True, controls=emotion_row_controls)]
         avatar_path = self._draft.avatar_path
         preview_path = self._draft.portraits.get(self._emotion_id, "")
+        self._portrait_preview_container = ft.Container(
+            height=260,
+            border_radius=18,
+            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+            bgcolor=colors["muted"],
+            border=ft.Border.all(1, colors["card_border"]),
+            alignment=ft.Alignment(0, 0),
+            content=self._portrait_preview_content(preview_path, colors),
+        )
         return section_card(
             ft.Column(
                 spacing=12,
@@ -1802,17 +1862,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         ],
                     ),
                     *emotion_controls,
-                    ft.Container(
-                        height=260,
-                        border_radius=18,
-                        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-                        bgcolor=colors["muted"],
-                        border=ft.Border.all(1, colors["card_border"]),
-                        alignment=ft.Alignment(0, 0),
-                        content=ft.Image(src=preview_path, fit=IMAGE_CONTAIN)
-                        if preview_path
-                        else ft.Icon(ft.Icons.PERSON_OUTLINE, size=56, color=colors["text_tertiary"]),
-                    ),
+                    self._portrait_preview_container,
                     ft.Row(
                         spacing=10,
                         controls=[
@@ -1829,8 +1879,23 @@ class CompanionAppView(ft.Container, CompanionUIView):
             radius=28,
         )
 
+    def _portrait_preview_content(self, preview_path: str, colors: dict[str, str]) -> ft.Control:
+        if preview_path:
+            return ft.Image(src=preview_path, fit=IMAGE_CONTAIN)
+        return ft.Icon(ft.Icons.PERSON_OUTLINE, size=56, color=colors["text_tertiary"])
+
+    def _refresh_portrait_preview_control(self, emotion_id: str) -> bool:
+        if emotion_id != self._emotion_id or self._portrait_preview_container is None:
+            return False
+        self._portrait_preview_container.content = self._portrait_preview_content(
+            self._draft.portraits.get(emotion_id, ""),
+            self._colors(),
+        )
+        return self._try_update_control(self._portrait_preview_container)
+
     def _portrait_processing_panel(self, colors: dict[str, str]) -> ft.Control:
         edit = self._draft.portrait_edits.get(self._emotion_id)
+        self._portrait_value_labels = {}
         if edit is None or not edit.source_path:
             return ft.Container(
                 padding=ft.Padding.symmetric(horizontal=14, vertical=12),
@@ -1885,11 +1950,11 @@ class CompanionAppView(ft.Container, CompanionUIView):
         advanced_controls: list[ft.Control] = []
         if self._portrait_advanced_open:
             advanced_controls = [
-                self._portrait_slider_row("背景清理强度", self._portrait_tolerance_slider, colors),
-                self._portrait_slider_row("边缘柔和度", self._portrait_feather_slider, colors),
-                self._portrait_slider_row("缩放", self._portrait_scale_slider, colors),
-                self._portrait_slider_row("横向偏移", self._portrait_offset_x_slider, colors),
-                self._portrait_slider_row("纵向偏移", self._portrait_offset_y_slider, colors),
+                self._portrait_slider_row("背景清理强度", self._portrait_tolerance_slider, colors, "tolerance", "int"),
+                self._portrait_slider_row("边缘柔和度", self._portrait_feather_slider, colors, "feather", "int"),
+                self._portrait_slider_row("缩放", self._portrait_scale_slider, colors, "scale", "scale"),
+                self._portrait_slider_row("横向偏移", self._portrait_offset_x_slider, colors, "offset_x", "int"),
+                self._portrait_slider_row("纵向偏移", self._portrait_offset_y_slider, colors, "offset_y", "int"),
             ]
 
         return ft.Container(
@@ -1956,18 +2021,47 @@ class CompanionAppView(ft.Container, CompanionUIView):
             value=value,
             active_color=self.active_role.accent_color,
             inactive_color=self._colors()["muted"],
-            on_change=lambda _: self._queue_portrait_preview(),
+            on_change=lambda _: self._queue_portrait_preview(refresh_page=False),
         )
 
-    def _portrait_slider_row(self, label: str, slider: ft.Slider, colors: dict[str, str]) -> ft.Control:
+    def _portrait_slider_row(self, label: str, slider: ft.Slider, colors: dict[str, str], value_key: str, value_format: str) -> ft.Control:
+        value_label = text(self._format_portrait_slider_value(slider.value, value_format), 11, colors["text"], ft.FontWeight.W_500)
+        self._portrait_value_labels[value_key] = value_label
+        original_on_change = slider.on_change
+
+        def handle_change(event) -> None:
+            value_label.value = self._format_portrait_slider_value(slider.value, value_format)
+            self._try_update_control(value_label)
+            if original_on_change is not None:
+                original_on_change(event)
+
+        slider.on_change = handle_change
         return ft.Row(
             spacing=10,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
                 ft.Container(width=82, content=text(label, 11, colors["text_secondary"])),
                 ft.Container(expand=True, content=slider),
+                ft.Container(
+                    width=46,
+                    alignment=ft.Alignment(1, 0),
+                    content=value_label,
+                ),
             ],
         )
+
+    def _format_portrait_slider_value(self, value: object, value_format: str) -> str:
+        numeric_value = float(value or 0)
+        if value_format == "scale":
+            return f"{numeric_value:.2f}"
+        return str(int(round(numeric_value)))
+
+    def _refresh_portrait_value_label(self, value_key: str, value_format: str, value: object) -> None:
+        label = self._portrait_value_labels.get(value_key)
+        if label is None:
+            return
+        label.value = self._format_portrait_slider_value(value, value_format)
+        self._try_update_control(label)
 
     def _portrait_preset_button(self, preset_id: str, label: str, edit: PortraitEditDraft, colors: dict[str, str]) -> ft.Control:
         selected = self._portrait_preset_id(edit) == preset_id
@@ -2377,6 +2471,11 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._draft.name = self._name_field.value or ""
         self._draft.description = self._description_field.value or ""
 
+    def _set_draft_accent_color(self, color: str) -> None:
+        self._sync_basic_draft()
+        self._draft.accent_color = color
+        self._safe_update()
+
     def _sync_personality_draft(self) -> None:
         if not hasattr(self, "_age_field"):
             return
@@ -2503,8 +2602,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 edit.feather = feather
                 if self._portrait_tolerance_slider is not None:
                     self._portrait_tolerance_slider.value = tolerance
+                    self._refresh_portrait_value_label("tolerance", "int", tolerance)
                 if self._portrait_feather_slider is not None:
                     self._portrait_feather_slider.value = feather
+                    self._refresh_portrait_value_label("feather", "int", feather)
                 self._queue_portrait_preview()
                 return
 
@@ -2518,7 +2619,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._portrait_advanced_open = not self._portrait_advanced_open
         self._safe_update()
 
-    def _queue_portrait_preview(self) -> None:
+    def _queue_portrait_preview(self, *, refresh_page: bool = True) -> None:
         edit = self._draft.portrait_edits.get(self._emotion_id)
         if edit is None:
             return
@@ -2531,19 +2632,25 @@ class CompanionAppView(ft.Container, CompanionUIView):
             await asyncio.sleep(PORTRAIT_PREVIEW_DEBOUNCE_SECONDS)
             if generation != self._portrait_preview_generation or self._emotion_id != emotion_id:
                 return
-            self._portrait_rendering_emotion_id = emotion_id
-            self._safe_update()
-            self._process_portrait(emotion_id, refresh=False, sync_controls=False, expected_generation=generation)
+            if refresh_page:
+                self._portrait_rendering_emotion_id = emotion_id
+                self._safe_update()
+            processed = self._process_portrait(emotion_id, refresh=False, sync_controls=False, expected_generation=generation)
             if generation == self._portrait_preview_generation:
                 self._portrait_rendering_emotion_id = ""
-                self._safe_update()
+                if refresh_page:
+                    self._safe_update()
+                elif processed and not self._refresh_portrait_preview_control(emotion_id):
+                    self._safe_update()
 
         try:
             page = self.page
         except RuntimeError:
             page = None
         if page is None:
-            self._process_portrait(emotion_id, sync_controls=False)
+            processed = self._process_portrait(emotion_id, refresh=refresh_page, sync_controls=False)
+            if processed and not refresh_page:
+                self._refresh_portrait_preview_control(emotion_id)
             return
         page.run_task(_render_later)
 

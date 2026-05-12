@@ -66,6 +66,17 @@ class CharacterCreatorTests(unittest.TestCase):
             self.assertEqual(roles[0].name, "Custom Role")
             self.assertEqual(roles[0].portraits["neutral"], (brain_dir / "assets/portraits/neutral.png").as_posix())
 
+    def test_create_uses_selected_card_accent_color(self) -> None:
+        with tempfile.TemporaryDirectory() as data_root:
+            result = CharacterCreator(Path(data_root)).create(
+                CharacterDraft(brain_id="accent_role", name="Accent Role", accent_color="#88A0C8")
+            )
+            ui = json.loads((result.brain_dir / "ui.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(ui["accent_color"], "#88A0C8")
+            roles = load_roles_from_data(Path(data_root))
+            self.assertEqual(roles[0].accent_color, "#88A0C8")
+
     def test_validation_failures_leave_no_partial_directory(self) -> None:
         cases = [
             CharacterDraft(brain_id="", name="No Id"),
@@ -202,6 +213,7 @@ class CharacterCreatorTests(unittest.TestCase):
             loaded.name = "Edited"
             loaded.background = "Edited background"
             loaded.description = "Edited intro"
+            loaded.accent_color = "#88A0C8"
             loaded.avatar_path = ""
             loaded.portraits.pop("neutral", None)
             loaded.memories[0].content = "Likes coffee."
@@ -228,6 +240,7 @@ class CharacterCreatorTests(unittest.TestCase):
             updated_ui = json.loads(ui_path.read_text(encoding="utf-8"))
             self.assertEqual(updated_ui["last_message"], "recent")
             self.assertEqual(updated_ui["last_time"], "now")
+            self.assertEqual(updated_ui["accent_color"], "#88A0C8")
             self.assertEqual(updated_ui["avatar"], "")
             self.assertEqual(updated_ui["standing_image"], "")
             self.assertEqual(updated_ui["portraits"], {})
@@ -238,6 +251,57 @@ class CharacterCreatorTests(unittest.TestCase):
             self.assertEqual(roles[0].name, "Edited")
             self.assertEqual(roles[0].avatar_path, "")
             self.assertEqual(roles[0].standing_image_path, "")
+
+    def test_update_changed_avatar_uses_versioned_path_to_bust_image_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as data_root, tempfile.TemporaryDirectory() as assets_root:
+            old_image = Path(assets_root) / "old.png"
+            old_image.write_bytes(b"old-png")
+            new_image = Path(assets_root) / "new.png"
+            new_image.write_bytes(b"new-png")
+            creator = CharacterCreator(Path(data_root))
+            result = creator.create(CharacterDraft(brain_id="cache_bust", name="Cache Bust", avatar_path=str(old_image)))
+            brain_dir = result.brain_dir
+
+            loaded = creator.load_draft("cache_bust")
+            self.assertEqual(loaded.avatar_path, (brain_dir / "assets" / "avatar.png").as_posix())
+            loaded.avatar_path = str(new_image)
+            creator.update("cache_bust", loaded)
+
+            ui = json.loads((brain_dir / "ui.json").read_text(encoding="utf-8"))
+            self.assertRegex(ui["avatar"], r"^assets/avatar-[0-9a-f]{8}\.png$")
+            self.assertTrue((brain_dir / ui["avatar"]).exists())
+            self.assertFalse((brain_dir / "assets" / "avatar.png").exists())
+
+            roles = load_roles_from_data(Path(data_root))
+            self.assertEqual(roles[0].avatar_path, (brain_dir / ui["avatar"]).as_posix())
+
+    def test_update_ignores_stale_versioned_portrait_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as data_root, tempfile.TemporaryDirectory() as assets_root:
+            old_image = Path(assets_root) / "old.png"
+            old_image.write_bytes(b"old-png")
+            new_image = Path(assets_root) / "new.png"
+            new_image.write_bytes(b"new-png")
+            creator = CharacterCreator(Path(data_root))
+            result = creator.create(
+                CharacterDraft(
+                    brain_id="portrait_cache",
+                    name="Portrait Cache",
+                    portraits={"neutral": str(old_image)},
+                )
+            )
+            brain_dir = result.brain_dir
+
+            loaded = creator.load_draft("portrait_cache")
+            loaded.portraits["neutral"] = str(new_image)
+            loaded.portraits["neutral-deadbeef"] = (brain_dir / "assets" / "portraits" / "neutral-deadbeef.png").as_posix()
+            creator.update("portrait_cache", loaded)
+
+            ui = json.loads((brain_dir / "ui.json").read_text(encoding="utf-8"))
+            self.assertEqual(set(ui["portraits"]), {"neutral"})
+            self.assertRegex(ui["portraits"]["neutral"], r"^assets/portraits/neutral-[0-9a-f]{8}\.png$")
+
+            reloaded = creator.load_draft("portrait_cache")
+            self.assertEqual(set(reloaded.portraits), {"neutral"})
 
     def test_template_creation_only_inherits_config_profile_and_style_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as data_root:

@@ -8,6 +8,17 @@ from datetime import datetime
 from typing import Optional
 
 
+CARD_COLOR_PRESETS = [
+    ("wisteria", "紫藤", "#B6A8C9"),
+    ("sage", "鼠尾草", "#8FB7B3"),
+    ("amber", "琥珀", "#E1A95F"),
+    ("rose", "玫瑰", "#C98E8E"),
+    ("mist_blue", "雾蓝", "#88A0C8"),
+    ("olive", "橄榄", "#A9B86E"),
+]
+DEFAULT_ACCENT_PALETTE = [color for _, _, color in CARD_COLOR_PRESETS]
+
+
 @dataclass(slots=True)
 class CompanionRole:
     """A companion role shown by the mobile UI."""
@@ -105,6 +116,7 @@ class CharacterDraft:
     template: str = "default"
     name: str = ""
     description: str = ""
+    accent_color: str = ""
     avatar_path: str = ""
     portraits: dict[str, str] = field(default_factory=dict)
     portrait_layout: PortraitLayoutDraft | None = None

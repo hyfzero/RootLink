@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import flet as ft
 from PIL import Image, ImageDraw
 
 TEST_FILE = Path(__file__).resolve()
@@ -41,6 +42,24 @@ def make_portrait(path: Path) -> None:
     draw = ImageDraw.Draw(image)
     draw.rectangle((25, 24, 55, 108), fill=(210, 50, 50))
     image.save(path)
+
+
+def collect_text_values(control) -> list[str]:
+    values: list[str] = []
+    seen: set[int] = set()
+
+    def visit(item) -> None:
+        if item is None or id(item) in seen:
+            return
+        seen.add(id(item))
+        if isinstance(item, ft.Text):
+            values.append(item.value)
+        visit(getattr(item, "content", None))
+        for child in getattr(item, "controls", []) or []:
+            visit(child)
+
+    visit(control)
+    return values
 
 
 class PortraitRealtimeUiTests(unittest.TestCase):
@@ -79,6 +98,40 @@ class PortraitRealtimeUiTests(unittest.TestCase):
 
             self.assertEqual(view._draft.portraits["neutral"], valid_preview)
             self.assertTrue(Path(valid_preview).exists())
+
+    def test_advanced_sliders_show_and_refresh_numeric_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "portrait.png"
+            make_portrait(source)
+            view = CompanionAppView(roles=[make_role()])
+            queued_previews: list[dict[str, bool]] = []
+            view._queue_portrait_preview = lambda **kwargs: queued_previews.append(kwargs)  # type: ignore[method-assign]
+            view._portrait_advanced_open = True
+            edit = PortraitEditDraft(
+                source_path=str(source),
+                background_color=(255, 255, 255),
+                tolerance=32,
+                feather=2,
+                scale=1.25,
+                offset_x=-12,
+                offset_y=8,
+            )
+            view._draft.portrait_edits["neutral"] = edit
+
+            panel = view._portrait_processing_panel(view._colors())
+
+            text_values = collect_text_values(panel)
+            self.assertIn("32", text_values)
+            self.assertIn("2", text_values)
+            self.assertIn("1.25", text_values)
+            self.assertIn("-12", text_values)
+            self.assertIn("8", text_values)
+
+            view._portrait_scale_slider.value = 0.75
+            view._portrait_scale_slider.on_change(None)
+
+            self.assertEqual(view._portrait_value_labels["scale"].value, "0.75")
+            self.assertEqual(queued_previews[-1], {"refresh_page": False})
 
 
 if __name__ == "__main__":

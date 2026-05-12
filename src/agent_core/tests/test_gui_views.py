@@ -284,6 +284,21 @@ class GuiViewTests(unittest.TestCase):
         self.assertIn("难过", text_values)
         self.assertNotIn("更多表情", text_values)
 
+    def test_basic_step_shows_card_color_presets_and_updates_draft(self) -> None:
+        view = CompanionAppView(roles=[make_role()])
+        view._safe_update = lambda: None  # type: ignore[method-assign]
+
+        card = view._basic_step(view._colors())
+
+        text_values = collect_text_values(card)
+        self.assertIn("卡片配色", text_values)
+        self.assertIn("紫藤", text_values)
+        self.assertIn("橄榄", text_values)
+
+        view._set_draft_accent_color("#8FB7B3")
+
+        self.assertEqual(view._draft.accent_color, "#8FB7B3")
+
     def test_home_quick_actions_stack_on_narrow_width(self) -> None:
         page = FakePage()
         page.width = 393
