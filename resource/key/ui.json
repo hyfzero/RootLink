@@ -1,0 +1,114 @@
+{
+  "type": "Custom",
+  "tags": [
+    "冷静",
+    "耐心",
+    "博士生"
+  ],
+  "intro": "一个被困在数字世界的灵魂",
+  "status_text": "",
+  "accent_color": "#B6A8C9",
+  "avatar": "assets/avatar.png",
+  "standing_image": "assets/portraits/neutral-39e361d0.png",
+  "portraits": {
+    "happy": "assets/portraits/happy-ae30755f.png",
+    "sad": "assets/portraits/sad-959b2f32.png",
+    "angry": "assets/portraits/angry-fbba68af.png",
+    "surprised": "assets/portraits/surprised-b409651f.png",
+    "neutral": "assets/portraits/neutral-39e361d0.png"
+  },
+  "portrait_layout": {
+    "canvas_width": 390,
+    "canvas_height": 520,
+    "anchor_bbox": [
+      28,
+      65,
+      363,
+      455
+    ]
+  },
+  "portrait_sources": {
+    "happy": {
+      "source_path": "D:\\Godot\\safe-house-syndrome\\safe-house-syndrome\\Resources\\Characters\\键\\键.png",
+      "processed_path": "C:\\Users\\YY\\AppData\\Local\\Temp\\amadues_portraits\\3ea0882b49d247a997c8574d1e8d60f1\\happy-12.png",
+      "background_color": [
+        218,
+        134,
+        64
+      ],
+      "tolerance": 120,
+      "feather": 2,
+      "crop_box": null,
+      "scale": 0.9,
+      "offset_x": 0,
+      "offset_y": 0,
+      "warning": ""
+    },
+    "sad": {
+      "source_path": "D:\\Godot\\safe-house-syndrome\\safe-house-syndrome\\Resources\\Characters\\键\\键2_thinking.png",
+      "processed_path": "C:\\Users\\YY\\AppData\\Local\\Temp\\amadues_portraits\\3ea0882b49d247a997c8574d1e8d60f1\\sad-22.png",
+      "background_color": [
+        218,
+        134,
+        64
+      ],
+      "tolerance": 120,
+      "feather": 2,
+      "crop_box": null,
+      "scale": 0.9,
+      "offset_x": 0,
+      "offset_y": 0,
+      "warning": ""
+    },
+    "angry": {
+      "source_path": "D:\\Godot\\safe-house-syndrome\\safe-house-syndrome\\Resources\\Characters\\键\\键2_thinking.png",
+      "processed_path": "C:\\Users\\YY\\AppData\\Local\\Temp\\amadues_portraits\\3ea0882b49d247a997c8574d1e8d60f1\\angry-25.png",
+      "background_color": [
+        218,
+        134,
+        64
+      ],
+      "tolerance": 120,
+      "feather": 2,
+      "crop_box": null,
+      "scale": 0.9,
+      "offset_x": 0,
+      "offset_y": 0,
+      "warning": ""
+    },
+    "surprised": {
+      "source_path": "D:\\Godot\\safe-house-syndrome\\safe-house-syndrome\\Resources\\Characters\\键\\键2_supurise.png",
+      "processed_path": "C:\\Users\\YY\\AppData\\Local\\Temp\\amadues_portraits\\3ea0882b49d247a997c8574d1e8d60f1\\surprised-30.png",
+      "background_color": [
+        218,
+        134,
+        64
+      ],
+      "tolerance": 55,
+      "feather": 2,
+      "crop_box": null,
+      "scale": 0.9,
+      "offset_x": 0,
+      "offset_y": 0,
+      "warning": ""
+    },
+    "neutral": {
+      "source_path": "D:\\Godot\\safe-house-syndrome\\safe-house-syndrome\\Resources\\Characters\\键\\键.png",
+      "processed_path": "C:\\Users\\YY\\AppData\\Local\\Temp\\amadues_portraits\\5234b803e3aa40019d5dd2e1396f54ac\\neutral-5.png",
+      "background_color": [
+        218,
+        134,
+        64
+      ],
+      "tolerance": 32,
+      "feather": 0,
+      "crop_box": null,
+      "scale": 0.9,
+      "offset_x": 0,
+      "offset_y": 0,
+      "warning": ""
+    }
+  },
+  "last_message": "",
+  "last_time": ""
+}

@@ -92,7 +92,7 @@ class GuiAppStorageTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(created_paths["config"], Path(app_root) / "config")
             self.assertEqual(created_paths["bound"], Path("bound"))
             self.assertFalse((Path(app_root) / "data" / "amadues").exists())
-            self.assertTrue((Path(app_root) / "data" / "shinji").exists())
+            self.assertTrue((Path(app_root) / "data" / "key").exists())
             self.assertEqual(len(page.added), 1)
 
     async def test_bootstrap_falls_back_to_flet_storage_env(self) -> None:
@@ -104,7 +104,7 @@ class GuiAppStorageTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(PathResolver.get_data_dir(), Path(app_root) / "data")
             self.assertEqual(PathResolver.get_config_dir(), Path(app_root) / "config")
 
-    async def test_run_app_creates_only_default_shinji_on_empty_storage(self) -> None:
+    async def test_run_app_creates_only_default_key_on_empty_storage(self) -> None:
         with tempfile.TemporaryDirectory() as app_root:
             with (
                 patch.object(gui_app, "AmaduesController") as controller_type,
@@ -117,8 +117,8 @@ class GuiAppStorageTests(unittest.IsolatedAsyncioTestCase):
 
             data_root = Path(app_root) / "data"
             self.assertFalse((data_root / "amadues").exists())
-            self.assertTrue((data_root / "shinji" / "persona" / "profile.json").exists())
-            self.assertTrue((data_root / "shinji" / "ui.json").exists())
+            self.assertTrue((data_root / "key" / "persona" / "profile.json").exists())
+            self.assertTrue((data_root / "key" / "ui.json").exists())
 
     async def test_configure_bundled_flet_view_path_uses_packaged_client(self) -> None:
         with tempfile.TemporaryDirectory() as bundle_root:

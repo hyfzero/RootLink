@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import threading
@@ -47,6 +48,7 @@ from .role_loader import load_roles_from_data, load_roles_from_registry
 
 AMADUES_BRAIN_ID = "amadues"
 AMADUES_UI_ROLE_ID = AMADUES_BRAIN_ID
+KEY_BRAIN_ID = "key"
 SHINJI_BRAIN_ID = "shinji"
 MINIMAX_PROVIDER = "minimax"
 MINIMAX_MODEL = "MiniMax-M2.5"
@@ -75,6 +77,7 @@ MISSING_API_KEY_NOTICE = f"API Key \u5c1a\u672a\u914d\u7f6e\u3002{CONFIG_NOTICE}
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RESOURCE_DIR = PROJECT_ROOT / "resource"
 DEFAULT_RESPONSE_LIMITS = {"max_tokens": 2000, "max_sentences": 5}
+DEFAULT_KEY_SOURCE_ENV = "AMADUES_DEFAULT_KEY_SOURCE_DIR"
 
 
 class ChatConfigurationError(RuntimeError):
@@ -343,6 +346,82 @@ def _copy_asset_if_missing(source: Path, target: Path) -> None:
         shutil.copyfile(source, target)
 
 
+def _copy_missing_tree(source: Path, target: Path, *, overwrite: bool = False) -> None:
+    if not source.exists():
+        return
+    if source.is_file():
+        if overwrite or not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        return
+    for item in source.rglob("*"):
+        relative = item.relative_to(source)
+        destination = target / relative
+        if item.is_dir():
+            destination.mkdir(parents=True, exist_ok=True)
+        elif item.is_file() and (overwrite or not destination.exists()):
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, destination)
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    try:
+        return left.resolve() == right.resolve()
+    except OSError:
+        return False
+
+
+def _default_key_source_dir() -> Path:
+    env_path = os.environ.get(DEFAULT_KEY_SOURCE_ENV)
+    if env_path:
+        return Path(env_path).expanduser()
+    return RESOURCE_DIR / KEY_BRAIN_ID
+
+
+def _default_key_source_dirs() -> list[Path]:
+    sources = [_default_key_source_dir()]
+    legacy_windows_seed = Path.home() / "AppData" / "Roaming" / "Appveyor Systems Inc" / "Flet" / "data" / KEY_BRAIN_ID
+    if not any(_same_path(source, legacy_windows_seed) for source in sources):
+        sources.append(legacy_windows_seed)
+    return sources
+
+
+def _copy_default_key_seed(source_dirs: Path | list[Path], brain_dir: Path, *, overwrite: bool = False) -> bool:
+    candidates = [source_dirs] if isinstance(source_dirs, Path) else source_dirs
+    source_dir = next(
+        (
+            source
+            for source in candidates
+            if source.exists()
+            and not _same_path(source, brain_dir)
+            and (source / "persona" / "profile.json").exists()
+        ),
+        None,
+    )
+    if source_dir is None:
+        return False
+
+    for child_name in ("assets", "persona", "tags"):
+        _copy_missing_tree(source_dir / child_name, brain_dir / child_name, overwrite=overwrite)
+    for file_name in ("config.json", "ui.json"):
+        _copy_missing_tree(source_dir / file_name, brain_dir / file_name, overwrite=overwrite)
+    return True
+
+
+def _same_file_content(left: Path, right: Path) -> bool:
+    try:
+        return left.is_file() and right.is_file() and left.read_bytes() == right.read_bytes()
+    except OSError:
+        return False
+
+
+def _key_uses_legacy_amadues_assets(brain_dir: Path) -> bool:
+    return _same_file_content(brain_dir / "assets" / "avatar.png", RESOURCE_DIR / "amadues.png") or _same_file_content(
+        brain_dir / "assets" / "portraits" / "neutral.png",
+        RESOURCE_DIR / "amadues_Full_profile.png",
+    )
+
+
 def _reply_tag_emotion(tag: object) -> str:
     if tag is None:
         return ""
@@ -434,6 +513,111 @@ def _ensure_default_amadues_data(brain_id: str = AMADUES_BRAIN_ID) -> Path:
     return brain_dir
 
 
+def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
+    brain_dir = PathResolver.get_brain_dir(brain_id)
+    persona_dir = brain_dir / "persona"
+    history_dir = brain_dir / "history"
+    assets_dir = brain_dir / "assets"
+    portraits_dir = assets_dir / "portraits"
+    tags_dir = brain_dir / "tags"
+
+    persona_dir.mkdir(parents=True, exist_ok=True)
+    history_dir.mkdir(parents=True, exist_ok=True)
+    portraits_dir.mkdir(parents=True, exist_ok=True)
+    tags_dir.mkdir(parents=True, exist_ok=True)
+
+    seed_sources = _default_key_source_dirs()
+    _copy_default_key_seed(seed_sources, brain_dir)
+    if _key_uses_legacy_amadues_assets(brain_dir):
+        _copy_default_key_seed(seed_sources, brain_dir, overwrite=True)
+
+    _write_json_if_missing(
+        persona_dir / "profile.json",
+        {
+            "name": "健",
+            "age": 18,
+            "gender": "female",
+            "personality_traits": ["冷静", "耐心", "博士生", "内耗", "身体差"],
+            "background": (
+                "维克多·孔多利亚大学脑科学研究所研究员。11岁赴美留学并跳级入学，18岁在著名学术杂志发表论文，"
+                "被称作脑科学天才少女。表面冷静理性，实际上好奇心旺盛，对感兴趣的事物会全身心投入。"
+            ),
+            "speaking_style": "tsundere_academic",
+            "birthday": "7月25日",
+            "interests": ["数学", "编程", "偶像", "游戏", "漫画", "亚文化"],
+            "relationship_state": "neutral",
+            "relationship_score": 0.0,
+            "relationship_updated_at": None,
+        },
+    )
+    _ensure_response_config(brain_dir / "config.json", DEFAULT_RESPONSE_LIMITS)
+    _write_json_if_missing(
+        persona_dir / "memories.json",
+        {
+            "episodic_memories": [],
+            "preference_memories": [],
+            "fact_memories": [],
+            "daily_summary_memories": [],
+            "monthly_summary_memories": [],
+        },
+    )
+    _write_json_if_missing(
+        persona_dir / "state.json",
+        {
+            "mood": "neutral",
+            "energy": 0.6,
+            "affinity": 0.0,
+            "trust": 0.0,
+            "familiarity": 0.0,
+            "boundary_comfort": 50.0,
+            "recent_valence": 0.0,
+            "recent_support": 0.0,
+            "recent_conflict": 0.0,
+            "tension": 0.0,
+            "current_focus": None,
+            "last_emotion": "neutral",
+            "updated_at": None,
+        },
+    )
+    _write_json_if_missing(
+        persona_dir / "speaking_style.json",
+        {
+            "base_style": {
+                "vocabulary_level": "academic",
+                "sentence_length": "short",
+                "exclamation_rate": 0.08,
+                "question_rate": 0.15,
+                "ellipsis_rate": 0.7,
+                "filler_words": [],
+                "emotion_words": {},
+                "emoji_usage": "sparse",
+                "parenthesis_usage": "sparse",
+            },
+            "influence_weight": 0.2,
+            "current_emotion": None,
+            "custom_modifiers": {},
+        },
+    )
+    _write_json_if_missing(
+        brain_dir / "ui.json",
+        {
+            "type": "Custom",
+            "tags": ["冷静", "耐心", "博士生"],
+            "intro": "一个被困在数字世界的灵魂",
+            "status_text": "",
+            "accent_color": "#B6A8C9",
+            "avatar": "assets/avatar.png",
+            "standing_image": "assets/portraits/neutral.png",
+            "portraits": {"neutral": "assets/portraits/neutral.png"},
+            "last_message": "",
+            "last_time": "",
+        },
+    )
+    _write_json_if_missing(tags_dir / "reply_tags.json", {"tags": {}, "recent_order": [], "max_size": 100})
+
+    return brain_dir
+
+
 def _ensure_default_shinji_data(brain_id: str = SHINJI_BRAIN_ID) -> Path:
     brain_dir = PathResolver.get_brain_dir(brain_id)
     persona_dir = brain_dir / "persona"
@@ -520,12 +704,12 @@ def _ensure_default_shinji_data(brain_id: str = SHINJI_BRAIN_ID) -> Path:
 
 
 def ensure_default_startup_data() -> Path:
-    return _ensure_default_shinji_data()
+    return _ensure_default_key_data()
 
 
 def build_amadues_runtime(
     config_dir: str | Path | None = None,
-    brain_id: str = SHINJI_BRAIN_ID,
+    brain_id: str = KEY_BRAIN_ID,
 ) -> AmaduesRuntime:
     model_config = _load_model_config(config_dir)
     chat_agent = ChatAgent(config=model_config)

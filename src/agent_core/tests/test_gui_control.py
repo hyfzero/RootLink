@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -26,9 +27,10 @@ from GUI.control import (
     DEEPSEEK_PROVIDER,
     DEEPSEEK_V4_FLASH_MODEL,
     DEEPSEEK_V4_PRO_MODEL,
+    DEFAULT_KEY_SOURCE_ENV,
+    KEY_BRAIN_ID,
     MINIMAX_MODEL,
     MINIMAX_PROVIDER,
-    SHINJI_BRAIN_ID,
     AmaduesController,
     AmaduesRuntime,
     UiSettingsStorage,
@@ -168,6 +170,7 @@ class GuiControlTests(unittest.TestCase):
             PathResolver.ENV_DATA_DIR: os.environ.get(PathResolver.ENV_DATA_DIR),
             PathResolver.ENV_CONFIG_DIR: os.environ.get(PathResolver.ENV_CONFIG_DIR),
             PathResolver.ENV_FLET_DATA_DIR: os.environ.get(PathResolver.ENV_FLET_DATA_DIR),
+            DEFAULT_KEY_SOURCE_ENV: os.environ.get(DEFAULT_KEY_SOURCE_ENV),
         }
         for env_name in self._env_backup:
             os.environ.pop(env_name, None)
@@ -276,7 +279,7 @@ class GuiControlTests(unittest.TestCase):
 
             self.assertEqual(list(Path(data_dir).iterdir()), [])
 
-    def test_build_amadues_runtime_defaults_to_shinji(self) -> None:
+    def test_build_amadues_runtime_defaults_to_key(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
             os.environ[PathResolver.ENV_CONFIG_DIR] = config_dir
             os.environ[PathResolver.ENV_DATA_DIR] = data_dir
@@ -284,7 +287,7 @@ class GuiControlTests(unittest.TestCase):
             storage = UiSettingsStorage(config_dir)
             storage.save_minimax_config("runtime-key")
 
-            for brain_id, name in ((AMADUES_BRAIN_ID, "Amadues"), (SHINJI_BRAIN_ID, "Shinji")):
+            for brain_id, name in ((AMADUES_BRAIN_ID, "Amadues"), (KEY_BRAIN_ID, "Key")):
                 persona_dir = Path(data_dir) / brain_id / "persona"
                 persona_dir.mkdir(parents=True)
                 (persona_dir / "profile.json").write_text(
@@ -304,18 +307,90 @@ class GuiControlTests(unittest.TestCase):
 
             runtime = build_amadues_runtime(config_dir=config_dir)
 
-            self.assertEqual(runtime.brain_registry.current_brain_id(), SHINJI_BRAIN_ID)
+            self.assertEqual(runtime.brain_registry.current_brain_id(), KEY_BRAIN_ID)
 
-    def test_default_startup_data_uses_updated_shinji_description(self) -> None:
-        ensure_default_startup_data()
+    def test_default_startup_data_copies_key_seed(self) -> None:
+        with tempfile.TemporaryDirectory() as seed_dir:
+            seed_root = Path(seed_dir)
+            (seed_root / "persona").mkdir(parents=True)
+            (seed_root / "assets" / "portraits").mkdir(parents=True)
+            (seed_root / "tags").mkdir(parents=True)
+            (seed_root / "persona" / "profile.json").write_text(
+                json.dumps({"name": "健", "background": "seed background"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (seed_root / "persona" / "memories.json").write_text(
+                json.dumps(
+                    {
+                        "episodic_memories": [],
+                        "preference_memories": [],
+                        "fact_memories": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (seed_root / "ui.json").write_text(
+                json.dumps(
+                    {
+                        "type": "Custom",
+                        "avatar": "assets/avatar.png",
+                        "portraits": {"neutral": "assets/portraits/neutral-abc123.png"},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (seed_root / "assets" / "avatar.png").write_bytes(b"avatar")
+            (seed_root / "assets" / "portraits" / "neutral-abc123.png").write_bytes(b"portrait")
+            os.environ[DEFAULT_KEY_SOURCE_ENV] = seed_dir
 
-        profile_path = Path(self._data_tmp.name) / SHINJI_BRAIN_ID / "persona" / "profile.json"
+            ensure_default_startup_data()
+
+        profile_path = Path(self._data_tmp.name) / KEY_BRAIN_ID / "persona" / "profile.json"
         profile = json.loads(profile_path.read_text(encoding="utf-8"))
-        ui_path = Path(self._data_tmp.name) / SHINJI_BRAIN_ID / "ui.json"
+        ui_path = Path(self._data_tmp.name) / KEY_BRAIN_ID / "ui.json"
         ui_data = json.loads(ui_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(profile["background"], "14岁时被任命为EVA初号机驾驶员，成为第三适格者")
-        self.assertEqual(ui_data["intro"], "14岁时被任命为EVA初号机驾驶员，成为第三适格者")
+        self.assertEqual(profile["name"], "健")
+        self.assertEqual(profile["background"], "seed background")
+        self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-abc123.png")
+        self.assertTrue((Path(self._data_tmp.name) / KEY_BRAIN_ID / "assets" / "avatar.png").exists())
+        self.assertTrue(
+            (Path(self._data_tmp.name) / KEY_BRAIN_ID / "assets" / "portraits" / "neutral-abc123.png").exists()
+        )
+
+    def test_default_startup_data_uses_packaged_key_seed_without_windows_path(self) -> None:
+        ensure_default_startup_data()
+
+        key_dir = Path(self._data_tmp.name) / KEY_BRAIN_ID
+        packaged_key_dir = REPO_ROOT / "resource" / KEY_BRAIN_ID
+        profile = json.loads((key_dir / "persona" / "profile.json").read_text(encoding="utf-8"))
+        ui_data = json.loads((key_dir / "ui.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(profile["name"], "\u5065")
+        self.assertEqual(ui_data["avatar"], "assets/avatar.png")
+        self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-39e361d0.png")
+        self.assertEqual((key_dir / "assets" / "avatar.png").read_bytes(), (packaged_key_dir / "assets" / "avatar.png").read_bytes())
+        self.assertFalse((Path(self._data_tmp.name) / AMADUES_BRAIN_ID).exists())
+
+    def test_default_startup_data_repairs_legacy_key_with_amadues_assets(self) -> None:
+        key_dir = Path(self._data_tmp.name) / KEY_BRAIN_ID
+        (key_dir / "assets" / "portraits").mkdir(parents=True)
+        (key_dir / "persona").mkdir(parents=True)
+        shutil.copy2(REPO_ROOT / "resource" / "amadues.png", key_dir / "assets" / "avatar.png")
+        shutil.copy2(REPO_ROOT / "resource" / "amadues_Full_profile.png", key_dir / "assets" / "portraits" / "neutral.png")
+        (key_dir / "persona" / "profile.json").write_text(json.dumps({"name": "bad"}), encoding="utf-8")
+        (key_dir / "ui.json").write_text(
+            json.dumps({"avatar": "assets/avatar.png", "portraits": {"neutral": "assets/portraits/neutral.png"}}),
+            encoding="utf-8",
+        )
+
+        ensure_default_startup_data()
+
+        packaged_key_dir = REPO_ROOT / "resource" / KEY_BRAIN_ID
+        ui_data = json.loads((key_dir / "ui.json").read_text(encoding="utf-8"))
+        self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-39e361d0.png")
+        self.assertEqual((key_dir / "assets" / "avatar.png").read_bytes(), (packaged_key_dir / "assets" / "avatar.png").read_bytes())
 
     def test_bind_view_keeps_roles_empty_when_data_directory_has_no_brain(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:

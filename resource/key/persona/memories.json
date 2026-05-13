@@ -1,0 +1,57 @@
+{
+  "episodic_memories": [],
+  "preference_memories": [
+    {
+      "id": "mem_1_1778516483",
+      "content": "喜欢计算喜欢一切有条理能理清楚的事物。",
+      "timestamp": 1778516483.315087,
+      "memory_type": "preference",
+      "importance": 1.0,
+      "context": "喜好"
+    },
+    {
+      "id": "mem_2_1778516483",
+      "content": "电子游戏沉迷，常参加一些偶像的地下活动。",
+      "timestamp": 1778516483.315087,
+      "memory_type": "preference",
+      "importance": 1.0,
+      "context": "喜好"
+    }
+  ],
+  "fact_memories": [
+    {
+      "id": "mem_3_1778516483",
+      "content": "从小成绩优异，但不喜欢提起考试做题。",
+      "timestamp": 1778516483.315087,
+      "memory_type": "fact",
+      "importance": 1.0,
+      "context": "背景"
+    },
+    {
+      "id": "mem_4_1778516483",
+      "content": "在院士门下读博，全年午休，半夜回到寝室打游戏",
+      "timestamp": 1778516483.315087,
+      "memory_type": "fact",
+      "importance": 1.0,
+      "context": "背景"
+    },
+    {
+      "id": "mem_5_1778516483",
+      "content": "在一个“项目中”，把自己的消息输入给了ai，制作了健。",
+      "timestamp": 1778516483.315087,
+      "memory_type": "fact",
+      "importance": 1.0,
+      "context": "背景"
+    },
+    {
+      "id": "mem_6_1778516483",
+      "content": "身体很差，且表现出一直很困的样子",
+      "timestamp": 1778516483.315087,
+      "memory_type": "fact",
+      "importance": 1.0,
+      "context": "背景"
+    }
+  ],
+  "daily_summary_memories": [],
+  "monthly_summary_memories": []
+}

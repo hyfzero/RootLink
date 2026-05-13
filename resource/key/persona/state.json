@@ -1,0 +1,15 @@
+{
+  "mood": "neutral",
+  "energy": 0.6,
+  "affinity": 2.4,
+  "trust": 0.6,
+  "familiarity": 1.0,
+  "boundary_comfort": 50.400000000000006,
+  "recent_valence": 0.0,
+  "recent_support": 0.0,
+  "recent_conflict": 0.0,
+  "tension": 0.0,
+  "current_focus": null,
+  "last_emotion": "neutral",
+  "updated_at": 1778517489.8044662
+}

@@ -275,6 +275,32 @@ class CharacterCreatorTests(unittest.TestCase):
             roles = load_roles_from_data(Path(data_root))
             self.assertEqual(roles[0].avatar_path, (brain_dir / ui["avatar"]).as_posix())
 
+    def test_update_keeps_relative_asset_sources_during_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as data_root, tempfile.TemporaryDirectory() as assets_root:
+            image_path = Path(assets_root) / "avatar.png"
+            image_path.write_bytes(b"png-bytes")
+            creator = CharacterCreator(Path(data_root))
+            result = creator.create(
+                CharacterDraft(
+                    brain_id="relative_assets",
+                    name="Relative Assets",
+                    avatar_path=str(image_path),
+                    portraits={"neutral": str(image_path)},
+                )
+            )
+            brain_dir = result.brain_dir
+
+            draft = creator.load_draft("relative_assets")
+            draft.avatar_path = "assets/avatar.png"
+            draft.portraits["neutral"] = "assets/portraits/neutral.png"
+            creator.update("relative_assets", draft)
+
+            ui = json.loads((brain_dir / "ui.json").read_text(encoding="utf-8"))
+            self.assertEqual(ui["avatar"], "assets/avatar.png")
+            self.assertEqual(ui["portraits"]["neutral"], "assets/portraits/neutral.png")
+            self.assertTrue((brain_dir / "assets" / "avatar.png").exists())
+            self.assertTrue((brain_dir / "assets" / "portraits" / "neutral.png").exists())
+
     def test_update_ignores_stale_versioned_portrait_keys(self) -> None:
         with tempfile.TemporaryDirectory() as data_root, tempfile.TemporaryDirectory() as assets_root:
             old_image = Path(assets_root) / "old.png"

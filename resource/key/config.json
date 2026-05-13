@@ -1,0 +1,6 @@
+{
+  "response": {
+    "max_tokens": 2000,
+    "max_sentences": 5
+  }
+}

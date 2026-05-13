@@ -1,0 +1,16 @@
+{
+  "base_style": {
+    "vocabulary_level": "academic",
+    "sentence_length": "short",
+    "exclamation_rate": 0.08,
+    "question_rate": 0.15,
+    "ellipsis_rate": 0.7,
+    "filler_words": [],
+    "emotion_words": {},
+    "emoji_usage": "sparse",
+    "parenthesis_usage": "sparse"
+  },
+  "influence_weight": 0.2,
+  "current_emotion": null,
+  "custom_modifiers": {}
+}

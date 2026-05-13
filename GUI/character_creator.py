@@ -354,7 +354,7 @@ class CharacterCreator:
         return avatar_rel, portraits
 
     def _copy_image(self, source: str, target_dir: Path, stem: str, brain_dir: Path, *, versioned: bool = False) -> str:
-        source_path = Path(source)
+        source_path = self._resolve_asset_source(source, brain_dir)
         if not source_path.exists() or not source_path.is_file():
             raise CharacterCreationError(f"Image file not found: {source}")
         suffix = source_path.suffix.lower()
@@ -377,7 +377,7 @@ class CharacterCreator:
         if not target_dir.exists():
             return
         brain_root = brain_dir.resolve()
-        keep_resolved = Path(keep_source).resolve() if keep_source else None
+        keep_resolved = self._resolve_asset_source(keep_source, brain_dir).resolve() if keep_source else None
         for target in target_dir.iterdir():
             if target.suffix.lower() not in ALLOWED_IMAGE_EXTENSIONS:
                 continue
@@ -389,6 +389,12 @@ class CharacterCreator:
             if keep_resolved is not None and resolved == keep_resolved:
                 continue
             target.unlink()
+
+    def _resolve_asset_source(self, source: str, brain_dir: Path) -> Path:
+        source_path = Path(source)
+        if not source_path.is_absolute():
+            source_path = brain_dir / source_path
+        return source_path
 
     def _is_inside(self, path: Path, root: Path) -> bool:
         try:
