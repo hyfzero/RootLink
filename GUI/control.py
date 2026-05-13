@@ -34,7 +34,7 @@ from .chat_text import (
     split_display_sentences,
 )
 from .character_package import CharacterPackageError, export_character_package, import_character_package
-from .character_creator import CharacterCreationError, CharacterCreator
+from .character_creator import VALID_BRAIN_ID, CharacterCreationError, CharacterCreator
 from .interfaces import (
     CharacterDraft,
     ChatMessage,
@@ -704,6 +704,13 @@ def _ensure_default_shinji_data(brain_id: str = SHINJI_BRAIN_ID) -> Path:
 
 
 def ensure_default_startup_data() -> Path:
+    data_dir = PathResolver.get_data_dir()
+    roles = load_roles_from_data(data_dir)
+    if roles:
+        key_dir = data_dir / KEY_BRAIN_ID
+        if key_dir.is_dir() and _key_uses_legacy_amadues_assets(key_dir):
+            _copy_default_key_seed(_default_key_source_dirs(), key_dir, overwrite=True)
+        return data_dir / roles[0].id
     return _ensure_default_key_data()
 
 
@@ -1064,6 +1071,41 @@ class AmaduesController(CompanionUICallback):
             self.view.set_active_role(result.brain_id)
             self.view.show_notice(f"Saved character: {draft.name.strip()}")
             self.view.show_page("home")
+
+    def on_character_delete_requested(self, role_id: str) -> bool:
+        try:
+            brain_id = self._resolve_brain_id(role_id, self._runtime)
+            data_dir = PathResolver.get_data_dir()
+            roles = load_roles_from_data(data_dir)
+            if len(roles) <= 1:
+                raise CharacterCreationError("至少需要保留一个人格")
+            if not VALID_BRAIN_ID.fullmatch(brain_id):
+                raise CharacterCreationError(f"Invalid character id: {brain_id}")
+
+            brain_dir = (data_dir / brain_id).resolve()
+            data_root = data_dir.resolve()
+            if brain_dir.parent != data_root or not brain_dir.is_dir():
+                raise CharacterCreationError(f"Character id '{brain_id}' does not exist.")
+
+            shutil.rmtree(brain_dir)
+        except (CharacterCreationError, OSError) as exc:
+            if self.view is not None:
+                self.view.show_notice(str(exc), is_error=True)
+            else:
+                print(f"[ui] delete character failed: {exc}")
+            return False
+
+        self._role_mapping.pop(role_id, None)
+        self._role_mapping.pop(brain_id, None)
+        self._invalidate_runtime()
+        if self.view is not None:
+            self._publish_data_roles()
+            remaining_roles = load_roles_from_data(PathResolver.get_data_dir())
+            if remaining_roles:
+                self.view.set_active_role(remaining_roles[0].id)
+            self.view.show_notice(f"Deleted character: {brain_id}")
+            self.view.show_page("home")
+        return True
 
     def on_character_export_requested(self, role_id: str, destination_path: str = "") -> str:
         try:

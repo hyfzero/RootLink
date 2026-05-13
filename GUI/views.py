@@ -558,6 +558,69 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _export_role_to_path(self, role_id: str, destination_path: str) -> str:
         return self._callback.on_character_export_requested(role_id, destination_path)
 
+    def _confirm_delete_role(self, role_id: str) -> None:
+        role = next((item for item in self._roles if item.id == role_id), None)
+        if role is None:
+            self.show_notice("\u627e\u4e0d\u5230\u8981\u5220\u9664\u7684\u89d2\u8272", is_error=True)
+            return
+        if len(self._roles) <= 1:
+            self.show_notice("\u81f3\u5c11\u9700\u8981\u4fdd\u7559\u4e00\u4e2a\u4eba\u683c", is_error=True)
+            return
+        try:
+            page = self.page
+        except RuntimeError:
+            self._delete_role(role_id)
+            return
+
+        colors = self._colors()
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=text("\u5220\u9664\u4eba\u683c", 18, colors["text"], ft.FontWeight.W_500),
+            content=text(
+                f"\u786e\u5b9a\u5220\u9664\u300c{role.name}\u300d\u5417\uff1f\u5220\u9664\u540e\u8be5\u4eba\u683c\u7684\u672c\u5730\u6570\u636e\u4e5f\u4f1a\u88ab\u79fb\u9664\u3002",
+                14,
+                colors["text_secondary"],
+            ),
+            actions=[
+                ft.TextButton("\u53d6\u6d88", on_click=lambda _: self._close_dialog(dialog)),
+                ft.TextButton(
+                    "\u5220\u9664",
+                    style=ft.ButtonStyle(color="#D92D20"),
+                    on_click=lambda _: self._delete_role_from_dialog(role_id, dialog),
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._show_dialog(dialog, page)
+
+    def _show_dialog(self, dialog: ft.AlertDialog, page: ft.Page) -> None:
+        dialog.open = True
+        show_dialog = getattr(page, "show_dialog", None)
+        if callable(show_dialog):
+            show_dialog(dialog)
+            return
+        page.dialog = dialog
+        page.update()
+
+    def _close_dialog(self, dialog: ft.AlertDialog) -> None:
+        dialog.open = False
+        try:
+            dialog.update()
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
+            try:
+                self.page.update()
+            except (AssertionError, RuntimeError, TypeError, AttributeError):
+                pass
+
+    def _delete_role_from_dialog(self, role_id: str, dialog: ft.AlertDialog) -> None:
+        self._close_dialog(dialog)
+        self._delete_role(role_id)
+
+    def _delete_role(self, role_id: str) -> None:
+        if self._callback.on_character_delete_requested(role_id):
+            self._messages = [message for message in self._messages if message.role_id != role_id]
+            self._seen_message_ids = {message.id for message in self._messages}
+
     def _is_mobile_platform(self) -> bool:
         try:
             page = self.page
@@ -1630,14 +1693,31 @@ class CompanionAppView(ft.Container, CompanionUIView):
             transition=ft.AnimatedSwitcherTransition.FADE,
         )
         title = "\u7f16\u8f91\u89d2\u8272" if self._create_mode == "edit" else "\u521b\u5efa\u89d2\u8272"
+        header_action = self._delete_role_header_button(colors) if self._create_mode == "edit" else None
         controls = [
-            self._stagger("create", 0, self._header(title, colors, lambda _: self.go_back()), offset_y=0.02),
+            self._stagger("create", 0, self._header(title, colors, lambda _: self.go_back(), action=header_action), offset_y=0.02),
             self._stagger("create", 1, self._create_progress(colors)),
             self._stagger("create", 2, ft.Container(content=step_switcher), offset_y=0.03),
             self._stagger("create", 3, self._create_footer(colors), offset_y=0.03),
             ft.Container(height=24),
         ]
         return self._page_column([ft.Container(padding=ft.Padding.only(left=20, right=20, top=4, bottom=20), content=ft.Column(spacing=18, controls=controls))])
+
+    def _delete_role_header_button(self, colors: dict[str, str]) -> ft.Control:
+        return ft.Container(
+            width=40,
+            height=40,
+            border_radius=20,
+            tooltip="\u5220\u9664\u4eba\u683c",
+            bgcolor=hex_with_alpha("#D92D20", 24 if self._is_dark else 30),
+            border=ft.Border.all(1, hex_with_alpha("#D92D20", 72 if self._is_dark else 58)),
+            alignment=ft.Alignment(0, 0),
+            ink=True,
+            scale=1.0,
+            animate_scale=animation("fast", phase="press"),
+            on_click=animated_click(lambda _: self._confirm_delete_role(self._editing_role_id)),
+            content=ft.Icon(ft.Icons.DELETE_OUTLINE, size=19, color="#F04438" if self._is_dark else "#B42318"),
+        )
 
     def _create_progress(self, colors: dict[str, str]) -> ft.Control:
         accent_color = self._create_accent_color()
@@ -2311,13 +2391,17 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._memory_list.controls = self._memory_controls(self._colors())
         self._try_update_control(self._memory_list)
 
-    def _header(self, title: str, colors: dict[str, str], on_back=None) -> ft.Container:
+    def _header(self, title: str, colors: dict[str, str], on_back=None, action: ft.Control | None = None) -> ft.Container:
         return ft.Container(
             padding=ft.Padding.only(left=0, right=0, top=26, bottom=16),
             content=ft.Row(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                controls=[round_icon_button(ft.Icons.CHEVRON_LEFT, colors, on_back or (lambda _: self.go_back())), text(title, 20, colors["text"], ft.FontWeight.W_500), ft.Container(width=40)],
+                controls=[
+                    round_icon_button(ft.Icons.CHEVRON_LEFT, colors, on_back or (lambda _: self.go_back())),
+                    text(title, 20, colors["text"], ft.FontWeight.W_500),
+                    action or ft.Container(width=40),
+                ],
             ),
         )
 

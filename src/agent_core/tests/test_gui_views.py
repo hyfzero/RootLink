@@ -193,6 +193,8 @@ class EditCallback(CompanionUICallback):
         self.exported_role_id = ""
         self.exported_destination = ""
         self.imported_package_path = ""
+        self.deleted_role_id = ""
+        self.delete_result = True
 
     def on_open_chat(self, role_id: str) -> None:
         self.opened_role_id = role_id
@@ -212,6 +214,10 @@ class EditCallback(CompanionUICallback):
     def on_character_import_requested(self, package_path: str) -> str:
         self.imported_package_path = package_path
         return "imported"
+
+    def on_character_delete_requested(self, role_id: str) -> bool:
+        self.deleted_role_id = role_id
+        return self.delete_result
 
 
 class SettingsCallback(CompanionUICallback):
@@ -298,6 +304,60 @@ class GuiViewTests(unittest.TestCase):
         view._set_draft_accent_color("#8FB7B3")
 
         self.assertEqual(view._draft.accent_color, "#8FB7B3")
+
+    def test_home_role_card_does_not_show_delete_action(self) -> None:
+        view = CompanionAppView(roles=[make_role()])
+
+        home = view._build_home_page(view._colors())
+        tooltips = [getattr(control, "tooltip", "") for control in collect_controls(home)]
+
+        self.assertNotIn("\u5220\u9664\u4eba\u683c", tooltips)
+        self.assertNotIn("\u5220\u9664\u89d2\u8272", tooltips)
+
+    def test_edit_page_header_shows_delete_action(self) -> None:
+        view = CompanionAppView(roles=[make_role()])
+        view._create_mode = "edit"
+        view._editing_role_id = "amadeus"
+
+        page = view._build_create_page(view._colors())
+        tooltips = [getattr(control, "tooltip", "") for control in collect_controls(page)]
+
+        self.assertIn("\u5220\u9664\u4eba\u683c", tooltips)
+
+    def test_create_page_header_hides_delete_action(self) -> None:
+        view = CompanionAppView(roles=[make_role()])
+        view._create_mode = "create"
+
+        page = view._build_create_page(view._colors())
+        tooltips = [getattr(control, "tooltip", "") for control in collect_controls(page)]
+
+        self.assertNotIn("\u5220\u9664\u4eba\u683c", tooltips)
+
+    def test_delete_role_confirmation_calls_delete_callback(self) -> None:
+        page = FakePage()
+        callback = EditCallback()
+        view = TrackingCompanionAppView(page=page, callback=callback)
+        second_role = make_role()
+        second_role.id = "beta"
+        view.set_roles([make_role(), second_role])
+
+        view._confirm_delete_role("amadeus")
+        dialog = page.dialogs[-1]
+        view._delete_role_from_dialog("amadeus", dialog)
+
+        self.assertIsInstance(dialog, ft.AlertDialog)
+        self.assertEqual(callback.deleted_role_id, "amadeus")
+
+    def test_delete_role_keeps_last_role_in_view(self) -> None:
+        page = FakePage()
+        callback = EditCallback()
+        view = TrackingCompanionAppView(page=page, callback=callback)
+
+        view._confirm_delete_role("amadeus")
+
+        self.assertEqual(callback.deleted_role_id, "")
+        self.assertTrue(page.dialogs)
+        self.assertIsInstance(page.dialogs[-1], ft.SnackBar)
 
     def test_home_quick_actions_stack_on_narrow_width(self) -> None:
         page = FakePage()

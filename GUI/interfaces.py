@@ -163,6 +163,9 @@ class CompanionUICallback(ABC):
     def on_character_update_requested(self, role_id: str, draft: CharacterDraft) -> None:
         pass
 
+    def on_character_delete_requested(self, role_id: str) -> bool:
+        return False
+
     def on_character_export_requested(self, role_id: str, destination_path: str = "") -> str:
         return ""
 

@@ -38,6 +38,7 @@ from GUI.control import (
     build_amadues_runtime,
     ensure_default_startup_data,
 )
+from GUI.character_creator import CharacterCreator
 from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUIView, UiSettings
 from GUI.role_loader import load_roles_from_data
 from agent_core.api.adapter import APIProvider, AdapterRegistry
@@ -373,6 +374,16 @@ class GuiControlTests(unittest.TestCase):
         self.assertEqual((key_dir / "assets" / "avatar.png").read_bytes(), (packaged_key_dir / "assets" / "avatar.png").read_bytes())
         self.assertFalse((Path(self._data_tmp.name) / AMADUES_BRAIN_ID).exists())
 
+    def test_default_startup_data_does_not_create_key_when_other_roles_exist(self) -> None:
+        data_dir = Path(self._data_tmp.name)
+        CharacterCreator(data_dir).create(CharacterDraft(brain_id="custom", name="Custom"))
+
+        result = ensure_default_startup_data()
+
+        self.assertEqual(result, data_dir / "custom")
+        self.assertTrue((data_dir / "custom").exists())
+        self.assertFalse((data_dir / KEY_BRAIN_ID).exists())
+
     def test_default_startup_data_repairs_legacy_key_with_amadues_assets(self) -> None:
         key_dir = Path(self._data_tmp.name) / KEY_BRAIN_ID
         (key_dir / "assets" / "portraits").mkdir(parents=True)
@@ -505,6 +516,50 @@ class GuiControlTests(unittest.TestCase):
             self.assertEqual(view.pages, [])
             self.assertTrue(view.notices[-1][1])
             self.assertFalse(any(Path(data_dir).iterdir()))
+
+    def test_character_delete_removes_role_refreshes_roles_and_selects_remaining_role(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
+            os.environ[PathResolver.ENV_CONFIG_DIR] = config_dir
+            os.environ[PathResolver.ENV_DATA_DIR] = data_dir
+            creator = CharacterCreator(Path(data_dir))
+            creator.create(CharacterDraft(brain_id="alpha", name="Alpha"))
+            creator.create(CharacterDraft(brain_id="beta", name="Beta"))
+
+            controller = AmaduesController(settings_storage=UiSettingsStorage(config_dir))
+            controller._runtime = object()
+            view = StubView()
+            controller.bind_view(view)
+            view.set_active_role("beta")
+
+            deleted = controller.on_character_delete_requested("beta")
+
+            self.assertTrue(deleted)
+            self.assertFalse((Path(data_dir) / "beta").exists())
+            self.assertEqual([role.id for role in view.roles], ["alpha"])
+            self.assertEqual(view.active_role_id, "alpha")
+            self.assertIsNone(controller._runtime)
+            self.assertEqual(view.pages[-1], "home")
+            self.assertFalse(view.notices[-1][1])
+
+    def test_character_delete_keeps_last_remaining_role(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
+            os.environ[PathResolver.ENV_CONFIG_DIR] = config_dir
+            os.environ[PathResolver.ENV_DATA_DIR] = data_dir
+            CharacterCreator(Path(data_dir)).create(CharacterDraft(brain_id="solo", name="Solo"))
+
+            controller = AmaduesController(settings_storage=UiSettingsStorage(config_dir))
+            runtime = object()
+            controller._runtime = runtime
+            view = StubView()
+            controller.bind_view(view)
+
+            deleted = controller.on_character_delete_requested("solo")
+
+            self.assertFalse(deleted)
+            self.assertTrue((Path(data_dir) / "solo").exists())
+            self.assertEqual([role.id for role in view.roles], ["solo"])
+            self.assertIs(controller._runtime, runtime)
+            self.assertTrue(view.notices[-1][1])
 
     def test_open_chat_without_api_key_injects_notice_message(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir:
