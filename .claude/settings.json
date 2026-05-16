@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flet build apk . --no-rich-output --skip-flutter-doctor)",
+      "Bash(adb:*)",
+      "Bash(flutter:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(which:*)",
+      "Bash(where:*)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(cd:*)",
+      "Bash(curl:*)",
+      "Bash(tasklist:*)",
+      "Bash(sleep:*)",
+      "Bash(git:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(PYTHONIOENCODING=utf-8:*)",
+      "Bash(.venv/Scripts/pip:*)",
+      "Bash(.venv/Scripts/python:*)",
+      "Bash(.venv/Scripts/flet:*)",
+      "Bash(echo:*)",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      "WebFetch"
+    ]
+  }
+}
