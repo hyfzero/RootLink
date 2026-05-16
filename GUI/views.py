@@ -2674,7 +2674,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             return False
         if sync_controls:
             self._sync_portrait_edit_from_controls(edit)
-        layout = None if emotion_id == "neutral" else self._draft.portrait_layout
+        layout = self._draft.portrait_layout
         try:
             output_path = self._portrait_preview_output_path(emotion_id)
             old_output_path = self._portrait_preview_paths.get(emotion_id, "")
