@@ -188,6 +188,10 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._portrait_preview_paths: dict[str, str] = {}
         self.motion_enabled = True
         self._page_history: list[str] = []
+        self._navigation_route = ""
+        self._navigation_routes: tuple[str, ...] = ()
+        self._force_platform_route_sync = False
+        self._navigation_revision = 0
         self._page_seed = {page: 0 for page in self.VALID_PAGES}
         self._chat_entry_seed = 0
         self._suppress_next_chat_entry_motion = False
@@ -391,7 +395,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 compact_stack.append(name)
         views = [
             ft.View(
-                route=f"/{index}-{name}",
+                route=f"/{index}-{name}-{self._navigation_revision}",
                 controls=[self] if index == len(compact_stack) - 1 else [],
                 padding=0,
                 spacing=0,
@@ -399,11 +403,34 @@ class CompanionAppView(ft.Container, CompanionUIView):
             for index, name in enumerate(compact_stack)
         ]
         try:
+            current_route = str(getattr(page, "route", "") or "")
             page.views = views
-            page.route = views[-1].route
-            page.update()
+            top_route = views[-1].route
+            self._navigation_route = top_route
+            self._navigation_routes = tuple(view.route for view in views)
+            force_route_sync = self._force_platform_route_sync
+            self._force_platform_route_sync = False
+            go = getattr(page, "go", None)
+            if callable(go) and (force_route_sync or current_route != top_route):
+                go(top_route)
+            else:
+                page.route = top_route
+                page.update()
         except (AssertionError, RuntimeError):
             pass
+
+    def force_platform_route_sync(self) -> None:
+        self._force_platform_route_sync = True
+        self._navigation_revision += 1
+
+    def handle_platform_route_change(self, route: object) -> bool:
+        route_value = str(route or "")
+        if not route_value or route_value == self._navigation_route:
+            return False
+        if route_value not in self._navigation_routes:
+            return False
+        self.force_platform_route_sync()
+        return self.go_back()
 
     def _ensure_file_picker(self) -> ft.FilePicker | None:
         if self._file_picker is None:
@@ -2105,7 +2132,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         )
 
     def _portrait_slider_row(self, label: str, slider: ft.Slider, colors: dict[str, str], value_key: str, value_format: str) -> ft.Control:
-        value_label = text(self._format_portrait_slider_value(slider.value, value_format), 11, colors["text"], ft.FontWeight.W_500)
+        value_label = text(self._format_portrait_slider_value(slider.value, value_format), 12, colors["text"], ft.FontWeight.W_600)
         self._portrait_value_labels[value_key] = value_label
         original_on_change = slider.on_change
 
@@ -2116,18 +2143,31 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 original_on_change(event)
 
         slider.on_change = handle_change
-        return ft.Row(
-            spacing=10,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            controls=[
-                ft.Container(width=82, content=text(label, 11, colors["text_secondary"])),
-                ft.Container(expand=True, content=slider),
-                ft.Container(
-                    width=46,
-                    alignment=ft.Alignment(1, 0),
-                    content=value_label,
-                ),
-            ],
+        return ft.Container(
+            padding=ft.Padding.symmetric(horizontal=12, vertical=10),
+            border_radius=14,
+            bgcolor=hex_with_alpha(self.active_role.accent_color, 18),
+            border=ft.Border.all(1, hex_with_alpha(self.active_role.accent_color, 42)),
+            content=ft.Column(
+                spacing=4,
+                controls=[
+                    ft.Row(
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Container(expand=True, content=text(label, 12, colors["text_secondary"], ft.FontWeight.W_500)),
+                            ft.Container(
+                                padding=ft.Padding.symmetric(horizontal=9, vertical=4),
+                                border_radius=10,
+                                bgcolor=colors["card_strong"],
+                                border=ft.Border.all(1, colors["card_border"]),
+                                content=value_label,
+                            ),
+                        ],
+                    ),
+                    ft.Container(height=36, content=slider),
+                ],
+            ),
         )
 
     def _format_portrait_slider_value(self, value: object, value_format: str) -> str:
@@ -2572,6 +2612,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _persist_current_step(self) -> None:
         self._sync_basic_draft()
         self._sync_personality_draft()
+        self._sync_current_portrait_edit_controls()
         if self._memory_editors:
             self._draft.memories = [editor.to_draft() for editor in self._memory_editors]
         if hasattr(self, "_vocabulary_dropdown"):
@@ -2583,6 +2624,11 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._draft.question_rate = float(self._question_slider.value or 0.2)
             self._draft.ellipsis_rate = float(self._ellipsis_slider.value or 0.1)
             self._draft.influence_weight = float(self._influence_slider.value or 0.8)
+
+    def _sync_current_portrait_edit_controls(self) -> None:
+        edit = self._draft.portrait_edits.get(self._emotion_id)
+        if edit is not None:
+            self._sync_portrait_edit_from_controls(edit)
 
     def _next_step(self) -> None:
         self._persist_current_step()

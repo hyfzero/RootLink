@@ -9,13 +9,13 @@
   "status_text": "",
   "accent_color": "#B6A8C9",
   "avatar": "assets/avatar.png",
-  "standing_image": "assets/portraits/neutral-39e361d0.png",
+  "standing_image": "assets/portraits/neutral-640321d0.png",
   "portraits": {
-    "happy": "assets/portraits/happy-23d62fc5.png",
-    "sad": "assets/portraits/sad-959b2f32.png",
-    "angry": "assets/portraits/angry-fbba68af.png",
-    "surprised": "assets/portraits/surprised-b409651f.png",
-    "neutral": "assets/portraits/neutral-39e361d0.png"
+    "happy": "assets/portraits/happy-3dd92ea1.png",
+    "sad": "assets/portraits/sad-52b3dbf7.png",
+    "angry": "assets/portraits/angry-de915d2d.png",
+    "surprised": "assets/portraits/surprised-a41574a0.png",
+    "neutral": "assets/portraits/neutral-640321d0.png"
   },
   "portrait_layout": {
     "canvas_width": 390,
@@ -29,8 +29,8 @@
   },
   "portrait_sources": {
     "happy": {
-      "source_path": "D:\\Godot\\safe-house-syndrome\\safe-house-syndrome\\Resources\\Characters\\键\\键2_happy.png",
-      "processed_path": "C:\\Users\\YY\\AppData\\Local\\Temp\\amadues_portraits\\d19c176f701a4df4991bd1eb2c637169\\happy-7.png",
+      "source_path": "assets/portraits/happy-3dd92ea1.png",
+      "processed_path": "assets/portraits/happy-3dd92ea1.png",
       "background_color": [
         218,
         134,
@@ -39,14 +39,13 @@
       "tolerance": 120,
       "feather": 2,
       "crop_box": null,
-      "scale": 0.95,
+      "scale": 0.7,
       "offset_x": 0,
-      "offset_y": 0,
-      "warning": ""
+      "offset_y": 0
     },
     "sad": {
-      "source_path": "D:\\Godot\\safe-house-syndrome\\safe-house-syndrome\\Resources\\Characters\\键\\键2_thinking.png",
-      "processed_path": "C:\\Users\\YY\\AppData\\Local\\Temp\\amadues_portraits\\3ea0882b49d247a997c8574d1e8d60f1\\sad-22.png",
+      "source_path": "assets/portraits/sad-52b3dbf7.png",
+      "processed_path": "assets/portraits/sad-52b3dbf7.png",
       "background_color": [
         218,
         134,
@@ -55,14 +54,13 @@
       "tolerance": 120,
       "feather": 2,
       "crop_box": null,
-      "scale": 0.9,
+      "scale": 0.7,
       "offset_x": 0,
-      "offset_y": 0,
-      "warning": ""
+      "offset_y": 0
     },
     "angry": {
-      "source_path": "D:\\Godot\\safe-house-syndrome\\safe-house-syndrome\\Resources\\Characters\\键\\键2_thinking.png",
-      "processed_path": "C:\\Users\\YY\\AppData\\Local\\Temp\\amadues_portraits\\3ea0882b49d247a997c8574d1e8d60f1\\angry-25.png",
+      "source_path": "assets/portraits/angry-de915d2d.png",
+      "processed_path": "assets/portraits/angry-de915d2d.png",
       "background_color": [
         218,
         134,
@@ -71,14 +69,13 @@
       "tolerance": 120,
       "feather": 2,
       "crop_box": null,
-      "scale": 0.9,
+      "scale": 0.7,
       "offset_x": 0,
-      "offset_y": 0,
-      "warning": ""
+      "offset_y": 0
     },
     "surprised": {
-      "source_path": "D:\\Godot\\safe-house-syndrome\\safe-house-syndrome\\Resources\\Characters\\键\\键2_supurise.png",
-      "processed_path": "C:\\Users\\YY\\AppData\\Local\\Temp\\amadues_portraits\\3ea0882b49d247a997c8574d1e8d60f1\\surprised-30.png",
+      "source_path": "assets/portraits/surprised-a41574a0.png",
+      "processed_path": "assets/portraits/surprised-a41574a0.png",
       "background_color": [
         218,
         134,
@@ -87,26 +84,24 @@
       "tolerance": 55,
       "feather": 2,
       "crop_box": null,
-      "scale": 0.9,
+      "scale": 0.7,
       "offset_x": 0,
-      "offset_y": 0,
-      "warning": ""
+      "offset_y": 0
     },
     "neutral": {
-      "source_path": "D:\\Godot\\safe-house-syndrome\\safe-house-syndrome\\Resources\\Characters\\键\\键.png",
-      "processed_path": "C:\\Users\\YY\\AppData\\Local\\Temp\\amadues_portraits\\5234b803e3aa40019d5dd2e1396f54ac\\neutral-5.png",
+      "source_path": "assets/portraits/neutral-640321d0.png",
+      "processed_path": "assets/portraits/neutral-640321d0.png",
       "background_color": [
         218,
         134,
         64
       ],
       "tolerance": 32,
-      "feather": 2,
+      "feather": 0,
       "crop_box": null,
-      "scale": 0.9,
+      "scale": 0.7,
       "offset_x": 0,
-      "offset_y": 0,
-      "warning": ""
+      "offset_y": 0
     }
   },
   "last_message": "",

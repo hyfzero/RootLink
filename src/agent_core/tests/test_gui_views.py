@@ -86,15 +86,23 @@ class FakePage:
         self.platform = "windows"
         self.clipboard_text = ""
         self.on_view_pop = None
+        self.on_route_change = None
         self.window = FakeWindow()
         self.views = [ft.View(route="/", controls=[])]
         self.route = "/"
+        self.go_calls: list[str] = []
+        self.update_calls = 0
 
     def run_task(self, coro_func, *args) -> None:
         self.task_calls += 1
         asyncio.run(coro_func(*args))
 
+    def go(self, route: str) -> None:
+        self.route = route
+        self.go_calls.append(route)
+
     def update(self, *_controls) -> None:
+        self.update_calls += 1
         return None
 
     def show_dialog(self, dialog) -> None:
@@ -601,6 +609,80 @@ class GuiViewTests(unittest.TestCase):
         self.assertEqual(len(fake_page.views), 1)
         self.assertEqual(fake_page.views[-1].controls, [view])
         self.assertFalse(view.go_back())
+
+    def test_navigation_stack_navigates_to_visible_top_view(self) -> None:
+        fake_page = FakePage()
+        view = TrackingCompanionAppView(fake_page)
+
+        view.show_page("create")
+
+        self.assertEqual(len(fake_page.views), 2)
+        self.assertEqual(fake_page.views[0].controls, [])
+        self.assertEqual(fake_page.views[-1].controls, [view])
+        self.assertEqual(fake_page.go_calls[-1], fake_page.views[-1].route)
+        self.assertEqual(fake_page.route, fake_page.views[-1].route)
+
+    def test_system_view_pop_mirrors_flet_view_stack_before_app_back(self) -> None:
+        fake_page = FakePage()
+        view = TrackingCompanionAppView(fake_page)
+        view.show_page("create")
+        view._create_step = 2
+        fake_page.go_calls.clear()
+        original_route = fake_page.views[-1].route
+        _bind_system_back(fake_page, view)
+
+        fake_page.on_view_pop(None)
+
+        self.assertEqual(view._page_name, "create")
+        self.assertEqual(view._create_step, 1)
+        self.assertNotEqual(fake_page.views[-1].route, original_route)
+        self.assertEqual(fake_page.go_calls[-1], fake_page.views[-1].route)
+        self.assertEqual(fake_page.views[-1].controls, [view])
+        self.assertEqual(fake_page.route, fake_page.views[-1].route)
+
+    def test_navigation_stack_refreshes_visible_view_when_route_is_unchanged(self) -> None:
+        fake_page = FakePage()
+        view = TrackingCompanionAppView(fake_page)
+        view.show_page("create")
+        fake_page.go_calls.clear()
+        fake_page.update_calls = 0
+
+        view._safe_update()
+
+        self.assertEqual(fake_page.go_calls, [])
+        self.assertGreater(fake_page.update_calls, 0)
+        self.assertEqual(fake_page.route, fake_page.views[-1].route)
+        self.assertEqual(fake_page.views[-1].controls, [view])
+
+    def test_android_route_pop_rebuilds_visible_create_step(self) -> None:
+        fake_page = FakePage()
+        view = TrackingCompanionAppView(fake_page)
+        view.show_page("create")
+        view._create_step = 2
+        original_route = fake_page.views[-1].route
+        _bind_system_back(fake_page, view)
+
+        event = type("RouteChangeEvent", (), {"route": fake_page.views[0].route})()
+        fake_page.on_route_change(event)
+
+        self.assertEqual(view._page_name, "create")
+        self.assertEqual(view._create_step, 1)
+        self.assertNotEqual(fake_page.views[-1].route, original_route)
+        self.assertEqual(fake_page.route, fake_page.views[-1].route)
+        self.assertEqual(fake_page.views[-1].controls, [view])
+
+    def test_android_route_pop_from_create_returns_home_content(self) -> None:
+        fake_page = FakePage()
+        view = TrackingCompanionAppView(fake_page)
+        view.show_page("create")
+        _bind_system_back(fake_page, view)
+
+        event = type("RouteChangeEvent", (), {"route": fake_page.views[0].route})()
+        fake_page.on_route_change(event)
+
+        self.assertEqual(view._page_name, "home")
+        self.assertEqual(len(fake_page.views), 1)
+        self.assertEqual(fake_page.views[-1].controls, [view])
 
     def test_create_page_go_back_steps_before_leaving_page(self) -> None:
         view = TrackingCompanionAppView(FakePage())

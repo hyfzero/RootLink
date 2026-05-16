@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import inspect
 from datetime import datetime
 from pathlib import Path
 
@@ -87,14 +88,62 @@ def _bind_layout_resize(page: ft.Page, view: CompanionAppView) -> None:
 
 
 def _bind_system_back(page: ft.Page, view: CompanionAppView) -> None:
-    def _handle_view_pop(_event) -> None:
+    async def _push_current_navigation_route() -> None:
+        route = getattr(view, "_navigation_route", "")
+        if not route:
+            page_views = getattr(page, "views", None)
+            if isinstance(page_views, list) and page_views:
+                route = getattr(page_views[-1], "route", "")
+        if not route:
+            return
+        push_route = getattr(page, "push_route", None)
+        if callable(push_route):
+            result = push_route(route)
+            if inspect.isawaitable(result):
+                await result
+            return
+        go = getattr(page, "go", None)
+        if callable(go):
+            go(route)
+            return
+        page.route = route
+
+    def _handle_route_change(event) -> None:
+        route = getattr(event, "route", None)
+        if route is None:
+            route = getattr(page, "route", "")
+        view.handle_platform_route_change(route)
+
+    async def _handle_view_pop_async(event) -> None:
+        page_views = getattr(page, "views", None)
+        if isinstance(page_views, list) and len(page_views) > 1:
+            event_view = getattr(event, "view", None)
+            if event_view in page_views:
+                page_views.remove(event_view)
+            else:
+                page_views.pop()
+        view.force_platform_route_sync()
         if view.go_back():
+            await _push_current_navigation_route()
             return
         window = getattr(page, "window", None)
         close = getattr(window, "close", None)
         if callable(close):
             close()
 
+    def _handle_view_pop(event) -> None:
+        run_task = getattr(page, "run_task", None)
+        if callable(run_task):
+            run_task(_handle_view_pop_async, event)
+            return
+        result = _handle_view_pop_async(event)
+        if inspect.isawaitable(result):
+            try:
+                result.close()
+            except RuntimeError:
+                pass
+
+    page.on_route_change = _handle_route_change
     page.on_view_pop = _handle_view_pop
 
 

@@ -133,6 +133,43 @@ class PortraitRealtimeUiTests(unittest.TestCase):
             self.assertEqual(view._portrait_value_labels["scale"].value, "0.75")
             self.assertEqual(queued_previews[-1], {"refresh_page": False})
 
+    def test_advanced_slider_rows_use_stacked_mobile_layout(self) -> None:
+        view = CompanionAppView(roles=[make_role()])
+        slider = view._portrait_slider(0, 100, 10, 50)
+
+        row = view._portrait_slider_row("Scale", slider, view._colors(), "scale", "int")
+
+        self.assertIsInstance(row, ft.Container)
+        self.assertIsInstance(row.content, ft.Column)
+        self.assertEqual(len(row.content.controls), 2)
+        self.assertIsInstance(row.content.controls[0], ft.Row)
+        self.assertIsInstance(row.content.controls[1], ft.Container)
+        self.assertEqual(row.content.controls[1].height, 36)
+        self.assertIs(row.content.controls[1].content, slider)
+
+    def test_persist_current_step_saves_latest_advanced_slider_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "portrait.png"
+            make_portrait(source)
+            view = CompanionAppView(roles=[make_role()])
+            view._portrait_advanced_open = True
+            edit = PortraitEditDraft(source_path=str(source), background_color=(255, 255, 255))
+            view._draft.portrait_edits["neutral"] = edit
+            view._portrait_processing_panel(view._colors())
+
+            view._portrait_tolerance_slider.value = 88
+            view._portrait_feather_slider.value = 5
+            view._portrait_scale_slider.value = 0.65
+            view._portrait_offset_x_slider.value = 24
+            view._portrait_offset_y_slider.value = -12
+            view._persist_current_step()
+
+            self.assertEqual(edit.tolerance, 88)
+            self.assertEqual(edit.feather, 5)
+            self.assertEqual(edit.scale, 0.65)
+            self.assertEqual(edit.offset_x, 24)
+            self.assertEqual(edit.offset_y, -12)
+
 
 if __name__ == "__main__":
     unittest.main()

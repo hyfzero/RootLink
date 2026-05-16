@@ -370,8 +370,14 @@ class GuiControlTests(unittest.TestCase):
 
         self.assertEqual(profile["name"], "\u5065")
         self.assertEqual(ui_data["avatar"], "assets/avatar.png")
-        self.assertEqual(ui_data["portraits"]["happy"], "assets/portraits/happy-23d62fc5.png")
-        self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-39e361d0.png")
+        self.assertEqual(ui_data["portraits"]["happy"], "assets/portraits/happy-3dd92ea1.png")
+        self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-640321d0.png")
+        self.assertEqual(ui_data["portrait_sources"]["neutral"]["source_path"], "assets/portraits/neutral-640321d0.png")
+        self.assertEqual(ui_data["portrait_sources"]["neutral"]["processed_path"], "assets/portraits/neutral-640321d0.png")
+        self.assertEqual(ui_data["portrait_sources"]["neutral"]["scale"], 0.7)
+        serialized_ui = json.dumps(ui_data, ensure_ascii=False)
+        self.assertNotIn("D:\\", serialized_ui)
+        self.assertNotIn("AppData", serialized_ui)
         self.assertEqual((key_dir / "assets" / "avatar.png").read_bytes(), (packaged_key_dir / "assets" / "avatar.png").read_bytes())
         self.assertFalse((Path(self._data_tmp.name) / AMADUES_BRAIN_ID).exists())
 
@@ -401,7 +407,7 @@ class GuiControlTests(unittest.TestCase):
 
         packaged_key_dir = REPO_ROOT / "resource" / KEY_BRAIN_ID
         ui_data = json.loads((key_dir / "ui.json").read_text(encoding="utf-8"))
-        self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-39e361d0.png")
+        self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-640321d0.png")
         self.assertEqual((key_dir / "assets" / "avatar.png").read_bytes(), (packaged_key_dir / "assets" / "avatar.png").read_bytes())
 
     def test_bind_view_keeps_roles_empty_when_data_directory_has_no_brain(self) -> None:

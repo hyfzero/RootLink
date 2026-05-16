@@ -111,6 +111,16 @@ class CharacterCreator:
         if not avatar_path:
             avatar_path = self._find_asset_by_stem(brain_dir / "assets", "avatar")
 
+        portrait_edits = {
+            str(emotion): edit
+            for emotion, edit in (
+                (emotion, self._parse_portrait_edit(data))
+                for emotion, data in dict(ui_data.get("portrait_sources") or {}).items()
+            )
+            if edit is not None
+        }
+        self._normalize_portrait_edit_sources(brain_dir, portraits, portrait_edits)
+
         return CharacterDraft(
             brain_id=brain_id,
             template="default",
@@ -120,14 +130,7 @@ class CharacterCreator:
             avatar_path=avatar_path,
             portraits=portraits,
             portrait_layout=self._parse_portrait_layout(ui_data.get("portrait_layout")),
-            portrait_edits={
-                str(emotion): edit
-                for emotion, edit in (
-                    (emotion, self._parse_portrait_edit(data))
-                    for emotion, data in dict(ui_data.get("portrait_sources") or {}).items()
-                )
-                if edit is not None
-            },
+            portrait_edits=portrait_edits,
             age="" if profile.age is None else str(profile.age),
             gender=profile.gender or "unknown",
             birthday=profile.birthday or "",
@@ -184,7 +187,7 @@ class CharacterCreator:
             )
             ui_payload = self._merge_ui(
                 existing_ui,
-                self._build_ui(brain_id, draft, profile, avatar_rel, portraits_rel),
+                self._build_ui(brain_dir, brain_id, draft, profile, avatar_rel, portraits_rel),
             )
 
             self._write_json(brain_dir / "persona" / "profile.json", profile.to_dict())
@@ -226,7 +229,7 @@ class CharacterCreator:
         self._write_json(brain_dir / "config.json", self._build_config(template_dir))
 
         avatar_rel, portraits_rel = self._copy_assets(brain_dir, draft)
-        self._write_json(brain_dir / "ui.json", self._build_ui(brain_id, draft, profile, avatar_rel, portraits_rel))
+        self._write_json(brain_dir / "ui.json", self._build_ui(brain_dir, brain_id, draft, profile, avatar_rel, portraits_rel))
 
     def _build_profile(self, name: str, draft: CharacterDraft, template_dir: Path | None) -> PersonaProfile:
         template = self._read_template_json(template_dir, "persona/profile.json")
@@ -285,6 +288,7 @@ class CharacterCreator:
 
     def _build_ui(
         self,
+        brain_dir: Path,
         brain_id: str,
         draft: CharacterDraft,
         profile: PersonaProfile,
@@ -303,11 +307,7 @@ class CharacterCreator:
             "standing_image": portraits_rel.get("neutral", ""),
             "portraits": portraits_rel,
             "portrait_layout": self._json_safe(draft.portrait_layout) if draft.portrait_layout else {},
-            "portrait_sources": {
-                emotion: self._json_safe(edit)
-                for emotion, edit in draft.portrait_edits.items()
-                if str(getattr(edit, "source_path", "")).strip()
-            },
+            "portrait_sources": self._build_portrait_sources(brain_dir, draft, portraits_rel),
             "last_message": "",
             "last_time": "",
         }
@@ -372,6 +372,41 @@ class CharacterCreator:
         if source_resolved != target_resolved:
             shutil.copy2(source_path, target)
         return target.relative_to(brain_dir).as_posix()
+
+    def _build_portrait_sources(
+        self,
+        brain_dir: Path,
+        draft: CharacterDraft,
+        portraits_rel: dict[str, str],
+    ) -> dict[str, Any]:
+        sources: dict[str, Any] = {}
+        for emotion, edit in draft.portrait_edits.items():
+            emotion_id = str(emotion)
+            if self._is_versioned_asset_stem(emotion_id):
+                continue
+            payload = dict(self._json_safe(edit))
+            portable_source = portraits_rel.get(emotion_id) or self._portable_asset_path(brain_dir, str(payload.get("source_path") or ""))
+            if not portable_source:
+                continue
+            payload["source_path"] = portable_source
+            payload["processed_path"] = portable_source
+            payload.pop("warning", None)
+            sources[emotion_id] = payload
+        return sources
+
+    def _portable_asset_path(self, brain_dir: Path, source: str) -> str:
+        source = str(source or "").strip()
+        if not source:
+            return ""
+        source_path = self._resolve_asset_source(source, brain_dir)
+        try:
+            source_resolved = source_path.resolve()
+            brain_root = brain_dir.resolve()
+        except OSError:
+            return ""
+        if source_path.exists() and source_path.is_file() and self._is_inside(source_resolved, brain_root):
+            return source_resolved.relative_to(brain_root).as_posix()
+        return ""
 
     def _cleanup_stem(self, target_dir: Path, stem: str, brain_dir: Path, keep_source: str = "") -> None:
         if not target_dir.exists():
@@ -475,6 +510,26 @@ class CharacterCreator:
             offset_y=int(data.get("offset_y") or 0),
             warning=str(data.get("warning") or ""),
         )
+
+    def _normalize_portrait_edit_sources(
+        self,
+        brain_dir: Path,
+        portraits: dict[str, str],
+        portrait_edits: dict[str, PortraitEditDraft],
+    ) -> None:
+        for emotion, edit in portrait_edits.items():
+            fallback = portraits.get(emotion, "")
+            source_path = self._resolve_existing_portrait_edit_path(brain_dir, edit.source_path) or fallback
+            processed_path = self._resolve_existing_portrait_edit_path(brain_dir, edit.processed_path) or source_path
+            edit.source_path = source_path
+            edit.processed_path = processed_path
+
+    def _resolve_existing_portrait_edit_path(self, brain_dir: Path, value: str) -> str:
+        raw_value = str(value or "").strip()
+        if not raw_value:
+            return ""
+        path = self._resolve_asset_source(raw_value, brain_dir)
+        return path.as_posix() if path.exists() and path.is_file() else ""
 
     def _draft_basic_memories(self, data: dict[str, Any]) -> list[MemoryDraft]:
         drafts: list[MemoryDraft] = []
