@@ -1917,6 +1917,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 )
             )
         emotion_controls: list[ft.Control] = [ft.Row(spacing=8, wrap=True, controls=emotion_row_controls)]
+        edit = self._draft.portrait_edits.get(self._emotion_id)
+        if edit is not None and edit.source_path and edit.source_path == edit.processed_path:
+            self._process_portrait(self._emotion_id, refresh=False, sync_controls=False)
         avatar_path = self._draft.avatar_path
         preview_path = self._draft.portraits.get(self._emotion_id, "")
         self._portrait_preview_container = ft.Container(

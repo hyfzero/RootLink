@@ -676,12 +676,12 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
     )
     _write_json_if_missing(tags_dir / "reply_tags.json", {"tags": {}, "recent_order": [], "max_size": 100})
 
-    _repair_key_portrait_scale(brain_dir)
+    _repair_key_portrait_data(brain_dir)
 
     return brain_dir
 
 
-def _repair_key_portrait_scale(brain_dir: Path) -> None:
+def _repair_key_portrait_data(brain_dir: Path) -> None:
     ui_path = brain_dir / "ui.json"
     if not ui_path.exists():
         return
@@ -696,8 +696,13 @@ def _repair_key_portrait_scale(brain_dir: Path) -> None:
     for emotion_id, edit_data in sources.items():
         if not isinstance(edit_data, dict):
             continue
-        if edit_data.get("scale") == 0.7 and edit_data.get("source_path") == edit_data.get("processed_path"):
+        if edit_data.get("source_path") != edit_data.get("processed_path"):
+            continue
+        if edit_data.get("scale") == 0.7:
             edit_data["scale"] = 1.0
+            changed = True
+        if edit_data.get("feather") != 0:
+            edit_data["feather"] = 0
             changed = True
     if changed:
         ui_path.write_text(json.dumps(ui_data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -796,7 +801,7 @@ def ensure_default_startup_data() -> Path:
         if key_dir.is_dir():
             if _key_uses_legacy_amadues_assets(key_dir):
                 _copy_default_key_seed(_default_key_source_dirs(), key_dir, overwrite=True)
-            _repair_key_portrait_scale(key_dir)
+            _repair_key_portrait_data(key_dir)
         return data_dir / roles[0].id
     return _ensure_default_key_data()
 
