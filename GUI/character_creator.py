@@ -42,6 +42,24 @@ PRESERVED_UI_KEYS = ("type", "status_text", "last_message", "last_time")
 PRESERVED_PROFILE_KEYS = ("relationship_state", "relationship_score", "relationship_updated_at")
 
 
+def _warn_stale_portrait_edit_sources(
+    raw_portrait_sources: object,
+    portrait_edits: dict[str, PortraitEditDraft],
+) -> None:
+    if not isinstance(raw_portrait_sources, dict):
+        return
+    for emotion_id, edit in portrait_edits.items():
+        if edit.warning:
+            continue
+        raw = raw_portrait_sources.get(emotion_id)
+        if not isinstance(raw, dict):
+            continue
+        raw_source = str(raw.get("source_path") or "")
+        raw_processed = str(raw.get("processed_path") or "")
+        if raw_source and raw_source == raw_processed and edit.scale != 1.0:
+            edit.warning = "立绘原始文件可能已丢失（旧版数据缺陷），建议重新上传立绘以保证编辑效果正确。"
+
+
 class CharacterCreationError(ValueError):
     """Raised when a character draft cannot be persisted."""
 
@@ -120,6 +138,7 @@ class CharacterCreator:
             if edit is not None
         }
         self._normalize_portrait_edit_sources(brain_dir, portraits, portrait_edits)
+        _warn_stale_portrait_edit_sources(ui_data.get("portrait_sources"), portrait_edits)
 
         return CharacterDraft(
             brain_id=brain_id,
@@ -178,7 +197,7 @@ class CharacterCreator:
                 memories_payload[key] = list(existing_memories.get(key, []))
 
             old_portrait_keys = set(dict(existing_ui.get("portraits") or {}).keys()) | {"neutral"}
-            avatar_rel, portraits_rel = self._copy_assets(
+            avatar_rel, portraits_rel, portrait_source_rel = self._copy_assets(
                 brain_dir,
                 draft,
                 cleanup_avatar=True,
@@ -187,7 +206,7 @@ class CharacterCreator:
             )
             ui_payload = self._merge_ui(
                 existing_ui,
-                self._build_ui(brain_dir, brain_id, draft, profile, avatar_rel, portraits_rel),
+                self._build_ui(brain_dir, brain_id, draft, profile, avatar_rel, portraits_rel, portrait_source_rel),
             )
 
             self._write_json(brain_dir / "persona" / "profile.json", profile.to_dict())
@@ -228,8 +247,8 @@ class CharacterCreator:
         self._write_json(brain_dir / "tags" / "reply_tags.json", TagCache().to_dict())
         self._write_json(brain_dir / "config.json", self._build_config(template_dir))
 
-        avatar_rel, portraits_rel = self._copy_assets(brain_dir, draft)
-        self._write_json(brain_dir / "ui.json", self._build_ui(brain_dir, brain_id, draft, profile, avatar_rel, portraits_rel))
+        avatar_rel, portraits_rel, portrait_source_rel = self._copy_assets(brain_dir, draft)
+        self._write_json(brain_dir / "ui.json", self._build_ui(brain_dir, brain_id, draft, profile, avatar_rel, portraits_rel, portrait_source_rel))
 
     def _build_profile(self, name: str, draft: CharacterDraft, template_dir: Path | None) -> PersonaProfile:
         template = self._read_template_json(template_dir, "persona/profile.json")
@@ -294,6 +313,7 @@ class CharacterCreator:
         profile: PersonaProfile,
         avatar_rel: str,
         portraits_rel: dict[str, str],
+        portrait_source_rel: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         tags = profile.personality_traits[:3] or ["custom"]
         intro = draft.description.strip() or profile.background[:120]
@@ -307,7 +327,7 @@ class CharacterCreator:
             "standing_image": portraits_rel.get("neutral", ""),
             "portraits": portraits_rel,
             "portrait_layout": self._json_safe(draft.portrait_layout) if draft.portrait_layout else {},
-            "portrait_sources": self._build_portrait_sources(brain_dir, draft, portraits_rel),
+            "portrait_sources": self._build_portrait_sources(brain_dir, draft, portraits_rel, portrait_source_rel),
             "last_message": "",
             "last_time": "",
         }
@@ -320,7 +340,7 @@ class CharacterCreator:
         cleanup_avatar: bool = False,
         cleanup_portrait_keys: set[str] | None = None,
         version_assets: bool = False,
-    ) -> tuple[str, dict[str, str]]:
+    ) -> tuple[str, dict[str, str], dict[str, str]]:
         avatar_source = draft.avatar_path.strip()
         portrait_sources = {
             str(emotion): str(source).strip()
@@ -351,7 +371,34 @@ class CharacterCreator:
                 versioned=version_assets,
             )
 
-        return avatar_rel, portraits
+        portrait_source_rel: dict[str, str] = {}
+        for emotion, edit in draft.portrait_edits.items():
+            emotion_id = str(emotion)
+            if self._is_versioned_asset_stem(emotion_id):
+                continue
+            original_source = str(edit.source_path or "").strip()
+            if not original_source:
+                continue
+            processed_path = str(edit.processed_path or "").strip()
+            if original_source == processed_path:
+                portrait_source_rel[emotion_id] = portraits.get(emotion_id, "")
+                continue
+            source_resolved = self._resolve_asset_source(original_source, brain_dir)
+            if not source_resolved.exists() or not source_resolved.is_file():
+                portrait_source_rel[emotion_id] = portraits.get(emotion_id, "")
+                continue
+            try:
+                portrait_source_rel[emotion_id] = self._copy_image(
+                    original_source,
+                    brain_dir / "assets" / "portraits",
+                    f"{emotion_id}_src",
+                    brain_dir,
+                    versioned=version_assets,
+                )
+            except CharacterCreationError:
+                portrait_source_rel[emotion_id] = portraits.get(emotion_id, "")
+
+        return avatar_rel, portraits, portrait_source_rel
 
     def _copy_image(self, source: str, target_dir: Path, stem: str, brain_dir: Path, *, versioned: bool = False) -> str:
         source_path = self._resolve_asset_source(source, brain_dir)
@@ -378,6 +425,7 @@ class CharacterCreator:
         brain_dir: Path,
         draft: CharacterDraft,
         portraits_rel: dict[str, str],
+        portrait_source_rel: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         sources: dict[str, Any] = {}
         for emotion, edit in draft.portrait_edits.items():
@@ -385,11 +433,12 @@ class CharacterCreator:
             if self._is_versioned_asset_stem(emotion_id):
                 continue
             payload = dict(self._json_safe(edit))
-            portable_source = portraits_rel.get(emotion_id) or self._portable_asset_path(brain_dir, str(payload.get("source_path") or ""))
-            if not portable_source:
+            processed_path = portraits_rel.get(emotion_id) or self._portable_asset_path(brain_dir, str(payload.get("processed_path") or ""))
+            if not processed_path:
                 continue
-            payload["source_path"] = portable_source
-            payload["processed_path"] = portable_source
+            source_path = (portrait_source_rel or {}).get(emotion_id) or self._portable_asset_path(brain_dir, str(payload.get("source_path") or "")) or processed_path
+            payload["source_path"] = source_path
+            payload["processed_path"] = processed_path
             payload.pop("warning", None)
             sources[emotion_id] = payload
         return sources
@@ -503,7 +552,7 @@ class CharacterCreator:
             processed_path=str(data.get("processed_path") or ""),
             background_color=tuple(int(item) for item in color),
             tolerance=int(data.get("tolerance") or 32),
-            feather=int(data.get("feather") or 2),
+            feather=int(data.get("feather") or 0),
             crop_box=tuple4(data.get("crop_box")),
             scale=float(data.get("scale") or 1.0),
             offset_x=int(data.get("offset_x") or 0),

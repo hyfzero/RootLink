@@ -619,9 +619,9 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
                     "processed_path": "assets/portraits/happy-3dd92ea1.png",
                     "background_color": [218, 134, 64],
                     "tolerance": 120,
-                    "feather": 2,
+                    "feather": 0,
                     "crop_box": None,
-                    "scale": 0.7,
+                    "scale": 1.0,
                     "offset_x": 0,
                     "offset_y": 0,
                 },
@@ -630,9 +630,9 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
                     "processed_path": "assets/portraits/sad-52b3dbf7.png",
                     "background_color": [218, 134, 64],
                     "tolerance": 120,
-                    "feather": 2,
+                    "feather": 0,
                     "crop_box": None,
-                    "scale": 0.7,
+                    "scale": 1.0,
                     "offset_x": 0,
                     "offset_y": 0,
                 },
@@ -641,9 +641,9 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
                     "processed_path": "assets/portraits/angry-de915d2d.png",
                     "background_color": [218, 134, 64],
                     "tolerance": 120,
-                    "feather": 2,
+                    "feather": 0,
                     "crop_box": None,
-                    "scale": 0.7,
+                    "scale": 1.0,
                     "offset_x": 0,
                     "offset_y": 0,
                 },
@@ -652,9 +652,9 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
                     "processed_path": "assets/portraits/surprised-a41574a0.png",
                     "background_color": [218, 134, 64],
                     "tolerance": 55,
-                    "feather": 2,
+                    "feather": 0,
                     "crop_box": None,
-                    "scale": 0.7,
+                    "scale": 1.0,
                     "offset_x": 0,
                     "offset_y": 0,
                 },
@@ -665,7 +665,7 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
                     "tolerance": 32,
                     "feather": 0,
                     "crop_box": None,
-                    "scale": 0.7,
+                    "scale": 1.0,
                     "offset_x": 0,
                     "offset_y": 0,
                 },
@@ -676,7 +676,31 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
     )
     _write_json_if_missing(tags_dir / "reply_tags.json", {"tags": {}, "recent_order": [], "max_size": 100})
 
+    _repair_key_portrait_scale(brain_dir)
+
     return brain_dir
+
+
+def _repair_key_portrait_scale(brain_dir: Path) -> None:
+    ui_path = brain_dir / "ui.json"
+    if not ui_path.exists():
+        return
+    try:
+        ui_data = json.loads(ui_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+    sources = ui_data.get("portrait_sources")
+    if not isinstance(sources, dict):
+        return
+    changed = False
+    for emotion_id, edit_data in sources.items():
+        if not isinstance(edit_data, dict):
+            continue
+        if edit_data.get("scale") == 0.7 and edit_data.get("source_path") == edit_data.get("processed_path"):
+            edit_data["scale"] = 1.0
+            changed = True
+    if changed:
+        ui_path.write_text(json.dumps(ui_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _ensure_default_shinji_data(brain_id: str = SHINJI_BRAIN_ID) -> Path:
@@ -769,8 +793,10 @@ def ensure_default_startup_data() -> Path:
     roles = load_roles_from_data(data_dir)
     if roles:
         key_dir = data_dir / KEY_BRAIN_ID
-        if key_dir.is_dir() and _key_uses_legacy_amadues_assets(key_dir):
-            _copy_default_key_seed(_default_key_source_dirs(), key_dir, overwrite=True)
+        if key_dir.is_dir():
+            if _key_uses_legacy_amadues_assets(key_dir):
+                _copy_default_key_seed(_default_key_source_dirs(), key_dir, overwrite=True)
+            _repair_key_portrait_scale(key_dir)
         return data_dir / roles[0].id
     return _ensure_default_key_data()
 

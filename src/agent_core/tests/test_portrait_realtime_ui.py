@@ -78,7 +78,7 @@ class PortraitRealtimeUiTests(unittest.TestCase):
             view._set_portrait_preset("strong")
 
             self.assertEqual(edit.tolerance, 55)
-            self.assertEqual(edit.feather, 3)
+            self.assertEqual(edit.feather, 0)
             self.assertIn("neutral", view._draft.portraits)
             self.assertNotEqual(view._draft.portraits["neutral"], initial_preview)
             self.assertTrue(Path(view._draft.portraits["neutral"]).exists())
@@ -122,7 +122,6 @@ class PortraitRealtimeUiTests(unittest.TestCase):
 
             text_values = collect_text_values(panel)
             self.assertIn("32", text_values)
-            self.assertIn("2", text_values)
             self.assertIn("1.25", text_values)
             self.assertIn("-12", text_values)
             self.assertIn("8", text_values)
@@ -158,14 +157,12 @@ class PortraitRealtimeUiTests(unittest.TestCase):
             view._portrait_processing_panel(view._colors())
 
             view._portrait_tolerance_slider.value = 88
-            view._portrait_feather_slider.value = 5
             view._portrait_scale_slider.value = 0.65
             view._portrait_offset_x_slider.value = 24
             view._portrait_offset_y_slider.value = -12
             view._persist_current_step()
 
             self.assertEqual(edit.tolerance, 88)
-            self.assertEqual(edit.feather, 5)
             self.assertEqual(edit.scale, 0.65)
             self.assertEqual(edit.offset_x, 24)
             self.assertEqual(edit.offset_y, -12)

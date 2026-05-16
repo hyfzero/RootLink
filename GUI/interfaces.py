@@ -100,7 +100,7 @@ class PortraitEditDraft:
     processed_path: str = ""
     background_color: tuple[int, int, int] = (255, 255, 255)
     tolerance: int = 32
-    feather: int = 2
+    feather: int = 0
     crop_box: tuple[int, int, int, int] | None = None
     scale: float = 1.0
     offset_x: int = 0

@@ -100,9 +100,9 @@ PORTRAIT_EMOTIONS = [
 ]
 
 PORTRAIT_CUTOUT_PRESETS = [
-    ("soft", "保守", 18, 1),
-    ("standard", "标准", 32, 2),
-    ("strong", "强力", 55, 3),
+    ("soft", "保守", 18, 0),
+    ("standard", "标准", 32, 0),
+    ("strong", "强力", 55, 0),
 ]
 PORTRAIT_PREVIEW_DEBOUNCE_SECONDS = 0.25
 
@@ -174,7 +174,6 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._memory_editors: list[MemoryEditor] = []
         self._memory_list: Optional[ft.Column] = None
         self._portrait_tolerance_slider: Optional[ft.Slider] = None
-        self._portrait_feather_slider: Optional[ft.Slider] = None
         self._portrait_scale_slider: Optional[ft.Slider] = None
         self._portrait_offset_x_slider: Optional[ft.Slider] = None
         self._portrait_offset_y_slider: Optional[ft.Slider] = None
@@ -2019,7 +2018,6 @@ class CompanionAppView(ft.Container, CompanionUIView):
             )
 
         self._portrait_tolerance_slider = self._portrait_slider(0, 120, 24, edit.tolerance)
-        self._portrait_feather_slider = self._portrait_slider(0, 8, 8, edit.feather)
         self._portrait_scale_slider = self._portrait_slider(0.5, 1.5, 20, edit.scale)
         self._portrait_offset_x_slider = self._portrait_slider(-120, 120, 24, edit.offset_x)
         self._portrait_offset_y_slider = self._portrait_slider(-120, 120, 24, edit.offset_y)
@@ -2058,7 +2056,6 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if self._portrait_advanced_open:
             advanced_controls = [
                 self._portrait_slider_row("背景清理强度", self._portrait_tolerance_slider, colors, "tolerance", "int"),
-                self._portrait_slider_row("边缘柔和度", self._portrait_feather_slider, colors, "feather", "int"),
                 self._portrait_slider_row("缩放", self._portrait_scale_slider, colors, "scale", "scale"),
                 self._portrait_slider_row("横向偏移", self._portrait_offset_x_slider, colors, "offset_x", "int"),
                 self._portrait_slider_row("纵向偏移", self._portrait_offset_y_slider, colors, "offset_y", "int"),
@@ -2702,8 +2699,6 @@ class CompanionAppView(ft.Container, CompanionUIView):
     def _sync_portrait_edit_from_controls(self, edit: PortraitEditDraft) -> None:
         if self._portrait_tolerance_slider is not None and self._portrait_tolerance_slider.value is not None:
             edit.tolerance = int(self._portrait_tolerance_slider.value)
-        if self._portrait_feather_slider is not None and self._portrait_feather_slider.value is not None:
-            edit.feather = int(self._portrait_feather_slider.value)
         if self._portrait_scale_slider is not None and self._portrait_scale_slider.value is not None:
             edit.scale = float(self._portrait_scale_slider.value)
         if self._portrait_offset_x_slider is not None:
@@ -2733,15 +2728,12 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 if self._portrait_tolerance_slider is not None:
                     self._portrait_tolerance_slider.value = tolerance
                     self._refresh_portrait_value_label("tolerance", "int", tolerance)
-                if self._portrait_feather_slider is not None:
-                    self._portrait_feather_slider.value = feather
-                    self._refresh_portrait_value_label("feather", "int", feather)
                 self._queue_portrait_preview()
                 return
 
     def _portrait_preset_id(self, edit: PortraitEditDraft) -> str:
-        for preset_id, _, tolerance, feather in PORTRAIT_CUTOUT_PRESETS:
-            if edit.tolerance == tolerance and edit.feather == feather:
+        for preset_id, _, tolerance, _feather in PORTRAIT_CUTOUT_PRESETS:
+            if edit.tolerance == tolerance:
                 return preset_id
         return ""
 

@@ -374,7 +374,7 @@ class GuiControlTests(unittest.TestCase):
         self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-640321d0.png")
         self.assertEqual(ui_data["portrait_sources"]["neutral"]["source_path"], "assets/portraits/neutral-640321d0.png")
         self.assertEqual(ui_data["portrait_sources"]["neutral"]["processed_path"], "assets/portraits/neutral-640321d0.png")
-        self.assertEqual(ui_data["portrait_sources"]["neutral"]["scale"], 0.7)
+        self.assertEqual(ui_data["portrait_sources"]["neutral"]["scale"], 1.0)
         serialized_ui = json.dumps(ui_data, ensure_ascii=False)
         self.assertNotIn("D:\\", serialized_ui)
         self.assertNotIn("AppData", serialized_ui)
