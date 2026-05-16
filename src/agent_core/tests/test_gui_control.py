@@ -370,6 +370,7 @@ class GuiControlTests(unittest.TestCase):
 
         self.assertEqual(profile["name"], "\u5065")
         self.assertEqual(ui_data["avatar"], "assets/avatar.png")
+        self.assertEqual(ui_data["portraits"]["happy"], "assets/portraits/happy-23d62fc5.png")
         self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-39e361d0.png")
         self.assertEqual((key_dir / "assets" / "avatar.png").read_bytes(), (packaged_key_dir / "assets" / "avatar.png").read_bytes())
         self.assertFalse((Path(self._data_tmp.name) / AMADUES_BRAIN_ID).exists())

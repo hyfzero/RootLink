@@ -535,15 +535,12 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
         persona_dir / "profile.json",
         {
             "name": "健",
-            "age": 18,
-            "gender": "female",
-            "personality_traits": ["冷静", "耐心", "博士生", "内耗", "身体差"],
-            "background": (
-                "维克多·孔多利亚大学脑科学研究所研究员。11岁赴美留学并跳级入学，18岁在著名学术杂志发表论文，"
-                "被称作脑科学天才少女。表面冷静理性，实际上好奇心旺盛，对感兴趣的事物会全身心投入。"
-            ),
-            "speaking_style": "tsundere_academic",
-            "birthday": "7月25日",
+            "age": 26,
+            "gender": "male",
+            "personality_traits": ["冷静", "耐心", "博士生", "内耗", "身体差", "冷幽默"],
+            "background": "目前就读于化学博士生，从小成绩优异，但做事非常脱线，神经大条。喜欢偶像应援等亚文化，常在半夜上线打游戏。",
+            "speaking_style": "calm",
+            "birthday": "1998.2.14",
             "interests": ["数学", "编程", "偶像", "游戏", "漫画", "亚文化"],
             "relationship_state": "neutral",
             "relationship_score": 0.0,
@@ -607,8 +604,14 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
             "status_text": "",
             "accent_color": "#B6A8C9",
             "avatar": "assets/avatar.png",
-            "standing_image": "assets/portraits/neutral.png",
-            "portraits": {"neutral": "assets/portraits/neutral.png"},
+            "standing_image": "assets/portraits/neutral-39e361d0.png",
+            "portraits": {
+                "happy": "assets/portraits/happy-23d62fc5.png",
+                "sad": "assets/portraits/sad-959b2f32.png",
+                "angry": "assets/portraits/angry-fbba68af.png",
+                "surprised": "assets/portraits/surprised-b409651f.png",
+                "neutral": "assets/portraits/neutral-39e361d0.png",
+            },
             "last_message": "",
             "last_time": "",
         },

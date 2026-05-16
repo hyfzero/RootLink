@@ -11,7 +11,7 @@
   "avatar": "assets/avatar.png",
   "standing_image": "assets/portraits/neutral-39e361d0.png",
   "portraits": {
-    "happy": "assets/portraits/happy-ae30755f.png",
+    "happy": "assets/portraits/happy-23d62fc5.png",
     "sad": "assets/portraits/sad-959b2f32.png",
     "angry": "assets/portraits/angry-fbba68af.png",
     "surprised": "assets/portraits/surprised-b409651f.png",
@@ -29,8 +29,8 @@
   },
   "portrait_sources": {
     "happy": {
-      "source_path": "D:\\Godot\\safe-house-syndrome\\safe-house-syndrome\\Resources\\Characters\\键\\键.png",
-      "processed_path": "C:\\Users\\YY\\AppData\\Local\\Temp\\amadues_portraits\\3ea0882b49d247a997c8574d1e8d60f1\\happy-12.png",
+      "source_path": "D:\\Godot\\safe-house-syndrome\\safe-house-syndrome\\Resources\\Characters\\键\\键2_happy.png",
+      "processed_path": "C:\\Users\\YY\\AppData\\Local\\Temp\\amadues_portraits\\d19c176f701a4df4991bd1eb2c637169\\happy-7.png",
       "background_color": [
         218,
         134,
@@ -39,7 +39,7 @@
       "tolerance": 120,
       "feather": 2,
       "crop_box": null,
-      "scale": 0.9,
+      "scale": 0.95,
       "offset_x": 0,
       "offset_y": 0,
       "warning": ""
@@ -101,7 +101,7 @@
         64
       ],
       "tolerance": 32,
-      "feather": 0,
+      "feather": 2,
       "crop_box": null,
       "scale": 0.9,
       "offset_x": 0,
