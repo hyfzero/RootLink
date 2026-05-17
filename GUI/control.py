@@ -531,22 +531,7 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
     if _key_uses_legacy_amadues_assets(brain_dir):
         _copy_default_key_seed(seed_sources, brain_dir, overwrite=True)
 
-    _write_json_if_missing(
-        persona_dir / "profile.json",
-        {
-            "name": "健",
-            "age": 26,
-            "gender": "male",
-            "personality_traits": [ "身体差","冷静", "耐心", "博士生", "内耗", "冷幽默"],
-            "background": "目前就读于化学博士生，从小成绩优异，但做事非常脱线，神经大条。喜欢偶像应援等亚文化，常在半夜上线打游戏。",
-            "speaking_style": "calm",
-            "birthday": "1998.2.14",
-            "interests": ["数学", "编程", "偶像", "游戏", "漫画", "亚文化"],
-            "relationship_state": "neutral",
-            "relationship_score": 0.0,
-            "relationship_updated_at": None,
-        },
-    )
+    _write_json_if_missing(persona_dir / "profile.json", _key_default_profile())
     _ensure_response_config(brain_dir / "config.json", DEFAULT_RESPONSE_LIMITS)
     _write_json_if_missing(
         persona_dir / "memories.json",
@@ -595,155 +580,100 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
             "custom_modifiers": {},
         },
     )
-    _write_json_if_missing(
-        brain_dir / "ui.json",
-        {
-            "type": "Custom",
-            "tags": ["身体差","冷静", "耐心"],
-            "intro": "一个被困在数字世界的灵魂",
-            "status_text": "",
-            "accent_color": "#B6A8C9",
-            "avatar": "assets/avatar.png",
-            "standing_image": "assets/portraits/neutral-640321d0.png",
-            "portraits": {
-                "happy": "assets/portraits/happy-3dd92ea1.png",
-                "sad": "assets/portraits/sad-52b3dbf7.png",
-                "angry": "assets/portraits/angry-de915d2d.png",
-                "surprised": "assets/portraits/surprised-a41574a0.png",
-                "neutral": "assets/portraits/neutral-640321d0.png",
-            },
-            "portrait_layout": {"canvas_width": 390, "canvas_height": 520, "anchor_bbox": [28, 65, 363, 455]},
-            "portrait_sources": {
-                "happy": {
-                    "source_path": "assets/portraits/happy-3dd92ea1.png",
-                    "processed_path": "assets/portraits/happy-3dd92ea1.png",
-                    "background_color": [218, 134, 64],
-                    "tolerance": 120,
-                    "feather": 0,
-                    "crop_box": None,
-                    "scale": 1.0,
-                    "offset_x": 0,
-                    "offset_y": 0,
-                },
-                "sad": {
-                    "source_path": "assets/portraits/sad-52b3dbf7.png",
-                    "processed_path": "assets/portraits/sad-52b3dbf7.png",
-                    "background_color": [218, 134, 64],
-                    "tolerance": 120,
-                    "feather": 0,
-                    "crop_box": None,
-                    "scale": 1.0,
-                    "offset_x": 0,
-                    "offset_y": 0,
-                },
-                "angry": {
-                    "source_path": "assets/portraits/angry-de915d2d.png",
-                    "processed_path": "assets/portraits/angry-de915d2d.png",
-                    "background_color": [218, 134, 64],
-                    "tolerance": 120,
-                    "feather": 0,
-                    "crop_box": None,
-                    "scale": 1.0,
-                    "offset_x": 0,
-                    "offset_y": 0,
-                },
-                "surprised": {
-                    "source_path": "assets/portraits/surprised-a41574a0.png",
-                    "processed_path": "assets/portraits/surprised-a41574a0.png",
-                    "background_color": [218, 134, 64],
-                    "tolerance": 55,
-                    "feather": 0,
-                    "crop_box": None,
-                    "scale": 1.0,
-                    "offset_x": 0,
-                    "offset_y": 0,
-                },
-                "neutral": {
-                    "source_path": "assets/portraits/neutral-640321d0.png",
-                    "processed_path": "assets/portraits/neutral-640321d0.png",
-                    "background_color": [218, 134, 64],
-                    "tolerance": 32,
-                    "feather": 0,
-                    "crop_box": None,
-                    "scale": 1.0,
-                    "offset_x": 0,
-                    "offset_y": 0,
-                },
-            },
-            "last_message": "",
-            "last_time": "",
-        },
-    )
+    _write_json_if_missing(brain_dir / "ui.json", _key_default_ui())
     _write_json_if_missing(tags_dir / "reply_tags.json", {"tags": {}, "recent_order": [], "max_size": 100})
-
-    _repair_key_data(brain_dir)
 
     return brain_dir
 
 
-def _repair_key_data(brain_dir: Path) -> None:
-    _repair_key_portrait_sources(brain_dir)
-    _repair_key_tags(brain_dir)
-    _repair_key_personality_traits(brain_dir)
+def _sync_key_defaults(brain_dir: Path) -> None:
+    _merge_json(brain_dir / "persona" / "profile.json", _key_default_profile())
+    _merge_json(brain_dir / "ui.json", _key_default_ui())
 
 
-def _repair_key_portrait_sources(brain_dir: Path) -> None:
-    ui_path = brain_dir / "ui.json"
-    if not ui_path.exists():
-        return
-    try:
-        ui_data = json.loads(ui_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return
-    sources = ui_data.get("portrait_sources")
-    if not isinstance(sources, dict):
-        return
-    changed = False
-    for emotion_id, edit_data in sources.items():
-        if not isinstance(edit_data, dict):
-            continue
-        if edit_data.get("source_path") != edit_data.get("processed_path"):
-            continue
-        if edit_data.get("scale") == 0.7:
-            edit_data["scale"] = 1.0
-            changed = True
-        if edit_data.get("feather") != 0:
-            edit_data["feather"] = 0
-            changed = True
-    if changed:
-        ui_path.write_text(json.dumps(ui_data, ensure_ascii=False, indent=2), encoding="utf-8")
+_KEY_PROFILE_RUNTIME_KEYS = ("relationship_state", "relationship_score", "relationship_updated_at")
 
 
-_OLD_KEY_TAGS = ["冷静", "耐心", "博士生"]
-_OLD_KEY_TRAITS = ["冷静", "耐心", "博士生", "内耗", "身体差", "冷幽默"]
+def _key_default_profile() -> dict:
+    return {
+        "name": "健",
+        "age": 26,
+        "gender": "male",
+        "personality_traits": ["身体差", "冷静", "耐心", "博士生", "内耗", "冷幽默"],
+        "background": "计算机科学博士生，从小成绩优异，一直热衷于研究虚拟化人格。做事非常脱线，神经大条。喜欢偶像应援等亚文化，常在半夜上线打游戏。",
+        "speaking_style": "calm",
+        "birthday": "1998.2.14",
+        "interests": ["数学", "编程", "偶像", "游戏", "漫画", "亚文化"],
+    }
 
 
-def _repair_key_tags(brain_dir: Path) -> None:
-    ui_path = brain_dir / "ui.json"
-    if not ui_path.exists():
-        return
-    try:
-        ui_data = json.loads(ui_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return
-    tags = ui_data.get("tags")
-    if isinstance(tags, list) and tags == _OLD_KEY_TAGS:
-        ui_data["tags"] = ["身体差", "冷静", "耐心"]
-        ui_path.write_text(json.dumps(ui_data, ensure_ascii=False, indent=2), encoding="utf-8")
+def _key_default_ui() -> dict:
+    return {
+        "type": "Custom",
+        "tags": ["身体差", "冷静", "耐心"],
+        "intro": "一个被困在数字世界的灵魂",
+        "accent_color": "#B6A8C9",
+        "avatar": "assets/avatar.png",
+        "standing_image": "assets/portraits/neutral-640321d0.png",
+        "portraits": {
+            "happy": "assets/portraits/happy-3dd92ea1.png",
+            "sad": "assets/portraits/sad-52b3dbf7.png",
+            "angry": "assets/portraits/angry-de915d2d.png",
+            "surprised": "assets/portraits/surprised-a41574a0.png",
+            "neutral": "assets/portraits/neutral-640321d0.png",
+        },
+        "portrait_layout": {"canvas_width": 390, "canvas_height": 520, "anchor_bbox": [28, 65, 363, 455]},
+        "portrait_sources": {
+            "happy": {
+                "source_path": "assets/portraits/happy-3dd92ea1.png",
+                "processed_path": "assets/portraits/happy-3dd92ea1.png",
+                "background_color": [218, 134, 64],
+                "tolerance": 120, "feather": 0, "crop_box": None,
+                "scale": 1.0, "offset_x": 0, "offset_y": 0,
+            },
+            "sad": {
+                "source_path": "assets/portraits/sad-52b3dbf7.png",
+                "processed_path": "assets/portraits/sad-52b3dbf7.png",
+                "background_color": [218, 134, 64],
+                "tolerance": 120, "feather": 0, "crop_box": None,
+                "scale": 1.0, "offset_x": 0, "offset_y": 0,
+            },
+            "angry": {
+                "source_path": "assets/portraits/angry-de915d2d.png",
+                "processed_path": "assets/portraits/angry-de915d2d.png",
+                "background_color": [218, 134, 64],
+                "tolerance": 120, "feather": 0, "crop_box": None,
+                "scale": 1.0, "offset_x": 0, "offset_y": 0,
+            },
+            "surprised": {
+                "source_path": "assets/portraits/surprised-a41574a0.png",
+                "processed_path": "assets/portraits/surprised-a41574a0.png",
+                "background_color": [218, 134, 64],
+                "tolerance": 55, "feather": 0, "crop_box": None,
+                "scale": 1.0, "offset_x": 0, "offset_y": 0,
+            },
+            "neutral": {
+                "source_path": "assets/portraits/neutral-640321d0.png",
+                "processed_path": "assets/portraits/neutral-640321d0.png",
+                "background_color": [218, 134, 64],
+                "tolerance": 32, "feather": 0, "crop_box": None,
+                "scale": 1.0, "offset_x": 0, "offset_y": 0,
+            },
+        },
+    }
 
 
-def _repair_key_personality_traits(brain_dir: Path) -> None:
-    profile_path = brain_dir / "persona" / "profile.json"
-    if not profile_path.exists():
-        return
-    try:
-        profile = json.loads(profile_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return
-    traits = profile.get("personality_traits")
-    if isinstance(traits, list) and traits == _OLD_KEY_TRAITS:
-        profile["personality_traits"] = ["身体差", "冷静", "耐心", "博士生", "内耗", "冷幽默"]
-        profile_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
+def _merge_json(path: Path, defaults: dict) -> None:
+    existing: dict = {}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    merged = dict(existing)
+    merged.update(defaults)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _ensure_default_shinji_data(brain_id: str = SHINJI_BRAIN_ID) -> Path:
@@ -839,7 +769,8 @@ def ensure_default_startup_data() -> Path:
         if key_dir.is_dir():
             if _key_uses_legacy_amadues_assets(key_dir):
                 _copy_default_key_seed(_default_key_source_dirs(), key_dir, overwrite=True)
-            _repair_key_data(key_dir)
+            if DEFAULT_KEY_SOURCE_ENV not in os.environ:
+                _sync_key_defaults(key_dir)
         return data_dir / roles[0].id
     return _ensure_default_key_data()
 
