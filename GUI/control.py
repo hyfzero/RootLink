@@ -537,7 +537,7 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
             "name": "健",
             "age": 26,
             "gender": "male",
-            "personality_traits": ["冷静", "耐心", "博士生", "内耗", "身体差", "冷幽默"],
+            "personality_traits": [ "身体差","冷静", "耐心", "博士生", "内耗", "冷幽默"],
             "background": "目前就读于化学博士生，从小成绩优异，但做事非常脱线，神经大条。喜欢偶像应援等亚文化，常在半夜上线打游戏。",
             "speaking_style": "calm",
             "birthday": "1998.2.14",
@@ -599,7 +599,7 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
         brain_dir / "ui.json",
         {
             "type": "Custom",
-            "tags": ["冷静", "耐心", "博士生"],
+            "tags": ["身体差","冷静", "耐心"],
             "intro": "一个被困在数字世界的灵魂",
             "status_text": "",
             "accent_color": "#B6A8C9",
@@ -676,12 +676,18 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
     )
     _write_json_if_missing(tags_dir / "reply_tags.json", {"tags": {}, "recent_order": [], "max_size": 100})
 
-    _repair_key_portrait_data(brain_dir)
+    _repair_key_data(brain_dir)
 
     return brain_dir
 
 
-def _repair_key_portrait_data(brain_dir: Path) -> None:
+def _repair_key_data(brain_dir: Path) -> None:
+    _repair_key_portrait_sources(brain_dir)
+    _repair_key_tags(brain_dir)
+    _repair_key_personality_traits(brain_dir)
+
+
+def _repair_key_portrait_sources(brain_dir: Path) -> None:
     ui_path = brain_dir / "ui.json"
     if not ui_path.exists():
         return
@@ -706,6 +712,38 @@ def _repair_key_portrait_data(brain_dir: Path) -> None:
             changed = True
     if changed:
         ui_path.write_text(json.dumps(ui_data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+_OLD_KEY_TAGS = ["冷静", "耐心", "博士生"]
+_OLD_KEY_TRAITS = ["冷静", "耐心", "博士生", "内耗", "身体差", "冷幽默"]
+
+
+def _repair_key_tags(brain_dir: Path) -> None:
+    ui_path = brain_dir / "ui.json"
+    if not ui_path.exists():
+        return
+    try:
+        ui_data = json.loads(ui_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+    tags = ui_data.get("tags")
+    if isinstance(tags, list) and tags == _OLD_KEY_TAGS:
+        ui_data["tags"] = ["身体差", "冷静", "耐心"]
+        ui_path.write_text(json.dumps(ui_data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _repair_key_personality_traits(brain_dir: Path) -> None:
+    profile_path = brain_dir / "persona" / "profile.json"
+    if not profile_path.exists():
+        return
+    try:
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+    traits = profile.get("personality_traits")
+    if isinstance(traits, list) and traits == _OLD_KEY_TRAITS:
+        profile["personality_traits"] = ["身体差", "冷静", "耐心", "博士生", "内耗", "冷幽默"]
+        profile_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _ensure_default_shinji_data(brain_id: str = SHINJI_BRAIN_ID) -> Path:
@@ -801,7 +839,7 @@ def ensure_default_startup_data() -> Path:
         if key_dir.is_dir():
             if _key_uses_legacy_amadues_assets(key_dir):
                 _copy_default_key_seed(_default_key_source_dirs(), key_dir, overwrite=True)
-            _repair_key_portrait_data(key_dir)
+            _repair_key_data(key_dir)
         return data_dir / roles[0].id
     return _ensure_default_key_data()
 

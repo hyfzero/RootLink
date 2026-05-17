@@ -47,7 +47,7 @@ from .interfaces import (
     UiSettings,
     UserProfile,
 )
-from .portrait_processing import PortraitProcessingError, export_aligned_portrait, sample_background_color
+from .portrait_processing import PortraitProcessingError, export_aligned_portrait, sample_background_color_auto
 from .theme import (
     MOBILE_WIDTH,
     MOTION,
@@ -729,7 +729,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._draft.avatar_path = file_path
         elif kind == "portrait" and emotion_id:
             try:
-                background_color = sample_background_color(file_path)
+                background_color = sample_background_color_auto(file_path)
                 self._draft.portrait_edits[emotion_id] = PortraitEditDraft(
                     source_path=file_path,
                     background_color=background_color,
@@ -2087,31 +2087,6 @@ class CompanionAppView(ft.Container, CompanionUIView):
                         ],
                     ),
                     ft.Row(spacing=8, wrap=True, controls=preset_controls),
-                    ft.Row(
-                        spacing=8,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                        controls=[
-                            ft.Icon(ft.Icons.COLORIZE_OUTLINED, size=16, color=colors["text_secondary"]),
-                            ft.Column(
-                                spacing=1,
-                                controls=[
-                                    text("选择背景位置", 12, colors["text"], ft.FontWeight.W_500),
-                                    text("选一块纯背景作为清理参考", 11, colors["text_tertiary"]),
-                                ],
-                            ),
-                            ft.Container(width=18, height=18, border_radius=9, bgcolor=self._portrait_color_hex(edit.background_color), border=ft.Border.all(1, colors["card_border"])),
-                        ],
-                    ),
-                    ft.Row(
-                        spacing=8,
-                        wrap=True,
-                        controls=[
-                            self._mini_button("左上角", colors, lambda _: self._set_portrait_background("top_left")),
-                            self._mini_button("右上角", colors, lambda _: self._set_portrait_background("top_right")),
-                            self._mini_button("左下角", colors, lambda _: self._set_portrait_background("bottom_left")),
-                            self._mini_button("右下角", colors, lambda _: self._set_portrait_background("bottom_right")),
-                        ],
-                    ),
                     self._mini_button("收起高级微调" if self._portrait_advanced_open else "高级微调", colors, lambda _: self._toggle_portrait_advanced()),
                     *advanced_controls,
                     status,
@@ -2209,10 +2184,6 @@ class CompanionAppView(ft.Container, CompanionUIView):
             on_click=animated_click(on_click),
             content=text(label, 11, colors["text"]),
         )
-
-    def _portrait_color_hex(self, color: tuple[int, int, int]) -> str:
-        red, green, blue = [max(0, min(255, int(channel))) for channel in color]
-        return f"#{red:02X}{green:02X}{blue:02X}"
 
     def _personality_step(self, colors: dict[str, str]) -> ft.Control:
         self._age_field = FormField("年龄", "可选", colors, solid=True)
@@ -2708,17 +2679,6 @@ class CompanionAppView(ft.Container, CompanionUIView):
             edit.offset_x = int(self._portrait_offset_x_slider.value or 0)
         if self._portrait_offset_y_slider is not None:
             edit.offset_y = int(self._portrait_offset_y_slider.value or 0)
-
-    def _set_portrait_background(self, preset: str) -> None:
-        edit = self._draft.portrait_edits.get(self._emotion_id)
-        if edit is None or not edit.source_path:
-            return
-        try:
-            edit.background_color = sample_background_color(edit.source_path, preset)
-        except PortraitProcessingError as exc:
-            self.show_notice(str(exc), is_error=True)
-            return
-        self._queue_portrait_preview()
 
     def _set_portrait_preset(self, preset_id: str) -> None:
         edit = self._draft.portrait_edits.get(self._emotion_id)

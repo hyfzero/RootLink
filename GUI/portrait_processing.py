@@ -43,6 +43,24 @@ def sample_background_color(path: str, preset: str = "top_left") -> tuple[int, i
         return tuple(int(value) for value in rgb.getpixel(points.get(preset, (0, 0))))
 
 
+def sample_background_color_auto(path: str) -> tuple[int, int, int]:
+    source = validate_image_path(path)
+    with Image.open(source) as image:
+        rgb = image.convert("RGB")
+        width, height = rgb.size
+        corners = [
+            (0, 0),
+            (max(0, width - 1), 0),
+            (0, max(0, height - 1)),
+            (max(0, width - 1), max(0, height - 1)),
+            (width // 2, height // 2),
+        ]
+        colors = [rgb.getpixel(p) for p in corners]
+    from collections import Counter
+    most_common = Counter(colors).most_common(1)[0][0]
+    return tuple(int(v) for v in most_common)
+
+
 def _clamp(value: int, low: int, high: int) -> int:
     return max(low, min(high, value))
 
