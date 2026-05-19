@@ -1,9 +1,9 @@
 {
   "type": "Custom",
   "tags": [
+    "身体差",
     "冷静",
-    "耐心",
-    "博士生"
+    "耐心"
   ],
   "intro": "一个被困在数字世界的灵魂",
   "status_text": "",
@@ -16,93 +16,6 @@
     "angry": "assets/portraits/angry-de915d2d.png",
     "surprised": "assets/portraits/surprised-a41574a0.png",
     "neutral": "assets/portraits/neutral-640321d0.png"
-  },
-  "portrait_layout": {
-    "canvas_width": 390,
-    "canvas_height": 520,
-    "anchor_bbox": [
-      28,
-      65,
-      363,
-      455
-    ]
-  },
-  "portrait_sources": {
-    "happy": {
-      "source_path": "assets/portraits/happy-3dd92ea1.png",
-      "processed_path": "assets/portraits/happy-3dd92ea1.png",
-      "background_color": [
-        218,
-        134,
-        64
-      ],
-      "tolerance": 120,
-      "feather": 0,
-      "crop_box": null,
-      "scale": 1.0,
-      "offset_x": 0,
-      "offset_y": 0
-    },
-    "sad": {
-      "source_path": "assets/portraits/sad-52b3dbf7.png",
-      "processed_path": "assets/portraits/sad-52b3dbf7.png",
-      "background_color": [
-        218,
-        134,
-        64
-      ],
-      "tolerance": 120,
-      "feather": 0,
-      "crop_box": null,
-      "scale": 1.0,
-      "offset_x": 0,
-      "offset_y": 0
-    },
-    "angry": {
-      "source_path": "assets/portraits/angry-de915d2d.png",
-      "processed_path": "assets/portraits/angry-de915d2d.png",
-      "background_color": [
-        218,
-        134,
-        64
-      ],
-      "tolerance": 120,
-      "feather": 0,
-      "crop_box": null,
-      "scale": 1.0,
-      "offset_x": 0,
-      "offset_y": 0
-    },
-    "surprised": {
-      "source_path": "assets/portraits/surprised-a41574a0.png",
-      "processed_path": "assets/portraits/surprised-a41574a0.png",
-      "background_color": [
-        218,
-        134,
-        64
-      ],
-      "tolerance": 55,
-      "feather": 0,
-      "crop_box": null,
-      "scale": 1.0,
-      "offset_x": 0,
-      "offset_y": 0
-    },
-    "neutral": {
-      "source_path": "assets/portraits/neutral-640321d0.png",
-      "processed_path": "assets/portraits/neutral-640321d0.png",
-      "background_color": [
-        218,
-        134,
-        64
-      ],
-      "tolerance": 32,
-      "feather": 0,
-      "crop_box": null,
-      "scale": 1.0,
-      "offset_x": 0,
-      "offset_y": 0
-    }
   },
   "last_message": "",
   "last_time": ""

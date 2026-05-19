@@ -40,6 +40,8 @@ MEMORY_KEYS_BY_TYPE = {
 SUMMARY_MEMORY_KEYS = ("daily_summary_memories", "monthly_summary_memories")
 PRESERVED_UI_KEYS = ("type", "status_text", "last_message", "last_time")
 PRESERVED_PROFILE_KEYS = ("relationship_state", "relationship_score", "relationship_updated_at")
+PORTRAIT_EDIT_FILE = "portrait_edits.json"
+PORTRAIT_EDIT_VERSION = 1
 
 
 def _warn_stale_portrait_edit_sources(
@@ -108,6 +110,7 @@ class CharacterCreator:
 
         profile_data = self._read_json(brain_dir / "persona" / "profile.json")
         ui_data = self._read_json(brain_dir / "ui.json")
+        portrait_edit_data = self._read_json(brain_dir / PORTRAIT_EDIT_FILE)
         memories_data = self._read_json(brain_dir / "persona" / "memories.json")
         style_data = self._read_json(brain_dir / "persona" / "speaking_style.json")
 
@@ -129,16 +132,22 @@ class CharacterCreator:
         if not avatar_path:
             avatar_path = self._find_asset_by_stem(brain_dir / "assets", "avatar")
 
+        raw_portrait_edits = portrait_edit_data.get("edits")
+        if not isinstance(raw_portrait_edits, dict) or not raw_portrait_edits:
+            raw_portrait_edits = ui_data.get("portrait_sources")
         portrait_edits = {
             str(emotion): edit
             for emotion, edit in (
                 (emotion, self._parse_portrait_edit(data))
-                for emotion, data in dict(ui_data.get("portrait_sources") or {}).items()
+                for emotion, data in dict(raw_portrait_edits or {}).items()
             )
             if edit is not None
         }
         self._normalize_portrait_edit_sources(brain_dir, portraits, portrait_edits)
-        _warn_stale_portrait_edit_sources(ui_data.get("portrait_sources"), portrait_edits)
+        _warn_stale_portrait_edit_sources(raw_portrait_edits, portrait_edits)
+        raw_portrait_layout = portrait_edit_data.get("layout") if portrait_edit_data else None
+        if not raw_portrait_layout:
+            raw_portrait_layout = ui_data.get("portrait_layout")
 
         return CharacterDraft(
             brain_id=brain_id,
@@ -148,7 +157,7 @@ class CharacterCreator:
             accent_color=str(ui_data.get("accent_color") or ""),
             avatar_path=avatar_path,
             portraits=portraits,
-            portrait_layout=self._parse_portrait_layout(ui_data.get("portrait_layout")),
+            portrait_layout=self._parse_portrait_layout(raw_portrait_layout),
             portrait_edits=portrait_edits,
             age="" if profile.age is None else str(profile.age),
             gender=profile.gender or "unknown",
@@ -206,13 +215,15 @@ class CharacterCreator:
             )
             ui_payload = self._merge_ui(
                 existing_ui,
-                self._build_ui(brain_dir, brain_id, draft, profile, avatar_rel, portraits_rel, portrait_source_rel),
+                self._build_ui(brain_id, draft, profile, avatar_rel, portraits_rel),
             )
+            portrait_edit_payload = self._build_portrait_edit_file(brain_dir, draft, portraits_rel, portrait_source_rel)
 
             self._write_json(brain_dir / "persona" / "profile.json", profile.to_dict())
             self._write_json(brain_dir / "persona" / "memories.json", memories_payload)
             self._write_json(brain_dir / "persona" / "speaking_style.json", self._build_style(draft, None).to_dict())
             self._write_json(brain_dir / "ui.json", ui_payload)
+            self._write_json(brain_dir / PORTRAIT_EDIT_FILE, portrait_edit_payload)
         except CharacterCreationError:
             raise
         except Exception as exc:
@@ -224,6 +235,7 @@ class CharacterCreator:
         for relative_dir in (
             "assets",
             "assets/portraits",
+            "assets/portrait_sources",
             "persona",
             "history",
             "history/daily",
@@ -248,7 +260,8 @@ class CharacterCreator:
         self._write_json(brain_dir / "config.json", self._build_config(template_dir))
 
         avatar_rel, portraits_rel, portrait_source_rel = self._copy_assets(brain_dir, draft)
-        self._write_json(brain_dir / "ui.json", self._build_ui(brain_dir, brain_id, draft, profile, avatar_rel, portraits_rel, portrait_source_rel))
+        self._write_json(brain_dir / "ui.json", self._build_ui(brain_id, draft, profile, avatar_rel, portraits_rel))
+        self._write_json(brain_dir / PORTRAIT_EDIT_FILE, self._build_portrait_edit_file(brain_dir, draft, portraits_rel, portrait_source_rel))
 
     def _build_profile(self, name: str, draft: CharacterDraft, template_dir: Path | None) -> PersonaProfile:
         template = self._read_template_json(template_dir, "persona/profile.json")
@@ -307,13 +320,11 @@ class CharacterCreator:
 
     def _build_ui(
         self,
-        brain_dir: Path,
         brain_id: str,
         draft: CharacterDraft,
         profile: PersonaProfile,
         avatar_rel: str,
         portraits_rel: dict[str, str],
-        portrait_source_rel: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         tags = profile.personality_traits[:3] or ["custom"]
         intro = draft.description.strip() or profile.background[:120]
@@ -326,10 +337,21 @@ class CharacterCreator:
             "avatar": avatar_rel,
             "standing_image": portraits_rel.get("neutral", ""),
             "portraits": portraits_rel,
-            "portrait_layout": self._json_safe(draft.portrait_layout) if draft.portrait_layout else {},
-            "portrait_sources": self._build_portrait_sources(brain_dir, draft, portraits_rel, portrait_source_rel),
             "last_message": "",
             "last_time": "",
+        }
+
+    def _build_portrait_edit_file(
+        self,
+        brain_dir: Path,
+        draft: CharacterDraft,
+        portraits_rel: dict[str, str],
+        portrait_source_rel: dict[str, str],
+    ) -> dict[str, Any]:
+        return {
+            "version": PORTRAIT_EDIT_VERSION,
+            "layout": self._json_safe(draft.portrait_layout) if draft.portrait_layout else {},
+            "edits": self._build_portrait_sources(brain_dir, draft, portraits_rel, portrait_source_rel),
         }
 
     def _copy_assets(
@@ -342,6 +364,9 @@ class CharacterCreator:
         version_assets: bool = False,
     ) -> tuple[str, dict[str, str], dict[str, str]]:
         avatar_source = draft.avatar_path.strip()
+        (brain_dir / "assets").mkdir(parents=True, exist_ok=True)
+        (brain_dir / "assets" / "portraits").mkdir(parents=True, exist_ok=True)
+        (brain_dir / "assets" / "portrait_sources").mkdir(parents=True, exist_ok=True)
         portrait_sources = {
             str(emotion): str(source).strip()
             for emotion, source in draft.portraits.items()
@@ -355,6 +380,12 @@ class CharacterCreator:
                 str(key),
                 brain_dir,
                 keep_source=portrait_sources.get(str(key), ""),
+            )
+            self._cleanup_stem(
+                brain_dir / "assets" / "portrait_sources",
+                str(key),
+                brain_dir,
+                keep_source=str(draft.portrait_edits.get(str(key), PortraitEditDraft()).source_path or ""),
             )
 
         avatar_rel = ""
@@ -390,8 +421,8 @@ class CharacterCreator:
             try:
                 portrait_source_rel[emotion_id] = self._copy_image(
                     original_source,
-                    brain_dir / "assets" / "portraits",
-                    f"{emotion_id}_src",
+                    brain_dir / "assets" / "portrait_sources",
+                    emotion_id,
                     brain_dir,
                     versioned=version_assets,
                 )
@@ -547,9 +578,13 @@ class CharacterCreator:
         color = data.get("background_color", (255, 255, 255))
         if not isinstance(color, (list, tuple)) or len(color) != 3:
             color = (255, 255, 255)
+        render_mode = str(data.get("render_mode") or "cutout")
+        if render_mode not in {"cutout", "original"}:
+            render_mode = "cutout"
         return PortraitEditDraft(
             source_path=str(data.get("source_path") or ""),
             processed_path=str(data.get("processed_path") or ""),
+            render_mode=render_mode,
             background_color=tuple(int(item) for item in color),
             tolerance=int(data.get("tolerance") or 32),
             feather=int(data.get("feather") or 0),

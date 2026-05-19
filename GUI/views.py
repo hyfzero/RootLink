@@ -47,7 +47,13 @@ from .interfaces import (
     UiSettings,
     UserProfile,
 )
-from .portrait_processing import PortraitProcessingError, export_aligned_portrait, sample_background_color_auto
+from .portrait_processing import (
+    PORTRAIT_RENDER_MODE_CUTOUT,
+    PORTRAIT_RENDER_MODE_ORIGINAL,
+    PortraitProcessingError,
+    export_aligned_portrait,
+    sample_background_color_auto,
+)
 from .theme import (
     MOBILE_WIDTH,
     MOTION,
@@ -729,16 +735,42 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._draft.avatar_path = file_path
         elif kind == "portrait" and emotion_id:
             try:
-                background_color = sample_background_color_auto(file_path)
-                self._draft.portrait_edits[emotion_id] = PortraitEditDraft(
-                    source_path=file_path,
-                    background_color=background_color,
-                )
-                self._process_portrait(emotion_id, refresh=False)
+                self._replace_portrait_image(emotion_id, file_path)
             except PortraitProcessingError as exc:
                 self.show_notice(str(exc), is_error=True)
                 return
         self._safe_update()
+
+    def _replace_portrait_image(self, emotion_id: str, file_path: str) -> None:
+        previous_edit = self._draft.portrait_edits.get(emotion_id)
+        previous_portrait = self._draft.portraits.get(emotion_id, "")
+        previous_layout = self._draft.portrait_layout
+        previous_preview_path = self._portrait_preview_paths.get(emotion_id, "")
+
+        background_color = sample_background_color_auto(file_path)
+        render_mode = previous_edit.render_mode if previous_edit is not None else PORTRAIT_RENDER_MODE_CUTOUT
+        self._draft.portrait_edits[emotion_id] = PortraitEditDraft(
+            source_path=file_path,
+            render_mode=render_mode,
+            background_color=background_color,
+        )
+        self._draft.portraits.pop(emotion_id, None)
+        if emotion_id == "neutral":
+            self._draft.portrait_layout = None
+        self._portrait_preview_generation += 1
+
+        if self._process_portrait(emotion_id, refresh=False, sync_controls=False):
+            return
+
+        if previous_edit is None:
+            self._draft.portrait_edits.pop(emotion_id, None)
+        else:
+            self._draft.portrait_edits[emotion_id] = previous_edit
+        if previous_portrait:
+            self._draft.portraits[emotion_id] = previous_portrait
+        self._draft.portrait_layout = previous_layout
+        if previous_preview_path:
+            self._portrait_preview_paths[emotion_id] = previous_preview_path
 
     def _stagger(
         self,
@@ -1917,9 +1949,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 )
             )
         emotion_controls: list[ft.Control] = [ft.Row(spacing=8, wrap=True, controls=emotion_row_controls)]
-        edit = self._draft.portrait_edits.get(self._emotion_id)
-        if edit is not None and edit.source_path and edit.source_path == edit.processed_path:
-            self._process_portrait(self._emotion_id, refresh=False, sync_controls=False)
+        self._ensure_current_portrait_preview()
         avatar_path = self._draft.avatar_path
         preview_path = self._draft.portraits.get(self._emotion_id, "")
         self._portrait_preview_container = ft.Container(
@@ -1993,6 +2023,19 @@ class CompanionAppView(ft.Container, CompanionUIView):
             return ft.Image(src=preview_path, fit=IMAGE_CONTAIN)
         return ft.Icon(ft.Icons.PERSON_OUTLINE, size=56, color=colors["text_tertiary"])
 
+    def _ensure_current_portrait_preview(self) -> None:
+        edit = self._draft.portrait_edits.get(self._emotion_id)
+        if edit is None or not edit.source_path:
+            return
+
+        preview_path = self._draft.portraits.get(self._emotion_id, "")
+        if preview_path and Path(preview_path).exists():
+            return
+        if edit.processed_path and Path(edit.processed_path).exists():
+            self._draft.portraits[self._emotion_id] = edit.processed_path
+            return
+        self._process_portrait(self._emotion_id, refresh=False, sync_controls=False)
+
     def _refresh_portrait_preview_control(self, emotion_id: str) -> bool:
         if emotion_id != self._emotion_id or self._portrait_preview_container is None:
             return False
@@ -2024,6 +2067,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._portrait_scale_slider = self._portrait_slider(0.5, 1.5, 20, edit.scale)
         self._portrait_offset_x_slider = self._portrait_slider(-120, 120, 24, edit.offset_x)
         self._portrait_offset_y_slider = self._portrait_slider(-120, 120, 24, edit.offset_y)
+        is_cutout_mode = edit.render_mode != PORTRAIT_RENDER_MODE_ORIGINAL
 
         warning = ft.Container()
         if edit.warning:
@@ -2051,10 +2095,16 @@ class CompanionAppView(ft.Container, CompanionUIView):
                 ),
             )
 
-        preset_controls = [
-            self._portrait_preset_button(preset_id, label, edit, colors)
-            for preset_id, label, _, _ in PORTRAIT_CUTOUT_PRESETS
+        mode_controls = [
+            self._portrait_render_mode_button(PORTRAIT_RENDER_MODE_CUTOUT, "分割模式", ft.Icons.CONTENT_CUT, edit, colors),
+            self._portrait_render_mode_button(PORTRAIT_RENDER_MODE_ORIGINAL, "原图模式", ft.Icons.IMAGE_OUTLINED, edit, colors),
         ]
+        preset_controls = []
+        if is_cutout_mode:
+            preset_controls = [
+                self._portrait_preset_button(preset_id, label, edit, colors)
+                for preset_id, label, _, _ in PORTRAIT_CUTOUT_PRESETS
+            ]
         advanced_controls: list[ft.Control] = []
         if self._portrait_advanced_open:
             advanced_controls = [
@@ -2086,7 +2136,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
                             ),
                         ],
                     ),
-                    ft.Row(spacing=8, wrap=True, controls=preset_controls),
+                    ft.Row(spacing=8, wrap=True, controls=mode_controls),
+                    *([ft.Row(spacing=8, wrap=True, controls=preset_controls)] if preset_controls else []),
                     self._mini_button("收起高级微调" if self._portrait_advanced_open else "高级微调", colors, lambda _: self._toggle_portrait_advanced()),
                     *advanced_controls,
                     status,
@@ -2157,6 +2208,34 @@ class CompanionAppView(ft.Container, CompanionUIView):
             return
         label.value = self._format_portrait_slider_value(value, value_format)
         self._try_update_control(label)
+
+    def _portrait_render_mode_button(
+        self,
+        render_mode: str,
+        label: str,
+        icon: str,
+        edit: PortraitEditDraft,
+        colors: dict[str, str],
+    ) -> ft.Control:
+        selected = edit.render_mode == render_mode
+        return ft.Container(
+            padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+            border_radius=12,
+            bgcolor=hex_with_alpha(self.active_role.accent_color, 48) if selected else colors["card_strong"],
+            border=ft.Border.all(1, hex_with_alpha(self.active_role.accent_color, 88) if selected else colors["card_border"]),
+            ink=True,
+            scale=1.0,
+            animate_scale=animation("fast", phase="press"),
+            on_click=animated_click(lambda _, value=render_mode: self._set_portrait_render_mode(value)),
+            content=ft.Row(
+                spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Icon(icon, size=14, color=colors["text"]),
+                    text(label, 11, colors["text"]),
+                ],
+            ),
+        )
 
     def _portrait_preset_button(self, preset_id: str, label: str, edit: PortraitEditDraft, colors: dict[str, str]) -> ft.Control:
         selected = self._portrait_preset_id(edit) == preset_id
@@ -2680,12 +2759,31 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if self._portrait_offset_y_slider is not None:
             edit.offset_y = int(self._portrait_offset_y_slider.value or 0)
 
+    def _set_portrait_render_mode(self, render_mode: str) -> None:
+        if render_mode not in {PORTRAIT_RENDER_MODE_CUTOUT, PORTRAIT_RENDER_MODE_ORIGINAL}:
+            return
+        edit = self._draft.portrait_edits.get(self._emotion_id)
+        if edit is None:
+            return
+        self._sync_portrait_edit_from_controls(edit)
+        if edit.render_mode == render_mode:
+            return
+        edit.render_mode = render_mode
+        if self._emotion_id == "neutral":
+            self._draft.portrait_layout = None
+        if render_mode == PORTRAIT_RENDER_MODE_ORIGINAL:
+            edit.warning = ""
+        self._queue_portrait_preview()
+
     def _set_portrait_preset(self, preset_id: str) -> None:
         edit = self._draft.portrait_edits.get(self._emotion_id)
         if edit is None:
             return
         for candidate_id, _, tolerance, feather in PORTRAIT_CUTOUT_PRESETS:
             if candidate_id == preset_id:
+                edit.render_mode = PORTRAIT_RENDER_MODE_CUTOUT
+                if self._emotion_id == "neutral":
+                    self._draft.portrait_layout = None
                 edit.tolerance = tolerance
                 edit.feather = feather
                 if self._portrait_tolerance_slider is not None:

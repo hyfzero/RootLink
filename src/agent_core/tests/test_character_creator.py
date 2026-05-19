@@ -60,6 +60,8 @@ class CharacterCreatorTests(unittest.TestCase):
 
             for relative_dir in ("history/daily", "history/summaries", "session/current", "session/archive"):
                 self.assertTrue((brain_dir / relative_dir).is_dir(), relative_dir)
+            self.assertTrue((brain_dir / "assets" / "portrait_sources").is_dir())
+            self.assertTrue((brain_dir / "portrait_edits.json").exists())
 
             roles = load_roles_from_data(Path(data_root))
             self.assertEqual([role.id for role in roles], ["custom_role"])
@@ -301,21 +303,24 @@ class CharacterCreatorTests(unittest.TestCase):
             self.assertTrue((brain_dir / "assets" / "avatar.png").exists())
             self.assertTrue((brain_dir / "assets" / "portraits" / "neutral.png").exists())
 
-    def test_portrait_sources_are_saved_as_portable_assets_with_edit_values(self) -> None:
+    def test_portrait_edit_file_saves_original_source_and_processed_cache_paths(self) -> None:
         with tempfile.TemporaryDirectory() as data_root, tempfile.TemporaryDirectory() as assets_root:
-            image_path = Path(assets_root) / "neutral.png"
-            image_path.write_bytes(b"portrait-bytes")
+            source_path = Path(assets_root) / "neutral_source.jpg"
+            processed_path = Path(assets_root) / "neutral_processed.png"
+            source_path.write_bytes(b"source-bytes")
+            processed_path.write_bytes(b"processed-bytes")
             creator = CharacterCreator(Path(data_root))
 
             result = creator.create(
                 CharacterDraft(
                     brain_id="portable_portrait",
                     name="Portable Portrait",
-                    portraits={"neutral": str(image_path)},
+                    portraits={"neutral": str(processed_path)},
                     portrait_edits={
                         "neutral": PortraitEditDraft(
-                            source_path=r"D:\missing\neutral.png",
-                            processed_path=r"C:\Users\YY\AppData\Local\Temp\neutral.png",
+                            source_path=str(source_path),
+                            processed_path=str(processed_path),
+                            render_mode="original",
                             tolerance=77,
                             feather=4,
                             scale=0.7,
@@ -327,16 +332,31 @@ class CharacterCreatorTests(unittest.TestCase):
             )
 
             ui = json.loads((result.brain_dir / "ui.json").read_text(encoding="utf-8"))
-            edit_data = ui["portrait_sources"]["neutral"]
-            self.assertEqual(edit_data["source_path"], "assets/portraits/neutral.png")
+            edit_file = json.loads((result.brain_dir / "portrait_edits.json").read_text(encoding="utf-8"))
+            edit_data = edit_file["edits"]["neutral"]
+            self.assertEqual(edit_file["version"], 1)
+            self.assertNotIn("portrait_sources", ui)
+            self.assertNotIn("portrait_layout", ui)
+            self.assertEqual(ui["portraits"]["neutral"], "assets/portraits/neutral.png")
+            self.assertEqual(edit_data["source_path"], "assets/portrait_sources/neutral.jpg")
             self.assertEqual(edit_data["processed_path"], "assets/portraits/neutral.png")
+            self.assertEqual(edit_data["render_mode"], "original")
             self.assertEqual(edit_data["tolerance"], 77)
             self.assertEqual(edit_data["feather"], 4)
             self.assertEqual(edit_data["scale"], 0.7)
             self.assertEqual(edit_data["offset_x"], 12)
             self.assertEqual(edit_data["offset_y"], -6)
+            self.assertEqual((result.brain_dir / edit_data["source_path"]).read_bytes(), b"source-bytes")
+            self.assertEqual((result.brain_dir / edit_data["processed_path"]).read_bytes(), b"processed-bytes")
             self.assertNotIn("D:\\", json.dumps(ui))
-            self.assertNotIn("AppData", json.dumps(ui))
+            self.assertNotIn("D:\\", json.dumps(edit_file))
+            self.assertNotIn("AppData", json.dumps(edit_file))
+
+            loaded = creator.load_draft("portable_portrait")
+            loaded_edit = loaded.portrait_edits["neutral"]
+            self.assertEqual(loaded_edit.source_path, (result.brain_dir / "assets" / "portrait_sources" / "neutral.jpg").as_posix())
+            self.assertEqual(loaded_edit.processed_path, (result.brain_dir / "assets" / "portraits" / "neutral.png").as_posix())
+            self.assertEqual(loaded_edit.render_mode, "original")
 
     def test_load_draft_falls_back_from_missing_portrait_source_to_saved_asset(self) -> None:
         with tempfile.TemporaryDirectory() as data_root, tempfile.TemporaryDirectory() as assets_root:

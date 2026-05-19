@@ -98,6 +98,7 @@ class PortraitEditDraft:
 
     source_path: str = ""
     processed_path: str = ""
+    render_mode: str = "cutout"
     background_color: tuple[int, int, int] = (255, 255, 255)
     tolerance: int = 32
     feather: int = 0

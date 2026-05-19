@@ -13,6 +13,9 @@ from .interfaces import PortraitEditDraft, PortraitLayoutDraft
 
 SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 DEFAULT_CANVAS_SIZE = (390, 520)
+PORTRAIT_RENDER_MODE_CUTOUT = "cutout"
+PORTRAIT_RENDER_MODE_ORIGINAL = "original"
+PORTRAIT_RENDER_MODES = {PORTRAIT_RENDER_MODE_CUTOUT, PORTRAIT_RENDER_MODE_ORIGINAL}
 
 
 class PortraitProcessingError(ValueError):
@@ -82,6 +85,8 @@ def create_cutout_image(edit: PortraitEditDraft) -> Image.Image:
     with Image.open(source) as image:
         rgba = image.convert("RGBA")
     rgba = rgba.crop(_normalized_crop_box(edit.crop_box, rgba.size))
+    if edit.render_mode == PORTRAIT_RENDER_MODE_ORIGINAL:
+        return rgba
 
     bg_r, bg_g, bg_b = edit.background_color
     tolerance = max(0, int(edit.tolerance))

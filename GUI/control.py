@@ -34,7 +34,7 @@ from .chat_text import (
     split_display_sentences,
 )
 from .character_package import CharacterPackageError, export_character_package, import_character_package
-from .character_creator import VALID_BRAIN_ID, CharacterCreationError, CharacterCreator
+from .character_creator import PORTRAIT_EDIT_FILE, PORTRAIT_EDIT_VERSION, VALID_BRAIN_ID, CharacterCreationError, CharacterCreator
 from .interfaces import (
     CharacterDraft,
     ChatMessage,
@@ -403,7 +403,7 @@ def _copy_default_key_seed(source_dirs: Path | list[Path], brain_dir: Path, *, o
 
     for child_name in ("assets", "persona", "tags"):
         _copy_missing_tree(source_dir / child_name, brain_dir / child_name, overwrite=overwrite)
-    for file_name in ("config.json", "ui.json"):
+    for file_name in ("config.json", "ui.json", PORTRAIT_EDIT_FILE):
         _copy_missing_tree(source_dir / file_name, brain_dir / file_name, overwrite=overwrite)
     return True
 
@@ -581,7 +581,9 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
         },
     )
     _write_json_if_missing(brain_dir / "ui.json", _key_default_ui())
+    _write_json_if_missing(brain_dir / PORTRAIT_EDIT_FILE, _key_default_portrait_edits())
     _write_json_if_missing(tags_dir / "reply_tags.json", {"tags": {}, "recent_order": [], "max_size": 100})
+    _ensure_key_portrait_source_assets(brain_dir)
 
     return brain_dir
 
@@ -589,6 +591,8 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
 def _sync_key_defaults(brain_dir: Path) -> None:
     _merge_json(brain_dir / "persona" / "profile.json", _key_default_profile())
     _merge_json(brain_dir / "ui.json", _key_default_ui())
+    _write_json_if_missing(brain_dir / PORTRAIT_EDIT_FILE, _key_default_portrait_edits())
+    _ensure_key_portrait_source_assets(brain_dir)
 
 
 _KEY_PROFILE_RUNTIME_KEYS = ("relationship_state", "relationship_score", "relationship_updated_at")
@@ -612,6 +616,7 @@ def _key_default_ui() -> dict:
         "type": "Custom",
         "tags": ["身体差", "冷静", "耐心"],
         "intro": "一个被困在数字世界的灵魂",
+        "status_text": "",
         "accent_color": "#B6A8C9",
         "avatar": "assets/avatar.png",
         "standing_image": "assets/portraits/neutral-640321d0.png",
@@ -622,45 +627,82 @@ def _key_default_ui() -> dict:
             "surprised": "assets/portraits/surprised-a41574a0.png",
             "neutral": "assets/portraits/neutral-640321d0.png",
         },
-        "portrait_layout": {"canvas_width": 390, "canvas_height": 520, "anchor_bbox": [28, 65, 363, 455]},
-        "portrait_sources": {
+        "last_message": "",
+        "last_time": "",
+    }
+
+
+def _key_default_portrait_edits() -> dict:
+    return {
+        "version": PORTRAIT_EDIT_VERSION,
+        "layout": {"canvas_width": 390, "canvas_height": 520, "anchor_bbox": [28, 65, 363, 455]},
+        "edits": {
             "happy": {
-                "source_path": "assets/portraits/happy-3dd92ea1.png",
+                "source_path": "assets/portrait_sources/happy-3dd92ea1.png",
                 "processed_path": "assets/portraits/happy-3dd92ea1.png",
+                "render_mode": "cutout",
                 "background_color": [218, 134, 64],
                 "tolerance": 120, "feather": 0, "crop_box": None,
                 "scale": 1.0, "offset_x": 0, "offset_y": 0,
             },
             "sad": {
-                "source_path": "assets/portraits/sad-52b3dbf7.png",
+                "source_path": "assets/portrait_sources/sad-52b3dbf7.png",
                 "processed_path": "assets/portraits/sad-52b3dbf7.png",
+                "render_mode": "cutout",
                 "background_color": [218, 134, 64],
                 "tolerance": 120, "feather": 0, "crop_box": None,
                 "scale": 1.0, "offset_x": 0, "offset_y": 0,
             },
             "angry": {
-                "source_path": "assets/portraits/angry-de915d2d.png",
+                "source_path": "assets/portrait_sources/angry-de915d2d.png",
                 "processed_path": "assets/portraits/angry-de915d2d.png",
+                "render_mode": "cutout",
                 "background_color": [218, 134, 64],
                 "tolerance": 120, "feather": 0, "crop_box": None,
                 "scale": 1.0, "offset_x": 0, "offset_y": 0,
             },
             "surprised": {
-                "source_path": "assets/portraits/surprised-a41574a0.png",
+                "source_path": "assets/portrait_sources/surprised-a41574a0.png",
                 "processed_path": "assets/portraits/surprised-a41574a0.png",
+                "render_mode": "cutout",
                 "background_color": [218, 134, 64],
                 "tolerance": 55, "feather": 0, "crop_box": None,
                 "scale": 1.0, "offset_x": 0, "offset_y": 0,
             },
             "neutral": {
-                "source_path": "assets/portraits/neutral-640321d0.png",
+                "source_path": "assets/portrait_sources/neutral-640321d0.png",
                 "processed_path": "assets/portraits/neutral-640321d0.png",
+                "render_mode": "cutout",
                 "background_color": [218, 134, 64],
                 "tolerance": 32, "feather": 0, "crop_box": None,
                 "scale": 1.0, "offset_x": 0, "offset_y": 0,
             },
         },
     }
+
+
+def _ensure_key_portrait_source_assets(brain_dir: Path) -> None:
+    edit_file = brain_dir / PORTRAIT_EDIT_FILE
+    try:
+        data = json.loads(edit_file.read_text(encoding="utf-8")) if edit_file.exists() else {}
+    except (json.JSONDecodeError, OSError):
+        data = {}
+    edits = data.get("edits") if isinstance(data, dict) else None
+    if not isinstance(edits, dict):
+        edits = _key_default_portrait_edits()["edits"]
+
+    for edit in edits.values():
+        if not isinstance(edit, dict):
+            continue
+        source_path = str(edit.get("source_path") or "")
+        processed_path = str(edit.get("processed_path") or "")
+        if not source_path or not processed_path:
+            continue
+        source = brain_dir / source_path
+        processed = brain_dir / processed_path
+        if not source.exists() and processed.exists():
+            source.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(processed, source)
 
 
 def _merge_json(path: Path, defaults: dict) -> None:

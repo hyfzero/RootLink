@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "layout": {
+    "canvas_width": 390,
+    "canvas_height": 520,
+    "anchor_bbox": [
+      28,
+      65,
+      363,
+      455
+    ]
+  },
+  "edits": {
+    "happy": {
+      "source_path": "assets/portrait_sources/happy-3dd92ea1.png",
+      "processed_path": "assets/portraits/happy-3dd92ea1.png",
+      "render_mode": "cutout",
+      "background_color": [
+        218,
+        134,
+        64
+      ],
+      "tolerance": 120,
+      "feather": 0,
+      "crop_box": null,
+      "scale": 1.0,
+      "offset_x": 0,
+      "offset_y": 0
+    },
+    "sad": {
+      "source_path": "assets/portrait_sources/sad-52b3dbf7.png",
+      "processed_path": "assets/portraits/sad-52b3dbf7.png",
+      "render_mode": "cutout",
+      "background_color": [
+        218,
+        134,
+        64
+      ],
+      "tolerance": 120,
+      "feather": 0,
+      "crop_box": null,
+      "scale": 1.0,
+      "offset_x": 0,
+      "offset_y": 0
+    },
+    "angry": {
+      "source_path": "assets/portrait_sources/angry-de915d2d.png",
+      "processed_path": "assets/portraits/angry-de915d2d.png",
+      "render_mode": "cutout",
+      "background_color": [
+        218,
+        134,
+        64
+      ],
+      "tolerance": 120,
+      "feather": 0,
+      "crop_box": null,
+      "scale": 1.0,
+      "offset_x": 0,
+      "offset_y": 0
+    },
+    "surprised": {
+      "source_path": "assets/portrait_sources/surprised-a41574a0.png",
+      "processed_path": "assets/portraits/surprised-a41574a0.png",
+      "render_mode": "cutout",
+      "background_color": [
+        218,
+        134,
+        64
+      ],
+      "tolerance": 55,
+      "feather": 0,
+      "crop_box": null,
+      "scale": 1.0,
+      "offset_x": 0,
+      "offset_y": 0
+    },
+    "neutral": {
+      "source_path": "assets/portrait_sources/neutral-640321d0.png",
+      "processed_path": "assets/portraits/neutral-640321d0.png",
+      "render_mode": "cutout",
+      "background_color": [
+        218,
+        134,
+        64
+      ],
+      "tolerance": 32,
+      "feather": 0,
+      "crop_box": null,
+      "scale": 1.0,
+      "offset_x": 0,
+      "offset_y": 0
+    }
+  }
+}

@@ -52,6 +52,23 @@ class PortraitProcessingTests(unittest.TestCase):
             self.assertEqual(strict.getpixel((0, 0))[3], 255)
             self.assertEqual(loose.getpixel((0, 0))[3], 0)
 
+    def test_original_mode_preserves_source_background(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "portrait.png"
+            self._write_sample(source, background=(250, 250, 250), foreground_box=(3, 3, 8, 8))
+
+            original = create_cutout_image(
+                PortraitEditDraft(
+                    source_path=str(source),
+                    render_mode="original",
+                    background_color=(255, 255, 255),
+                    tolerance=10,
+                    feather=0,
+                )
+            )
+
+            self.assertEqual(original.getpixel((0, 0)), (250, 250, 250, 255))
+
     def test_expression_reuses_neutral_canvas(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             neutral = Path(temp_dir) / "neutral.png"

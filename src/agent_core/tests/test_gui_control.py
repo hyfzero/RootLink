@@ -38,7 +38,7 @@ from GUI.control import (
     build_amadues_runtime,
     ensure_default_startup_data,
 )
-from GUI.character_creator import CharacterCreator
+from GUI.character_creator import PORTRAIT_EDIT_FILE, CharacterCreator
 from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUIView, UiSettings
 from GUI.role_loader import load_roles_from_data
 from agent_core.api.adapter import APIProvider, AdapterRegistry
@@ -367,18 +367,30 @@ class GuiControlTests(unittest.TestCase):
         packaged_key_dir = REPO_ROOT / "resource" / KEY_BRAIN_ID
         profile = json.loads((key_dir / "persona" / "profile.json").read_text(encoding="utf-8"))
         ui_data = json.loads((key_dir / "ui.json").read_text(encoding="utf-8"))
+        edit_data = json.loads((key_dir / PORTRAIT_EDIT_FILE).read_text(encoding="utf-8"))
 
         self.assertEqual(profile["name"], "\u5065")
         self.assertEqual(ui_data["avatar"], "assets/avatar.png")
         self.assertEqual(ui_data["portraits"]["happy"], "assets/portraits/happy-3dd92ea1.png")
         self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-640321d0.png")
-        self.assertEqual(ui_data["portrait_sources"]["neutral"]["source_path"], "assets/portraits/neutral-640321d0.png")
-        self.assertEqual(ui_data["portrait_sources"]["neutral"]["processed_path"], "assets/portraits/neutral-640321d0.png")
-        self.assertEqual(ui_data["portrait_sources"]["neutral"]["scale"], 1.0)
+        self.assertNotIn("portrait_sources", ui_data)
+        self.assertNotIn("portrait_layout", ui_data)
+        self.assertEqual(edit_data["version"], 1)
+        self.assertEqual(edit_data["edits"]["neutral"]["source_path"], "assets/portrait_sources/neutral-640321d0.png")
+        self.assertEqual(edit_data["edits"]["neutral"]["processed_path"], "assets/portraits/neutral-640321d0.png")
+        self.assertEqual(edit_data["edits"]["neutral"]["render_mode"], "cutout")
+        self.assertEqual(edit_data["edits"]["neutral"]["scale"], 1.0)
         serialized_ui = json.dumps(ui_data, ensure_ascii=False)
+        serialized_edits = json.dumps(edit_data, ensure_ascii=False)
         self.assertNotIn("D:\\", serialized_ui)
         self.assertNotIn("AppData", serialized_ui)
+        self.assertNotIn("D:\\", serialized_edits)
+        self.assertNotIn("AppData", serialized_edits)
         self.assertEqual((key_dir / "assets" / "avatar.png").read_bytes(), (packaged_key_dir / "assets" / "avatar.png").read_bytes())
+        self.assertEqual(
+            (key_dir / "assets" / "portrait_sources" / "neutral-640321d0.png").read_bytes(),
+            (packaged_key_dir / "assets" / "portrait_sources" / "neutral-640321d0.png").read_bytes(),
+        )
         self.assertFalse((Path(self._data_tmp.name) / AMADUES_BRAIN_ID).exists())
 
     def test_default_startup_data_does_not_create_key_when_other_roles_exist(self) -> None:
