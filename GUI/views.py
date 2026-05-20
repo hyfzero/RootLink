@@ -113,6 +113,13 @@ PORTRAIT_CUTOUT_PRESETS = [
 PORTRAIT_PREVIEW_DEBOUNCE_SECONDS = 0.25
 
 CREATE_STEPS = ["基础信息", "立绘", "人格", "记忆", "语言风格"]
+MEMORY_CATEGORIES = [
+    ("episodic", "情节记忆"),
+    ("preference", "偏好记忆"),
+    ("fact", "事实记忆"),
+    ("daily_summary", "日终总结"),
+    ("monthly_summary", "月终总结"),
+]
 
 
 TYPING_STATUS_TEXT = "\u6b63\u5728\u8f93\u5165\u4e2d"
@@ -178,7 +185,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._trait_chips: Optional[ft.Row] = None
         self._interest_chips: Optional[ft.Row] = None
         self._memory_editors: list[MemoryEditor] = []
+        self._memory_editor_indices: list[int] = []
         self._memory_list: Optional[ft.Column] = None
+        self._memory_category_open: dict[str, bool] = {}
         self._portrait_tolerance_slider: Optional[ft.Slider] = None
         self._portrait_scale_slider: Optional[ft.Slider] = None
         self._portrait_offset_x_slider: Optional[ft.Slider] = None
@@ -250,7 +259,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._portrait_preview_session_id = uuid.uuid4().hex
         self._portrait_preview_paths = {}
         self._memory_editors = []
+        self._memory_editor_indices = []
         self._memory_list = None
+        self._memory_category_open = {}
         self._portrait_value_labels = {}
         self._portrait_preview_container = None
 
@@ -2403,30 +2414,94 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _memory_controls(self, colors: dict[str, str]) -> list[ft.Control]:
         self._memory_editors = []
-        controls: list[ft.Control] = []
-        for index, memory in enumerate(self._draft.memories):
-            editor = MemoryEditor(memory, colors, lambda idx=index: self._remove_memory(idx))
-            self._memory_editors.append(editor)
-            controls.append(editor)
-        if controls:
-            return controls
-        return [
-            section_card(
-                ft.Column(
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        self._memory_editor_indices = []
+        self._ensure_memory_category_state()
+        return [self._memory_category_control(memory_type, label, colors) for memory_type, label in MEMORY_CATEGORIES]
+
+    def _ensure_memory_category_state(self) -> None:
+        for memory_type, _ in MEMORY_CATEGORIES:
+            if memory_type not in self._memory_category_open:
+                self._memory_category_open[memory_type] = any(memory.memory_type == memory_type for memory in self._draft.memories)
+
+    def _memory_category_control(self, memory_type: str, label: str, colors: dict[str, str]) -> ft.Control:
+        memory_indexes = [index for index, memory in enumerate(self._draft.memories) if memory.memory_type == memory_type]
+        is_open = self._memory_category_open.get(memory_type, bool(memory_indexes))
+        body_controls: list[ft.Control] = []
+        if is_open:
+            for index in memory_indexes:
+                editor = MemoryEditor(
+                    self._draft.memories[index],
+                    colors,
+                    lambda idx=index: self._remove_memory(idx),
+                    self._handle_memory_type_changed,
+                )
+                self._memory_editors.append(editor)
+                self._memory_editor_indices.append(index)
+                body_controls.append(editor)
+            if not body_controls:
+                body_controls.append(
+                    ft.Container(
+                        padding=ft.Padding.only(top=2, bottom=4),
+                        content=text("这个分类还没有记忆。", 12, colors["text_tertiary"]),
+                    )
+                )
+
+        toggle_icon = ft.Icons.KEYBOARD_ARROW_DOWN if is_open else ft.Icons.KEYBOARD_ARROW_RIGHT
+        header = ft.Row(
+            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.Row(
                     spacing=8,
+                    tight=True,
                     controls=[
-                        ft.Icon(ft.Icons.AUTO_AWESOME, size=24, color=colors["text_tertiary"]),
-                        text("还没有记忆", 13, colors["text_secondary"]),
-                        text("添加记忆条目来引导角色行为。", 11, colors["text_tertiary"]),
+                        ft.IconButton(
+                            icon=toggle_icon,
+                            icon_size=20,
+                            icon_color=colors["text_secondary"],
+                            on_click=lambda _, mt=memory_type: self._toggle_memory_category(mt),
+                            style=ft.ButtonStyle(padding=0),
+                        ),
+                        text(f"{label} ({len(memory_indexes)})", 13, colors["text"], ft.FontWeight.W_500),
                     ],
                 ),
-                colors,
-                padding=22,
-                solid=True,
-                radius=28,
-            )
-        ]
+                ft.IconButton(
+                    icon=ft.Icons.ADD,
+                    icon_size=18,
+                    icon_color=colors["text_secondary"],
+                    on_click=lambda _, mt=memory_type: self._add_memory(mt),
+                    style=ft.ButtonStyle(padding=0),
+                ),
+            ],
+        )
+        return section_card(
+            ft.Column(
+                spacing=10,
+                controls=[header, *body_controls],
+            ),
+            colors,
+            padding=14,
+            solid=True,
+            radius=22,
+        )
+
+    def _sync_memory_draft_from_editors(self) -> None:
+        for index, editor in zip(self._memory_editor_indices, self._memory_editors):
+            if 0 <= index < len(self._draft.memories):
+                self._draft.memories[index] = editor.to_draft()
+
+    def _toggle_memory_category(self, memory_type: str) -> None:
+        self._sync_memory_draft_from_editors()
+        self._memory_category_open[memory_type] = not self._memory_category_open.get(memory_type, False)
+        self._refresh_memory_list()
+
+    def _handle_memory_type_changed(self) -> None:
+        self._sync_memory_draft_from_editors()
+        self._ensure_memory_category_state()
+        for memory_type, _ in MEMORY_CATEGORIES:
+            if any(memory.memory_type == memory_type for memory in self._draft.memories):
+                self._memory_category_open[memory_type] = True
+        self._refresh_memory_list()
 
     def _chip_controls(self, values: list[str], colors: dict[str, str], on_remove) -> list[ft.Control]:
         if not values:
@@ -2663,8 +2738,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._sync_basic_draft()
         self._sync_personality_draft()
         self._sync_current_portrait_edit_controls()
-        if self._memory_editors:
-            self._draft.memories = [editor.to_draft() for editor in self._memory_editors]
+        self._sync_memory_draft_from_editors()
         if hasattr(self, "_vocabulary_dropdown"):
             self._draft.vocabulary_level = self._vocabulary_dropdown.value or "common"
             self._draft.sentence_length = self._sentence_dropdown.value or "medium"
@@ -2890,13 +2964,14 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._draft.interests = [item for item in self._draft.interests if item != value]
         self._refresh_interest_chips()
 
-    def _add_memory(self) -> None:
-        self._persist_current_step()
-        self._draft.memories.append(MemoryDraft(content=""))
+    def _add_memory(self, memory_type: str = "episodic") -> None:
+        self._sync_memory_draft_from_editors()
+        self._draft.memories.append(MemoryDraft(content="", memory_type=memory_type))
+        self._memory_category_open[memory_type] = True
         self._refresh_memory_list()
 
     def _remove_memory(self, index: int) -> None:
-        self._persist_current_step()
+        self._sync_memory_draft_from_editors()
         if 0 <= index < len(self._draft.memories):
             del self._draft.memories[index]
         self._refresh_memory_list()

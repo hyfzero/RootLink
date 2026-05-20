@@ -211,6 +211,12 @@ class CharacterCreatorTests(unittest.TestCase):
             self.assertEqual(loaded.background, "Original background")
             self.assertEqual(loaded.memories[0].memory_id, original_memory["id"])
             self.assertEqual(loaded.memories[0].timestamp, original_memory["timestamp"])
+            self.assertEqual(
+                [memory.memory_type for memory in loaded.memories],
+                ["preference", "daily_summary", "monthly_summary"],
+            )
+            self.assertEqual(loaded.memories[1].memory_id, "daily")
+            self.assertEqual(loaded.memories[2].memory_id, "monthly")
 
             loaded.name = "Edited"
             loaded.background = "Edited background"
@@ -219,6 +225,9 @@ class CharacterCreatorTests(unittest.TestCase):
             loaded.avatar_path = ""
             loaded.portraits.pop("neutral", None)
             loaded.memories[0].content = "Likes coffee."
+            loaded.memories[1].content = "daily edited"
+            loaded.memories[1].memory_type = "fact"
+            loaded.memories = [memory for memory in loaded.memories if memory.memory_type != "monthly_summary"]
             creator.update("editable", loaded)
 
             self.assertEqual(json.loads((brain_dir / "history" / "history.json").read_text(encoding="utf-8")), {"marker": "history"})
@@ -236,8 +245,10 @@ class CharacterCreatorTests(unittest.TestCase):
             self.assertEqual(updated_memories["preference_memories"][0]["id"], original_memory["id"])
             self.assertEqual(updated_memories["preference_memories"][0]["timestamp"], original_memory["timestamp"])
             self.assertEqual(updated_memories["preference_memories"][0]["content"], "Likes coffee.")
-            self.assertEqual(updated_memories["daily_summary_memories"][0]["id"], "daily")
-            self.assertEqual(updated_memories["monthly_summary_memories"][0]["id"], "monthly")
+            self.assertEqual(updated_memories["fact_memories"][0]["id"], "daily")
+            self.assertEqual(updated_memories["fact_memories"][0]["content"], "daily edited")
+            self.assertEqual(updated_memories["daily_summary_memories"], [])
+            self.assertEqual(updated_memories["monthly_summary_memories"], [])
 
             updated_ui = json.loads(ui_path.read_text(encoding="utf-8"))
             self.assertEqual(updated_ui["last_message"], "recent")

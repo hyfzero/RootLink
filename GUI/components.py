@@ -746,8 +746,15 @@ class FormField(ft.TextField):
 
 
 class MemoryEditor(ft.Container):
-    def __init__(self, memory: MemoryDraft, colors: dict[str, str], on_remove: Callable[[], None]) -> None:
+    def __init__(
+        self,
+        memory: MemoryDraft,
+        colors: dict[str, str],
+        on_remove: Callable[[], None],
+        on_type_change: Optional[Callable[[], None]] = None,
+    ) -> None:
         self._memory = memory
+        self._on_type_change = on_type_change
         self.content_field = FormField("记忆内容", "记忆内容...", colors, multiline=True, solid=True)
         self.content_field.value = memory.content
         self.context_field = FormField("上下文", "例如：第一次见面", colors, solid=True)
@@ -764,6 +771,7 @@ class MemoryEditor(ft.Container):
             ],
             **dropdown_control_style(colors, radius=18, text_size=12),
         )
+        self.type_dropdown.on_change = lambda _: self._handle_type_change()
         self.importance_value = text(self._importance_label(memory.importance), 12, colors["text_secondary"])
         self.importance = ft.Slider(min=0, max=2, divisions=20, value=memory.importance, on_change=lambda _: self._update_importance_label())
         super().__init__(
@@ -802,6 +810,10 @@ class MemoryEditor(ft.Container):
             self.importance_value.update()
         except (AssertionError, RuntimeError):
             pass
+
+    def _handle_type_change(self) -> None:
+        if self._on_type_change is not None:
+            self._on_type_change()
 
     def to_draft(self) -> MemoryDraft:
         return MemoryDraft(

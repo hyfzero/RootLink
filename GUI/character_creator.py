@@ -31,13 +31,13 @@ VALID_BRAIN_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RESOURCE_DIR = PROJECT_ROOT / "resource"
 DEFAULT_RESPONSE_LIMITS = {"max_tokens": 2000, "max_sentences": 5}
-BASIC_MEMORY_TYPES = {"episodic", "preference", "fact"}
 MEMORY_KEYS_BY_TYPE = {
     "episodic": "episodic_memories",
     "preference": "preference_memories",
     "fact": "fact_memories",
+    "daily_summary": "daily_summary_memories",
+    "monthly_summary": "monthly_summary_memories",
 }
-SUMMARY_MEMORY_KEYS = ("daily_summary_memories", "monthly_summary_memories")
 PRESERVED_UI_KEYS = ("type", "status_text", "last_message", "last_time")
 PRESERVED_PROFILE_KEYS = ("relationship_state", "relationship_score", "relationship_updated_at")
 PORTRAIT_EDIT_FILE = "portrait_edits.json"
@@ -191,19 +191,13 @@ class CharacterCreator:
 
         try:
             existing_profile = self._read_json(brain_dir / "persona" / "profile.json")
-            existing_memories = self._read_json(brain_dir / "persona" / "memories.json")
             existing_ui = self._read_json(brain_dir / "ui.json")
 
             profile = self._build_profile(name, draft, None)
             self._preserve_profile_runtime_fields(profile, existing_profile)
             persona = Persona(profile)
-            self._add_draft_memories(
-                persona,
-                [memory for memory in draft.memories if memory.memory_type in BASIC_MEMORY_TYPES],
-            )
+            self._add_draft_memories(persona, draft.memories)
             memories_payload = self._memory_payload(persona)
-            for key in SUMMARY_MEMORY_KEYS:
-                memories_payload[key] = list(existing_memories.get(key, []))
 
             old_portrait_keys = set(dict(existing_ui.get("portraits") or {}).keys()) | {"neutral"}
             avatar_rel, portraits_rel, portrait_source_rel = self._copy_assets(

@@ -103,6 +103,50 @@ class CreatePersonalityStateTests(unittest.TestCase):
 
         self.assertEqual(len(view._draft.memories), 1)
         self.assertEqual(len(view._memory_editors), 1)
+        self.assertEqual(view._draft.memories[0].memory_type, "episodic")
+        self.assertTrue(view._memory_category_open["episodic"])
+        self.assertEqual(view.safe_update_calls, 0)
+
+    def test_memory_categories_default_open_only_when_populated(self) -> None:
+        view = NoRebuildCompanionAppView(roles=[make_role()])
+        view._draft.memories = [MemoryDraft(content="pref", memory_type="preference")]
+
+        view._memory_step(view._colors())
+
+        self.assertFalse(view._memory_category_open["episodic"])
+        self.assertTrue(view._memory_category_open["preference"])
+        self.assertFalse(view._memory_category_open["fact"])
+        self.assertFalse(view._memory_category_open["daily_summary"])
+        self.assertFalse(view._memory_category_open["monthly_summary"])
+        self.assertEqual(len(view._memory_editors), 1)
+        self.assertEqual(view._memory_editor_indices, [0])
+
+    def test_adding_memory_to_category_opens_group(self) -> None:
+        view = NoRebuildCompanionAppView(roles=[make_role()])
+        view._memory_step(view._colors())
+
+        view._add_memory("daily_summary")
+
+        self.assertEqual(len(view._draft.memories), 1)
+        self.assertEqual(view._draft.memories[0].memory_type, "daily_summary")
+        self.assertTrue(view._memory_category_open["daily_summary"])
+        self.assertEqual(len(view._memory_editors), 1)
+        self.assertEqual(view._memory_editor_indices, [0])
+        self.assertEqual(view.safe_update_calls, 0)
+
+    def test_memory_type_change_moves_editor_between_categories(self) -> None:
+        view = NoRebuildCompanionAppView(roles=[make_role()])
+        view._draft.memories = [MemoryDraft(content="note", memory_type="episodic")]
+        view._memory_step(view._colors())
+
+        view._memory_editors[0].type_dropdown.value = "fact"
+        view._memory_editors[0].type_dropdown.on_change(None)
+
+        self.assertEqual(view._draft.memories[0].memory_type, "fact")
+        self.assertTrue(view._memory_category_open["fact"])
+        self.assertEqual(len(view._memory_editors), 1)
+        self.assertEqual(view._memory_editor_indices, [0])
+        self.assertEqual(view._memory_editors[0].type_dropdown.value, "fact")
         self.assertEqual(view.safe_update_calls, 0)
 
     def test_memory_close_button_removes_without_crashing(self) -> None:
