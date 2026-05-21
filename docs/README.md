@@ -14,6 +14,7 @@ amadues 是一个基于 Python 的 AI Agent 框架，核心能力包括角色人
 
 ## 文档地图
 
+- [USER_GUIDE.md](USER_GUIDE.md)：RootLink 用户指引，可作为 PDF 导出源和 GitHub 首页的详细教程
 - [architecture.md](architecture.md)：整体架构、数据流和存储约定
 - [api/README.md](api/README.md)：API 层消息、适配器、客户端和运行时
 - [api/providers-and-models.md](api/providers-and-models.md)：Provider、模型目录和配置存储
