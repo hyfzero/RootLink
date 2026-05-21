@@ -846,6 +846,7 @@ def build_amadues_runtime(
         tag_generator=TagGenerator(),
     )
     session_manager.set_emotion_mode("keyword")
+    session_manager.finalize_stale_current_sessions_sync()
     session_manager.storage.get_or_create_today()
     return AmaduesRuntime(session_manager=session_manager, brain_registry=brain_registry)
 

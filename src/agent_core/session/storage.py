@@ -332,6 +332,51 @@ class SessionStorage:
 
     # === 归档管理 ===
 
+    def archive_stale_current_sessions(self, today: Optional[str] = None) -> list[DaySession]:
+        """Archive current sessions older than today and return them."""
+        today = today or datetime.now().strftime("%Y-%m-%d")
+        current_dir = self.resolver.get_session_dir(self._brain_id) / "current"
+
+        if not current_dir.exists():
+            return []
+
+        archived_sessions: list[DaySession] = []
+        extensions = (".msgpack", ".json") if self._use_msgpack else (".json", ".msgpack")
+        seen_paths: set[Path] = set()
+
+        for ext in extensions:
+            for path in sorted(current_dir.glob(f"*{ext}")):
+                if path in seen_paths:
+                    continue
+                seen_paths.add(path)
+
+                session_date = path.stem
+                if session_date == today:
+                    continue
+
+                try:
+                    datetime.strptime(session_date, "%Y-%m-%d")
+                except ValueError:
+                    continue
+
+                try:
+                    session = DaySession.from_dict(self._load(path))
+                    if not session.date:
+                        session.date = session_date
+                    if session.date == today:
+                        continue
+                    self._apply_runtime_token_strategy(session)
+                    self.archive_session(session)
+                    archived_sessions.append(session)
+                except Exception as exc:
+                    print(f"Warning: Failed to archive stale session {path}: {exc}")
+
+        if self._current_date != today:
+            self._today_session = None
+            self._current_date = None
+
+        return archived_sessions
+
     def archive_session(self, session: DaySession) -> None:
         """归档 Session 到 archive/{year-month}/"""
         archive_path = self._get_session_path(session.date, is_archive=True)
@@ -339,8 +384,10 @@ class SessionStorage:
 
         # 删除 current 中的文件（如果存在）
         current_path = self._get_session_path(session.date, is_archive=False)
-        if current_path.exists():
-            current_path.unlink()
+        for suffix in {current_path.suffix, ".json", ".msgpack"}:
+            candidate = current_path.with_suffix(suffix)
+            if candidate.exists():
+                candidate.unlink()
 
     def cleanup_old_archives(self) -> int:
         """清理超过保留期的归档，返回删除数量"""

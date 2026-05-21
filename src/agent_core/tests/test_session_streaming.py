@@ -17,6 +17,7 @@ if str(SRC_DIR) not in sys.path:
 from agent_core.api.types import StreamChunk
 from agent_core.brain.tags import ReplyTag
 from agent_core.session.manager import SessionManager
+from agent_core.session.storage import DaySession
 
 
 class FakeStorage:
@@ -27,6 +28,12 @@ class FakeStorage:
         self.messages.append((role, content))
 
     def get_or_create_today(self) -> None:
+        return None
+
+    def archive_stale_current_sessions(self, today: str | None = None) -> list[DaySession]:
+        return []
+
+    def archive_session(self, session: DaySession) -> None:
         return None
 
 
@@ -89,6 +96,25 @@ class TestSessionManager(SessionManager):
 
     def _generate_message_id(self) -> str:
         return "assistant-1"
+
+
+class FakeStaleStorage:
+    def __init__(self, sessions: list[DaySession]) -> None:
+        self.sessions = sessions
+        self.archived_after_summary: list[DaySession] = []
+        self.requested_today: str | None = None
+
+    def archive_stale_current_sessions(self, today: str | None = None) -> list[DaySession]:
+        self.requested_today = today
+        return self.sessions
+
+    def archive_session(self, session: DaySession) -> None:
+        self.archived_after_summary.append(session)
+
+
+class TestSummaryManager(SessionManager):
+    def _generate_end_of_day_summary_sync(self, session: DaySession) -> None:
+        session.summary_generated = True
 
 
 def make_manager(chat_agent: FakeChatAgent, response_config: object | None = None) -> TestSessionManager:
@@ -155,6 +181,24 @@ class SessionStreamingTests(unittest.TestCase):
         self.assertEqual(chat_agent.chat_kwargs, [{"stream": False, "max_tokens": 321}])
         self.assertEqual(response["content"], "one.")
         self.assertEqual(manager.storage.messages, [("user", "hi"), ("assistant", "one.")])
+
+    def test_finalize_stale_current_sessions_generates_missing_summary(self) -> None:
+        stale_session = DaySession(date="2026-05-20", message_count=4)
+        short_session = DaySession(date="2026-05-19", message_count=3)
+        done_session = DaySession(date="2026-05-18", message_count=4, summary_generated=True)
+        manager = TestSummaryManager.__new__(TestSummaryManager)
+        manager._storage = FakeStaleStorage([stale_session, short_session, done_session])
+        manager.config = SimpleNamespace(min_messages_for_summary=4)
+        manager._current_date = None
+        manager._current_month = None
+
+        generated_count = manager.finalize_stale_current_sessions_sync()
+
+        self.assertEqual(generated_count, 1)
+        self.assertTrue(stale_session.summary_generated)
+        self.assertFalse(short_session.summary_generated)
+        self.assertEqual(manager.storage.archived_after_summary, [stale_session])
+        self.assertIsNotNone(manager.storage.requested_today)
 
 
 if __name__ == "__main__":

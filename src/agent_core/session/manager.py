@@ -359,15 +359,40 @@ class SessionManager:
 
     # === 日期切换处理 ===
 
+    def finalize_stale_current_sessions_sync(self) -> int:
+        """Archive stale current sessions and generate missing daily summaries."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        current_month = datetime.now().strftime("%Y-%m")
+        generated_count = 0
+
+        for session in self.storage.archive_stale_current_sessions(today=today):
+            if session.message_count < self.config.min_messages_for_summary:
+                continue
+
+            was_generated = session.summary_generated
+            self._generate_end_of_day_summary_sync(session)
+            if not was_generated and session.summary_generated:
+                generated_count += 1
+                self.storage.archive_session(session)
+
+        self._current_date = today
+        self._current_month = current_month
+        return generated_count
+
     async def _check_and_handle_day_change(self) -> None:
         """检查并处理日期切换（异步版本）"""
         today = datetime.now().strftime("%Y-%m-%d")
+
+        if self._current_date is None:
+            self.finalize_stale_current_sessions_sync()
 
         if self._current_date is not None and self._current_date != today:
             # 日期切换：归档 → 生成摘要
             old_session = self.storage.archive_if_new_day()
             if old_session:
                 await self._generate_end_of_day_summary(old_session)
+                if old_session.summary_generated:
+                    self.storage.archive_session(old_session)
 
         self._current_date = today
         self.storage.get_or_create_today()
@@ -378,11 +403,16 @@ class SessionManager:
         today = datetime.now().strftime("%Y-%m-%d")
         current_month = datetime.now().strftime("%Y-%m")
 
+        if self._current_date is None:
+            self.finalize_stale_current_sessions_sync()
+
         if self._current_date is not None and self._current_date != today:
             # 日期切换：归档并生成日终摘要
             old_session = self.storage.archive_if_new_day()
             if old_session and old_session.message_count >= self.config.min_messages_for_summary:
                 self._generate_end_of_day_summary_sync(old_session)
+                if old_session.summary_generated:
+                    self.storage.archive_session(old_session)
 
         # 检查月份切换
         if self._current_month is not None and self._current_month != current_month:
