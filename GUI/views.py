@@ -123,6 +123,7 @@ MEMORY_CATEGORIES = [
 
 
 TYPING_STATUS_TEXT = "\u6b63\u5728\u8f93\u5165\u4e2d"
+SYNCING_STATUS_TEXT = "\u540c\u6b65\u4e2d"
 REPLY_EMOTION_STATUS = {
     "neutral": "\u5e73\u9759 \U0001f610",
     "happy": "\u5f00\u5fc3 \U0001f60a",
@@ -167,6 +168,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._messages: list[ChatMessage] = []
         self._seen_message_ids = {message.id for message in self._messages}
         self._typing = False
+        self._syncing = False
         self._reply_emotions: dict[str, str] = {}
         self._settings = UiSettings(is_dark=is_dark)
         self._profile = UserProfile(name=self._settings.user_name)
@@ -1210,6 +1212,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         return str(emotion or "").strip().replace("_zh", "").lower()
 
     def _chat_status_value(self, role: CompanionRole) -> str:
+        if self._syncing:
+            return SYNCING_STATUS_TEXT
         if self._typing:
             return TYPING_STATUS_TEXT
         emotion = self._normalize_emotion(self._reply_emotions.get(role.id, ""))
@@ -2634,17 +2638,17 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _begin_open_chat(self, role_id: str) -> None:
         self._prepare_chat(role_id)
-        self._callback.on_open_chat(role_id)
         self._chat_entry_seed += 1
         self._suppress_next_chat_entry_motion = True
         self.show_page("chat")
+        self._callback.on_open_chat(role_id)
 
     def _open_chat(self, role_id: str) -> None:
         self._prepare_chat(role_id)
-        self._callback.on_open_chat(role_id)
         self._chat_entry_seed += 1
         self._suppress_next_chat_entry_motion = True
         self.show_page("chat")
+        self._callback.on_open_chat(role_id)
 
     def _set_chat_mode(self, mode: str) -> None:
         if mode not in ("normal", "immersive"):
@@ -3067,6 +3071,11 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._safe_update()
             if self._page_name == "chat" and self._chat_mode == "normal":
                 self._trigger_scroll_to_latest()
+
+    def set_syncing(self, visible: bool) -> None:
+        self._syncing = visible
+        if not self._refresh_chat_status():
+            self._safe_update()
 
     def set_reply_emotion(self, role_id: str, emotion: str) -> None:
         normalized = self._normalize_emotion(emotion)

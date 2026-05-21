@@ -29,6 +29,7 @@ from GUI.control import (
     DEEPSEEK_V4_PRO_MODEL,
     DEFAULT_KEY_SOURCE_ENV,
     KEY_BRAIN_ID,
+    KEY_DEFAULT_BACKGROUND,
     MINIMAX_MODEL,
     MINIMAX_PROVIDER,
     AmaduesController,
@@ -55,6 +56,7 @@ class StubView(CompanionUIView):
         self.appended: list[ChatMessage] = []
         self.updated: list[tuple[str, str, bool]] = []
         self.typing_states: list[bool] = []
+        self.syncing_states: list[bool] = []
         self.reply_emotions: list[tuple[str, str]] = []
         self.applied_settings: UiSettings | None = None
         self.pages: list[str] = []
@@ -85,6 +87,9 @@ class StubView(CompanionUIView):
 
     def set_typing(self, visible: bool) -> None:
         self.typing_states.append(visible)
+
+    def set_syncing(self, visible: bool) -> None:
+        self.syncing_states.append(visible)
 
     def set_reply_emotion(self, role_id: str, emotion: str) -> None:
         self.reply_emotions.append((role_id, emotion))
@@ -353,7 +358,7 @@ class GuiControlTests(unittest.TestCase):
         ui_data = json.loads(ui_path.read_text(encoding="utf-8"))
 
         self.assertEqual(profile["name"], "健")
-        self.assertEqual(profile["background"], "seed background")
+        self.assertEqual(profile["background"], KEY_DEFAULT_BACKGROUND)
         self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-abc123.png")
         self.assertTrue((Path(self._data_tmp.name) / KEY_BRAIN_ID / "assets" / "avatar.png").exists())
         self.assertTrue(
@@ -370,6 +375,7 @@ class GuiControlTests(unittest.TestCase):
         edit_data = json.loads((key_dir / PORTRAIT_EDIT_FILE).read_text(encoding="utf-8"))
 
         self.assertEqual(profile["name"], "\u5065")
+        self.assertEqual(profile["background"], KEY_DEFAULT_BACKGROUND)
         self.assertEqual(ui_data["avatar"], "assets/avatar.png")
         self.assertEqual(ui_data["portraits"]["happy"], "assets/portraits/happy-3dd92ea1.png")
         self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-640321d0.png")
@@ -587,11 +593,13 @@ class GuiControlTests(unittest.TestCase):
             controller.bind_view(view)
 
             controller.on_open_chat(AMADUES_UI_ROLE_ID)
+            controller.wait_for_streams()
 
             self.assertIn(AMADUES_UI_ROLE_ID, view.role_messages)
             notice = view.role_messages[AMADUES_UI_ROLE_ID][0]
             self.assertIn("API Key", notice.text)
             self.assertNotIn("MiniMax", notice.text)
+            self.assertEqual(view.syncing_states, [True, False])
 
     def test_open_chat_loads_today_messages(self) -> None:
         timestamp = 1_700_000_000
@@ -606,6 +614,7 @@ class GuiControlTests(unittest.TestCase):
         controller.bind_view(view)
 
         controller.on_open_chat(AMADUES_UI_ROLE_ID)
+        controller.wait_for_streams()
 
         self.assertEqual(len(view.role_messages[AMADUES_UI_ROLE_ID]), 2)
         self.assertTrue(view.role_messages[AMADUES_UI_ROLE_ID][0].is_user)
@@ -822,6 +831,7 @@ class GuiControlTests(unittest.TestCase):
 
             controller.on_open_chat(AMADUES_UI_ROLE_ID)
             controller.on_open_chat(AMADUES_UI_ROLE_ID)
+            controller.wait_for_streams()
             self.assertEqual(calls["count"], 1)
 
             controller.on_settings_saved(
@@ -835,6 +845,7 @@ class GuiControlTests(unittest.TestCase):
                 )
             )
             controller.on_open_chat(AMADUES_UI_ROLE_ID)
+            controller.wait_for_streams()
 
             self.assertEqual(calls["count"], 2)
             self.assertEqual(view.applied_settings.api_key, "new-key")

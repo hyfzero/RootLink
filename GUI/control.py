@@ -78,6 +78,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RESOURCE_DIR = PROJECT_ROOT / "resource"
 DEFAULT_RESPONSE_LIMITS = {"max_tokens": 2000, "max_sentences": 5}
 DEFAULT_KEY_SOURCE_ENV = "AMADUES_DEFAULT_KEY_SOURCE_DIR"
+KEY_DEFAULT_BACKGROUND = "system方向博士生，从小成绩优异，一直热衷于研究虚拟化人格。做事非常脱线，神经大条。喜欢偶像应援等亚文化，常在半夜上线打游戏。"
 
 
 class ChatConfigurationError(RuntimeError):
@@ -531,7 +532,7 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
     if _key_uses_legacy_amadues_assets(brain_dir):
         _copy_default_key_seed(seed_sources, brain_dir, overwrite=True)
 
-    _write_json_if_missing(persona_dir / "profile.json", _key_default_profile())
+    _merge_json(persona_dir / "profile.json", _key_default_profile())
     _ensure_response_config(brain_dir / "config.json", DEFAULT_RESPONSE_LIMITS)
     _write_json_if_missing(
         persona_dir / "memories.json",
@@ -604,7 +605,7 @@ def _key_default_profile() -> dict:
         "age": 26,
         "gender": "male",
         "personality_traits": ["身体差", "冷静", "耐心", "博士生", "内耗", "冷幽默"],
-        "background": "计算机科学博士生，从小成绩优异，一直热衷于研究虚拟化人格。做事非常脱线，神经大条。喜欢偶像应援等亚文化，常在半夜上线打游戏。",
+        "background": KEY_DEFAULT_BACKGROUND,
         "speaking_style": "calm",
         "birthday": "1998.2.14",
         "interests": ["数学", "编程", "偶像", "游戏", "漫画", "亚文化"],
@@ -874,6 +875,7 @@ class AmaduesController(CompanionUICallback):
         self._settings = self.settings_storage.load_ui_settings()
         self._role_mapping: dict[str, str] = {}
         self._stream_threads: list[threading.Thread] = []
+        self._runtime_lock = threading.Lock()
         self._normal_sentence_delay = normal_sentence_delay
         self._normal_character_delay = 0 if normal_character_delay is None else normal_character_delay
 
@@ -891,8 +893,10 @@ class AmaduesController(CompanionUICallback):
 
     def _get_runtime(self) -> AmaduesRuntime:
         if self._runtime is None:
-            self._runtime = self._runtime_factory()
-            self._publish_runtime_roles(self._runtime)
+            with self._runtime_lock:
+                if self._runtime is None:
+                    self._runtime = self._runtime_factory()
+                    self._publish_runtime_roles(self._runtime)
         return self._runtime
 
     def _remember_roles(self, roles: list[CompanionRole]) -> None:
@@ -983,6 +987,20 @@ class AmaduesController(CompanionUICallback):
         self.view.set_messages(messages)
 
     def on_open_chat(self, role_id: str) -> None:
+        if self.view is None:
+            return
+        self.view.set_syncing(True)
+        thread = threading.Thread(
+            target=self._open_chat_worker,
+            args=(role_id,),
+            daemon=True,
+        )
+        self._stream_threads.append(thread)
+        thread.start()
+
+    def _open_chat_worker(self, role_id: str) -> None:
+        if self.view is None:
+            return
         try:
             runtime = self._get_runtime()
             self._select_role_runtime(role_id, runtime)
@@ -998,6 +1016,9 @@ class AmaduesController(CompanionUICallback):
                 role_id,
                 [self._notice(role_id, f"\u804a\u5929\u521d\u59cb\u5316\u5931\u8d25\uff1a{exc}")],
             )
+        finally:
+            if self.view is not None:
+                self.view.set_syncing(False)
 
     def on_send_message(self, role_id: str, text: str, mode: str) -> None:
         if self.view is None:
