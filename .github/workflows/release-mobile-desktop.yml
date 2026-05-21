@@ -13,7 +13,7 @@ env:
   APP_PRODUCT: Amadues Companion
   APP_ARTIFACT: AmaduesCompanion
   APP_BUNDLE_ID: com.amadues.companion
-  BUILD_VERSION: 0.1.5
+  BUILD_VERSION: 0.1.7
 
 jobs:
   windows:

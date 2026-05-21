@@ -37,7 +37,7 @@
     },
     {
       "id": "mem_5_1778516483",
-      "content": "在一个“项目“中，把自己的消息输入给了ai，制作了健。",
+      "content": "在一个“项目“中，通过与system的交互，数据累积形成了健。",
       "timestamp": 1778516483.315087,
       "memory_type": "fact",
       "importance": 1.0,

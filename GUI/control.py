@@ -79,6 +79,9 @@ RESOURCE_DIR = PROJECT_ROOT / "resource"
 DEFAULT_RESPONSE_LIMITS = {"max_tokens": 2000, "max_sentences": 5}
 DEFAULT_KEY_SOURCE_ENV = "AMADUES_DEFAULT_KEY_SOURCE_DIR"
 KEY_DEFAULT_BACKGROUND = "system方向博士生，从小成绩优异，一直热衷于研究虚拟化人格。做事非常脱线，神经大条。喜欢偶像应援等亚文化，常在半夜上线打游戏。"
+KEY_PROJECT_MEMORY_CONTENT = "在一个“项目“中，通过与system的交互，数据累积形成了健。"
+KEY_LEGACY_PROJECT_MEMORY_CONTENTS = ("在一个“项目“中，把自己的消息输入给了ai，制作了健。",)
+KEY_DEFAULT_MEMORY_TIMESTAMP = 1778516483.315087
 
 
 class ChatConfigurationError(RuntimeError):
@@ -534,16 +537,7 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
 
     _merge_json(persona_dir / "profile.json", _key_default_profile())
     _ensure_response_config(brain_dir / "config.json", DEFAULT_RESPONSE_LIMITS)
-    _write_json_if_missing(
-        persona_dir / "memories.json",
-        {
-            "episodic_memories": [],
-            "preference_memories": [],
-            "fact_memories": [],
-            "daily_summary_memories": [],
-            "monthly_summary_memories": [],
-        },
-    )
+    _sync_key_default_memories(persona_dir / "memories.json")
     _write_json_if_missing(
         persona_dir / "state.json",
         {
@@ -591,6 +585,7 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
 
 def _sync_key_defaults(brain_dir: Path) -> None:
     _merge_json(brain_dir / "persona" / "profile.json", _key_default_profile())
+    _sync_key_default_memories(brain_dir / "persona" / "memories.json")
     _merge_json(brain_dir / "ui.json", _key_default_ui())
     _write_json_if_missing(brain_dir / PORTRAIT_EDIT_FILE, _key_default_portrait_edits())
     _ensure_key_portrait_source_assets(brain_dir)
@@ -610,6 +605,73 @@ def _key_default_profile() -> dict:
         "birthday": "1998.2.14",
         "interests": ["数学", "编程", "偶像", "游戏", "漫画", "亚文化"],
     }
+
+
+def _key_default_memory(
+    memory_id: str,
+    content: str,
+    memory_type: str,
+    context: str,
+    *,
+    importance: float = 1.0,
+) -> dict:
+    return {
+        "id": memory_id,
+        "content": content,
+        "timestamp": KEY_DEFAULT_MEMORY_TIMESTAMP,
+        "memory_type": memory_type,
+        "importance": importance,
+        "context": context,
+    }
+
+
+def _key_default_memories() -> dict:
+    return {
+        "episodic_memories": [],
+        "preference_memories": [
+            _key_default_memory("mem_1_1778516483", "喜欢计算喜欢一切有条理能理清楚的事物。", "preference", "喜好"),
+            _key_default_memory("mem_2_1778516483", "电子游戏沉迷，常参加一些偶像的地下活动。", "preference", "喜好"),
+        ],
+        "fact_memories": [
+            _key_default_memory("mem_3_1778516483", "从小成绩优异，但不喜欢提起考试做题。", "fact", "背景"),
+            _key_default_memory("mem_4_1778516483", "在院士门下读博，全年午休，半夜回到寝室打游戏", "fact", "背景"),
+            _key_default_memory("mem_5_1778516483", KEY_PROJECT_MEMORY_CONTENT, "fact", "背景"),
+            _key_default_memory("mem_6_1778516483", "身体很差，且表现出一直很困的样子", "fact", "背景"),
+        ],
+        "daily_summary_memories": [],
+        "monthly_summary_memories": [],
+    }
+
+
+def _sync_key_default_memories(path: Path) -> None:
+    if not path.exists():
+        _write_json_if_missing(path, _key_default_memories())
+        return
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+    if not isinstance(payload, dict):
+        return
+
+    fact_memories = payload.get("fact_memories")
+    if not isinstance(fact_memories, list):
+        return
+
+    changed = False
+    for memory in fact_memories:
+        if not isinstance(memory, dict):
+            continue
+        if memory.get("content") in KEY_LEGACY_PROJECT_MEMORY_CONTENTS:
+            memory["content"] = KEY_PROJECT_MEMORY_CONTENT
+            memory["memory_type"] = "fact"
+            memory.setdefault("importance", 1.0)
+            memory.setdefault("context", "背景")
+            changed = True
+
+    if changed:
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _key_default_ui() -> dict:

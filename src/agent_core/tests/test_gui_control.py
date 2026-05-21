@@ -30,6 +30,7 @@ from GUI.control import (
     DEFAULT_KEY_SOURCE_ENV,
     KEY_BRAIN_ID,
     KEY_DEFAULT_BACKGROUND,
+    KEY_PROJECT_MEMORY_CONTENT,
     MINIMAX_MODEL,
     MINIMAX_PROVIDER,
     AmaduesController,
@@ -356,9 +357,12 @@ class GuiControlTests(unittest.TestCase):
         profile = json.loads(profile_path.read_text(encoding="utf-8"))
         ui_path = Path(self._data_tmp.name) / KEY_BRAIN_ID / "ui.json"
         ui_data = json.loads(ui_path.read_text(encoding="utf-8"))
+        memories_path = Path(self._data_tmp.name) / KEY_BRAIN_ID / "persona" / "memories.json"
+        memories = json.loads(memories_path.read_text(encoding="utf-8"))
 
         self.assertEqual(profile["name"], "健")
         self.assertEqual(profile["background"], KEY_DEFAULT_BACKGROUND)
+        self.assertEqual(memories["fact_memories"], [])
         self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-abc123.png")
         self.assertTrue((Path(self._data_tmp.name) / KEY_BRAIN_ID / "assets" / "avatar.png").exists())
         self.assertTrue(
@@ -371,11 +375,13 @@ class GuiControlTests(unittest.TestCase):
         key_dir = Path(self._data_tmp.name) / KEY_BRAIN_ID
         packaged_key_dir = REPO_ROOT / "resource" / KEY_BRAIN_ID
         profile = json.loads((key_dir / "persona" / "profile.json").read_text(encoding="utf-8"))
+        memories = json.loads((key_dir / "persona" / "memories.json").read_text(encoding="utf-8"))
         ui_data = json.loads((key_dir / "ui.json").read_text(encoding="utf-8"))
         edit_data = json.loads((key_dir / PORTRAIT_EDIT_FILE).read_text(encoding="utf-8"))
 
         self.assertEqual(profile["name"], "\u5065")
         self.assertEqual(profile["background"], KEY_DEFAULT_BACKGROUND)
+        self.assertIn(KEY_PROJECT_MEMORY_CONTENT, [memory["content"] for memory in memories["fact_memories"]])
         self.assertEqual(ui_data["avatar"], "assets/avatar.png")
         self.assertEqual(ui_data["portraits"]["happy"], "assets/portraits/happy-3dd92ea1.png")
         self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-640321d0.png")
@@ -427,6 +433,48 @@ class GuiControlTests(unittest.TestCase):
         ui_data = json.loads((key_dir / "ui.json").read_text(encoding="utf-8"))
         self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-640321d0.png")
         self.assertEqual((key_dir / "assets" / "avatar.png").read_bytes(), (packaged_key_dir / "assets" / "avatar.png").read_bytes())
+
+    def test_default_startup_data_syncs_legacy_key_project_memory(self) -> None:
+        key_dir = Path(self._data_tmp.name) / KEY_BRAIN_ID
+        (key_dir / "persona").mkdir(parents=True)
+        (key_dir / "persona" / "profile.json").write_text(json.dumps({"name": "健"}), encoding="utf-8")
+        (key_dir / "persona" / "memories.json").write_text(
+            json.dumps(
+                {
+                    "episodic_memories": [],
+                    "preference_memories": [],
+                    "fact_memories": [
+                        {
+                            "id": "mem_5_1778516483",
+                            "content": "在一个“项目“中，把自己的消息输入给了ai，制作了健。",
+                            "timestamp": 1778516483.315087,
+                            "memory_type": "fact",
+                            "importance": 1.0,
+                            "context": "背景",
+                        },
+                        {
+                            "id": "custom",
+                            "content": "保留用户后续写入的记忆。",
+                            "memory_type": "fact",
+                            "importance": 1.0,
+                            "context": "背景",
+                        },
+                    ],
+                    "daily_summary_memories": [],
+                    "monthly_summary_memories": [],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        ensure_default_startup_data()
+
+        memories = json.loads((key_dir / "persona" / "memories.json").read_text(encoding="utf-8"))
+        contents = [memory["content"] for memory in memories["fact_memories"]]
+        self.assertIn(KEY_PROJECT_MEMORY_CONTENT, contents)
+        self.assertIn("保留用户后续写入的记忆。", contents)
+        self.assertNotIn("在一个“项目“中，把自己的消息输入给了ai，制作了健。", contents)
 
     def test_bind_view_keeps_roles_empty_when_data_directory_has_no_brain(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
