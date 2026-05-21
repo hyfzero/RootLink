@@ -6,7 +6,18 @@
 /build/
 /dist/
 __pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
 *.jks
 *.keystore
 *.p12
 *.mobileprovision
+
+# Local assistant/tool state
+/.claude/
+/CLAUDE.md
+
+# Temporary Android verification screenshots
+/android-*.png
