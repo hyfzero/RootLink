@@ -41,14 +41,21 @@ def _resolve_data_path(brain_dir: Path, value: object) -> str:
     return path.as_posix()
 
 
+def _resolve_existing_data_path(brain_dir: Path, value: object) -> str:
+    path = _resolve_data_path(brain_dir, value)
+    if not path:
+        return ""
+    return path if Path(path).exists() else ""
+
+
 def _load_portraits(brain_dir: Path, ui_data: dict[str, Any]) -> dict[str, str]:
     portraits_data = ui_data.get("portraits")
     portraits: dict[str, str] = {}
     if isinstance(portraits_data, dict):
         portraits = {
-            str(emotion): _resolve_data_path(brain_dir, path)
+            str(emotion): resolved_path
             for emotion, path in portraits_data.items()
-            if str(path or "").strip()
+            if (resolved_path := _resolve_existing_data_path(brain_dir, path))
         }
 
     neutral_path = brain_dir / "assets" / "portraits" / "neutral.png"
@@ -110,13 +117,13 @@ def role_from_brain(registry: BrainRegistry, brain_id: str, data_dir: Optional[P
     brain_dir = root / brain_id
     ui_data = _read_json(brain_dir / "ui.json")
     portraits = _load_portraits(brain_dir, ui_data)
-    avatar_path = _resolve_data_path(brain_dir, ui_data.get("avatar"))
+    avatar_path = _resolve_existing_data_path(brain_dir, ui_data.get("avatar"))
     legacy_avatar_path = brain_dir / "assets" / "avatar.png"
     if not avatar_path and legacy_avatar_path.exists():
         avatar_path = legacy_avatar_path.as_posix()
     standing_image_path = (
         portraits.get("neutral")
-        or _resolve_data_path(brain_dir, ui_data.get("standing_image") or ui_data.get("portrait"))
+        or _resolve_existing_data_path(brain_dir, ui_data.get("standing_image") or ui_data.get("portrait"))
     )
     last_message, last_time, last_timestamp = _latest_session_message(brain_dir)
 

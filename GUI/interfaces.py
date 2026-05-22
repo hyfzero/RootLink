@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Callable, Optional
 
 
 CARD_COLOR_PRESETS = [
@@ -188,6 +188,9 @@ class CompanionUICallback(ABC):
 
 class CompanionUIView(ABC):
     """Methods exposed by the UI for control-layer updates."""
+
+    def dispatch_ui(self, callback: Callable[[], None]) -> None:
+        callback()
 
     def set_roles(self, roles: list[CompanionRole]) -> None:
         raise NotImplementedError

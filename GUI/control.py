@@ -81,6 +81,9 @@ DEFAULT_KEY_SOURCE_ENV = "AMADUES_DEFAULT_KEY_SOURCE_DIR"
 KEY_DEFAULT_BACKGROUND = "system方向博士生，从小成绩优异，一直热衷于研究虚拟化人格。做事非常脱线，神经大条。喜欢偶像应援等亚文化，常在半夜上线打游戏。"
 KEY_PROJECT_MEMORY_CONTENT = "在一个“项目“中，通过与system的交互，数据累积形成了健。"
 KEY_LEGACY_PROJECT_MEMORY_CONTENTS = ("在一个“项目“中，把自己的消息输入给了ai，制作了健。",)
+KEY_DOCTORATE_MEMORY_ID = "mem_4_1778516483"
+KEY_DOCTORATE_MEMORY_CONTENT = "在院士门下读博，全年无休，半夜回到寝室打游戏"
+KEY_LEGACY_DOCTORATE_MEMORY_CONTENTS = ("在院士门下读博，全年午休，半夜回到寝室打游戏",)
 KEY_DEFAULT_MEMORY_TIMESTAMP = 1778516483.315087
 
 
@@ -119,10 +122,12 @@ class _NormalMessageStreamer:
         view: CompanionUIView,
         role_id: str,
         base_id: str,
+        ui_dispatch: Callable[..., None] | None = None,
         sentence_delay: float = NORMAL_SENTENCE_DELAY_SECONDS,
         character_delay: float = NORMAL_CHARACTER_DELAY_SECONDS,
     ) -> None:
         self._view = view
+        self._ui_dispatch = ui_dispatch
         self._role_id = role_id
         self._base_id = base_id
         self._pending = ""
@@ -192,7 +197,8 @@ class _NormalMessageStreamer:
         self._current_id = message_id
         initial_text = visible_text[:1]
         self._current_text = initial_text
-        self._view.append_message(
+        self._call_view(
+            "append_message",
             ChatMessage(
                 id=message_id,
                 role_id=self._role_id,
@@ -208,18 +214,19 @@ class _NormalMessageStreamer:
         if self._current_id is None:
             return
         if visible_text == self._current_text:
-            self._view.update_message_text(self._current_id, visible_text, is_streaming=is_streaming)
+            self._call_view("update_message_text", self._current_id, visible_text, is_streaming=is_streaming)
             return
         if not visible_text.startswith(self._current_text):
             self._current_text = visible_text
-            self._view.update_message_text(self._current_id, visible_text, is_streaming=is_streaming)
+            self._call_view("update_message_text", self._current_id, visible_text, is_streaming=is_streaming)
             return
 
         for index in range(len(self._current_text) + 1, len(visible_text) + 1):
             self._sleep_character_delay()
             partial_text = visible_text[:index]
             self._current_text = partial_text
-            self._view.update_message_text(
+            self._call_view(
+                "update_message_text",
                 self._current_id,
                 partial_text,
                 is_streaming=is_streaming or partial_text != visible_text,
@@ -228,6 +235,12 @@ class _NormalMessageStreamer:
     def _sleep_character_delay(self) -> None:
         if self._character_delay > 0:
             time.sleep(self._character_delay)
+
+    def _call_view(self, method_name: str, *args: object, **kwargs: object) -> None:
+        if self._ui_dispatch is not None:
+            self._ui_dispatch(method_name, *args, **kwargs)
+            return
+        getattr(self._view, method_name)(*args, **kwargs)
 
 
 @dataclass(slots=True)
@@ -584,6 +597,7 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
 
 
 def _sync_key_defaults(brain_dir: Path) -> None:
+    _copy_default_key_seed(_default_key_source_dirs(), brain_dir)
     _merge_json(brain_dir / "persona" / "profile.json", _key_default_profile())
     _sync_key_default_memories(brain_dir / "persona" / "memories.json")
     _merge_json(brain_dir / "ui.json", _key_default_ui())
@@ -634,7 +648,7 @@ def _key_default_memories() -> dict:
         ],
         "fact_memories": [
             _key_default_memory("mem_3_1778516483", "从小成绩优异，但不喜欢提起考试做题。", "fact", "背景"),
-            _key_default_memory("mem_4_1778516483", "在院士门下读博，全年午休，半夜回到寝室打游戏", "fact", "背景"),
+            _key_default_memory(KEY_DOCTORATE_MEMORY_ID, KEY_DOCTORATE_MEMORY_CONTENT, "fact", "背景"),
             _key_default_memory("mem_5_1778516483", KEY_PROJECT_MEMORY_CONTENT, "fact", "背景"),
             _key_default_memory("mem_6_1778516483", "身体很差，且表现出一直很困的样子", "fact", "背景"),
         ],
@@ -669,6 +683,16 @@ def _sync_key_default_memories(path: Path) -> None:
             memory.setdefault("importance", 1.0)
             memory.setdefault("context", "背景")
             changed = True
+        if (
+            memory.get("id") == KEY_DOCTORATE_MEMORY_ID
+            or memory.get("content") in KEY_LEGACY_DOCTORATE_MEMORY_CONTENTS
+        ):
+            if memory.get("content") != KEY_DOCTORATE_MEMORY_CONTENT:
+                memory["content"] = KEY_DOCTORATE_MEMORY_CONTENT
+                memory["memory_type"] = "fact"
+                memory.setdefault("importance", 1.0)
+                memory.setdefault("context", "背景")
+                changed = True
 
     if changed:
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -950,6 +974,22 @@ class AmaduesController(CompanionUICallback):
         self.view.apply_settings(self._settings)
         self._publish_data_roles()
 
+    def _dispatch_view(self, method_name: str, *args: object, **kwargs: object) -> None:
+        view = self.view
+        if view is None:
+            return
+
+        def _invoke() -> None:
+            method = getattr(view, method_name, None)
+            if callable(method):
+                method(*args, **kwargs)
+
+        dispatch = getattr(view, "dispatch_ui", None)
+        if callable(dispatch):
+            dispatch(_invoke)
+            return
+        _invoke()
+
     def _invalidate_runtime(self) -> None:
         self._runtime = None
 
@@ -970,7 +1010,7 @@ class AmaduesController(CompanionUICallback):
             return
         roles = load_roles_from_data()
         self._remember_roles(roles)
-        self.view.set_roles(roles)
+        self._dispatch_view("set_roles", roles)
 
     def _publish_runtime_roles(self, runtime: AmaduesRuntime) -> None:
         if self.view is None:
@@ -979,7 +1019,7 @@ class AmaduesController(CompanionUICallback):
             return
         roles = load_roles_from_registry(runtime.brain_registry, PathResolver.get_data_dir())
         self._remember_roles(roles)
-        self.view.set_roles(roles)
+        self._dispatch_view("set_roles", roles)
 
     def _resolve_brain_id(self, role_id: str, runtime: Optional[AmaduesRuntime] = None) -> str:
         mapped_id = self._role_mapping.get(role_id, role_id)
@@ -1044,14 +1084,14 @@ class AmaduesController(CompanionUICallback):
             return
         replace_method = getattr(self.view, "set_role_messages", None)
         if callable(replace_method):
-            replace_method(role_id, messages)
+            self._dispatch_view("set_role_messages", role_id, messages)
             return
-        self.view.set_messages(messages)
+        self._dispatch_view("set_messages", messages)
 
     def on_open_chat(self, role_id: str) -> None:
         if self.view is None:
             return
-        self.view.set_syncing(True)
+        self._dispatch_view("set_syncing", True)
         thread = threading.Thread(
             target=self._open_chat_worker,
             args=(role_id,),
@@ -1080,13 +1120,13 @@ class AmaduesController(CompanionUICallback):
             )
         finally:
             if self.view is not None:
-                self.view.set_syncing(False)
+                self._dispatch_view("set_syncing", False)
 
     def on_send_message(self, role_id: str, text: str, mode: str) -> None:
         if self.view is None:
             return
 
-        self.view.set_typing(True)
+        self._dispatch_view("set_typing", True)
         thread = threading.Thread(
             target=self._send_message_worker,
             args=(role_id, text, mode),
@@ -1125,11 +1165,13 @@ class AmaduesController(CompanionUICallback):
                     self.view,
                     role_id,
                     assistant_id,
+                    ui_dispatch=self._dispatch_view,
                     sentence_delay=self._normal_sentence_delay,
                     character_delay=self._normal_character_delay,
                 )
             else:
-                self.view.append_message(
+                self._dispatch_view(
+                    "append_message",
                     ChatMessage(
                         id=assistant_id,
                         role_id=role_id,
@@ -1151,31 +1193,29 @@ class AmaduesController(CompanionUICallback):
                     if normal_streamer is not None:
                         normal_streamer.push(delta)
                     else:
-                        self.view.update_message_text(assistant_id, accumulated, is_streaming=True)
+                        self._dispatch_view("update_message_text", assistant_id, accumulated, is_streaming=True)
                 elif event_type == "done":
                     content = str(event.get("content", accumulated))
                     final_emotion = _reply_tag_emotion(event.get("tag"))
                     if normal_streamer is not None:
                         normal_streamer.finish(content if not accumulated else None)
                     else:
-                        self.view.update_message_text(assistant_id, content, is_streaming=False)
+                        self._dispatch_view("update_message_text", assistant_id, content, is_streaming=False)
                     return
                 elif event_type == "error":
                     raise RuntimeError(str(event.get("error", "unknown streaming error")))
         except ChatConfigurationError:
-            self.view.append_message(
-                self._notice(role_id, MISSING_API_KEY_NOTICE)
-            )
+            self._dispatch_view("append_message", self._notice(role_id, MISSING_API_KEY_NOTICE))
         except Exception as exc:
-            self.view.append_message(self._notice(role_id, f"\u6d88\u606f\u53d1\u9001\u5931\u8d25\uff1a{exc}"))
+            self._dispatch_view("append_message", self._notice(role_id, f"\u6d88\u606f\u53d1\u9001\u5931\u8d25\uff1a{exc}"))
         finally:
             if normal_streamer is not None:
                 normal_streamer.finish()
             elif immersive_started:
-                self.view.update_message_text(assistant_id, accumulated, is_streaming=False)
-            self.view.set_typing(False)
+                self._dispatch_view("update_message_text", assistant_id, accumulated, is_streaming=False)
+            self._dispatch_view("set_typing", False)
             if final_emotion and callable(getattr(self.view, "set_reply_emotion", None)):
-                self.view.set_reply_emotion(role_id, final_emotion)
+                self._dispatch_view("set_reply_emotion", role_id, final_emotion)
 
     def _append_finished_reply(self, role_id: str, mode: str, assistant_id: str, content: str) -> None:
         if self.view is None:
@@ -1185,12 +1225,14 @@ class AmaduesController(CompanionUICallback):
                 self.view,
                 role_id,
                 assistant_id,
+                ui_dispatch=self._dispatch_view,
                 sentence_delay=self._normal_sentence_delay,
                 character_delay=self._normal_character_delay,
             )
             streamer.finish(content)
             return
-        self.view.append_message(
+        self._dispatch_view(
+            "append_message",
             ChatMessage(
                 id=assistant_id,
                 role_id=role_id,

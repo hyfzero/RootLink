@@ -30,6 +30,8 @@ from GUI.control import (
     DEFAULT_KEY_SOURCE_ENV,
     KEY_BRAIN_ID,
     KEY_DEFAULT_BACKGROUND,
+    KEY_DOCTORATE_MEMORY_CONTENT,
+    KEY_DOCTORATE_MEMORY_ID,
     KEY_PROJECT_MEMORY_CONTENT,
     MINIMAX_MODEL,
     MINIMAX_PROVIDER,
@@ -106,6 +108,16 @@ class StubView(CompanionUIView):
 
     def show_notice(self, message: str, is_error: bool = False) -> None:
         self.notices.append((message, is_error))
+
+
+class DispatchRecordingView(StubView):
+    def __init__(self) -> None:
+        super().__init__()
+        self.dispatch_count = 0
+
+    def dispatch_ui(self, callback) -> None:
+        self.dispatch_count += 1
+        callback()
 
 
 class FakeSessionStorage:
@@ -381,7 +393,10 @@ class GuiControlTests(unittest.TestCase):
 
         self.assertEqual(profile["name"], "\u5065")
         self.assertEqual(profile["background"], KEY_DEFAULT_BACKGROUND)
-        self.assertIn(KEY_PROJECT_MEMORY_CONTENT, [memory["content"] for memory in memories["fact_memories"]])
+        fact_contents = [memory["content"] for memory in memories["fact_memories"]]
+        self.assertIn(KEY_PROJECT_MEMORY_CONTENT, fact_contents)
+        self.assertIn(KEY_DOCTORATE_MEMORY_CONTENT, fact_contents)
+        self.assertNotIn("在院士门下读博，全年午休，半夜回到寝室打游戏", fact_contents)
         self.assertEqual(ui_data["avatar"], "assets/avatar.png")
         self.assertEqual(ui_data["portraits"]["happy"], "assets/portraits/happy-3dd92ea1.png")
         self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-640321d0.png")
@@ -434,6 +449,35 @@ class GuiControlTests(unittest.TestCase):
         self.assertEqual(ui_data["portraits"]["neutral"], "assets/portraits/neutral-640321d0.png")
         self.assertEqual((key_dir / "assets" / "avatar.png").read_bytes(), (packaged_key_dir / "assets" / "avatar.png").read_bytes())
 
+    def test_default_startup_data_repairs_key_missing_packaged_portrait_assets(self) -> None:
+        key_dir = Path(self._data_tmp.name) / KEY_BRAIN_ID
+        (key_dir / "persona").mkdir(parents=True)
+        (key_dir / "persona" / "profile.json").write_text(json.dumps({"name": "Key"}), encoding="utf-8")
+        (key_dir / "persona" / "memories.json").write_text(
+            json.dumps({"episodic_memories": [], "preference_memories": [], "fact_memories": []}),
+            encoding="utf-8",
+        )
+        (key_dir / "ui.json").write_text(
+            json.dumps(
+                {
+                    "avatar": "assets/avatar.png",
+                    "standing_image": "assets/portraits/neutral-640321d0.png",
+                    "portraits": {"neutral": "assets/portraits/neutral-640321d0.png"},
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        ensure_default_startup_data()
+
+        packaged_key_dir = REPO_ROOT / "resource" / KEY_BRAIN_ID
+        self.assertEqual(
+            (key_dir / "assets" / "portraits" / "neutral-640321d0.png").read_bytes(),
+            (packaged_key_dir / "assets" / "portraits" / "neutral-640321d0.png").read_bytes(),
+        )
+        self.assertTrue((key_dir / "assets" / "portraits" / "happy-3dd92ea1.png").exists())
+
     def test_default_startup_data_syncs_legacy_key_project_memory(self) -> None:
         key_dir = Path(self._data_tmp.name) / KEY_BRAIN_ID
         (key_dir / "persona").mkdir(parents=True)
@@ -475,6 +519,48 @@ class GuiControlTests(unittest.TestCase):
         self.assertIn(KEY_PROJECT_MEMORY_CONTENT, contents)
         self.assertIn("保留用户后续写入的记忆。", contents)
         self.assertNotIn("在一个“项目“中，把自己的消息输入给了ai，制作了健。", contents)
+
+    def test_default_startup_data_syncs_legacy_key_doctorate_memory_typo(self) -> None:
+        key_dir = Path(self._data_tmp.name) / KEY_BRAIN_ID
+        (key_dir / "persona").mkdir(parents=True)
+        (key_dir / "persona" / "profile.json").write_text(json.dumps({"name": "健"}), encoding="utf-8")
+        (key_dir / "persona" / "memories.json").write_text(
+            json.dumps(
+                {
+                    "episodic_memories": [],
+                    "preference_memories": [],
+                    "fact_memories": [
+                        {
+                            "id": KEY_DOCTORATE_MEMORY_ID,
+                            "content": "在院士门下读博，全年午休，半夜回到寝室打游戏",
+                            "timestamp": 1778516483.315087,
+                            "memory_type": "fact",
+                            "importance": 1.0,
+                            "context": "背景",
+                        },
+                        {
+                            "id": "custom",
+                            "content": "保留用户后续写入的记忆。",
+                            "memory_type": "fact",
+                            "importance": 1.0,
+                            "context": "背景",
+                        },
+                    ],
+                    "daily_summary_memories": [],
+                    "monthly_summary_memories": [],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        ensure_default_startup_data()
+
+        memories = json.loads((key_dir / "persona" / "memories.json").read_text(encoding="utf-8"))
+        contents = [memory["content"] for memory in memories["fact_memories"]]
+        self.assertIn(KEY_DOCTORATE_MEMORY_CONTENT, contents)
+        self.assertIn("保留用户后续写入的记忆。", contents)
+        self.assertNotIn("在院士门下读博，全年午休，半夜回到寝室打游戏", contents)
 
     def test_bind_view_keeps_roles_empty_when_data_directory_has_no_brain(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
@@ -546,6 +632,38 @@ class GuiControlTests(unittest.TestCase):
             self.assertEqual(shinji.name, "碇真嗣")
             self.assertEqual(shinji.portraits["neutral"], (Path(data_dir) / "shinji" / "assets" / "portraits" / "neutral.png").as_posix())
             self.assertEqual(shinji.standing_image_path, shinji.portraits["neutral"])
+
+    def test_load_roles_ignores_missing_portrait_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as data_dir:
+            brain_dir = Path(data_dir) / "role"
+            persona_dir = brain_dir / "persona"
+            portrait_dir = brain_dir / "assets" / "portraits"
+            persona_dir.mkdir(parents=True)
+            portrait_dir.mkdir(parents=True)
+            (portrait_dir / "standing.png").write_bytes(b"standing")
+            (persona_dir / "profile.json").write_text(
+                json.dumps({"name": "Role", "background": "Role background"}),
+                encoding="utf-8",
+            )
+            (persona_dir / "memories.json").write_text(
+                json.dumps({"episodic_memories": [], "preference_memories": [], "fact_memories": []}),
+                encoding="utf-8",
+            )
+            (brain_dir / "ui.json").write_text(
+                json.dumps(
+                    {
+                        "portraits": {"neutral": "assets/portraits/missing.png"},
+                        "standing_image": "assets/portraits/standing.png",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            role = load_roles_from_data(Path(data_dir))[0]
+
+        self.assertNotIn("neutral", role.portraits)
+        self.assertEqual(role.standing_image_path, (Path(data_dir) / "role" / "assets" / "portraits" / "standing.png").as_posix())
 
     def test_character_create_writes_data_refreshes_roles_and_selects_new_role(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
@@ -668,6 +786,20 @@ class GuiControlTests(unittest.TestCase):
         self.assertTrue(view.role_messages[AMADUES_UI_ROLE_ID][0].is_user)
         self.assertFalse(view.role_messages[AMADUES_UI_ROLE_ID][1].is_user)
 
+    def test_open_chat_dispatches_background_sync_updates_to_ui(self) -> None:
+        manager = FakeSessionManager(messages=[SimpleNamespace(id="a1", role="assistant", content="world", timestamp=1_700_000_000)])
+        controller = AmaduesController(runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()))
+        view = DispatchRecordingView()
+        controller.bind_view(view)
+        view.dispatch_count = 0
+
+        controller.on_open_chat(AMADUES_UI_ROLE_ID)
+        controller.wait_for_streams()
+
+        self.assertGreaterEqual(view.dispatch_count, 3)
+        self.assertEqual(view.syncing_states, [True, False])
+        self.assertEqual(view.role_messages[AMADUES_UI_ROLE_ID][0].text, "world")
+
     def test_send_message_appends_backend_reply(self) -> None:
         manager = FakeSessionManager(reply={"message_id": "reply-1", "content": "assistant reply"})
         controller = AmaduesController(
@@ -686,6 +818,25 @@ class GuiControlTests(unittest.TestCase):
         self.assertEqual(view.appended[-1].text, "assistant reply")
         self.assertFalse(view.appended[-1].is_user)
         self.assertEqual(view.updated[-1][2], False)
+
+    def test_send_message_dispatches_stream_updates_to_ui(self) -> None:
+        manager = FakeSessionManager(reply={"message_id": "reply-1", "content": "ABC!"}, stream_deltas=["ABC!"])
+        controller = AmaduesController(
+            runtime_factory=lambda: AmaduesRuntime(manager, SimpleNamespace()),
+            normal_sentence_delay=0,
+            normal_character_delay=0,
+        )
+        view = DispatchRecordingView()
+        controller.bind_view(view)
+        view.dispatch_count = 0
+
+        controller.on_send_message(AMADUES_UI_ROLE_ID, "hi", "normal")
+        controller.wait_for_streams()
+
+        self.assertGreaterEqual(view.dispatch_count, 5)
+        self.assertEqual(view.typing_states, [True, False])
+        self.assertEqual(view.appended[0].text, "ABC!")
+        self.assertFalse(view.appended[0].is_streaming)
 
     def test_send_message_publishes_reply_emotion(self) -> None:
         manager = FakeSessionManager(

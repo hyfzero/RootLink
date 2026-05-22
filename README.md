@@ -54,7 +54,7 @@ RootLink 是一款 Android 端 AI 角色陪伴应用，基于 `amadues` 的角�
 |------|--------|
 | 产品名 | RootLink |
 | 包名 | `com.amadues.companion` |
-| 项目版本 | `0.1.7` |
+| 项目版本 | `0.1.8` |
 
 ## 文档地图
 

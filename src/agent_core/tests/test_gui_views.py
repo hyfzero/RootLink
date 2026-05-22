@@ -475,6 +475,26 @@ class GuiViewTests(unittest.TestCase):
 
         self.assertEqual(view._immersive_dialogue_text.value, "")
 
+    def test_rebuild_invalidates_stale_immersive_typewriter_task(self) -> None:
+        role = make_role()
+        page = DeferredTaskPage()
+        view = TrackingCompanionAppView(page=page)
+        view._page_name = "chat"
+        view._chat_mode = "immersive"
+        view._active_role_id = role.id
+        view._messages = [ChatMessage("assistant-1", role.id, "第一句。", False, datetime.now())]
+        old_dialogue = ft.Text("")
+        view._immersive_dialogue_text = old_dialogue
+        view._reset_immersive_state(role)
+
+        view._schedule_immersive_typewriter()
+        stale_task = page.tasks[0]
+        view._safe_update()
+        coro_func, args = stale_task
+        asyncio.run(coro_func(*args))
+
+        self.assertEqual(old_dialogue.value, "")
+
     def test_refresh_layout_rebuilds_when_width_changes(self) -> None:
         fake_page = FakePage()
         fake_page.width = 393
@@ -1309,6 +1329,32 @@ class GuiViewTests(unittest.TestCase):
             [getattr(control, "key", None) for control in controls],
             ["msg-assistant-1-display-0", "msg-assistant-1-display-1"],
         )
+
+    def test_switching_modes_during_streaming_reply_keeps_chat_surface_stable(self) -> None:
+        role = make_role()
+        view = TrackingCompanionAppView(page=FakePage())
+        view._page_name = "chat"
+        view._active_role_id = role.id
+        view._chat_mode = "normal"
+        view._messages = [
+            ChatMessage("assistant-1", role.id, "第一句。", False, datetime.now(), is_streaming=True),
+        ]
+        view._build()
+
+        view._set_chat_mode("immersive")
+
+        self.assertEqual(view._chat_mode, "immersive")
+        self.assertEqual(view._immersive_message_id, "assistant-1")
+        self.assertIsNotNone(view._immersive_dialogue_text)
+        self.assertIn("第一句", view._immersive_dialogue_text.value)
+
+        view.update_message_text("assistant-1", "第一句。第二句！", is_streaming=True)
+        view._set_chat_mode("normal")
+        controls = view._build_chat_message_controls(view._colors(), role)
+
+        self.assertEqual(view._chat_mode, "normal")
+        self.assertEqual([getattr(control, "key", None) for control in controls], ["msg-assistant-1"])
+        self.assertEqual(view._messages[0].text, "第一句。第二句！")
 
     def test_message_bubble_layout_is_responsive(self) -> None:
         role = make_role()

@@ -7,7 +7,7 @@ import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import flet as ft
 
@@ -291,6 +291,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
 
     def _build(self) -> None:
         colors = self._colors()
+        self._invalidate_immersive_typewriter()
         self._chat_list_view = None
         self._immersive_dialogue_text = None
         self._immersive_portrait_container = None
@@ -388,11 +389,37 @@ class CompanionAppView(ft.Container, CompanionUIView):
             await asyncio.sleep(delay)
             self.refresh_layout()
 
+    def _invoke_dispatched_ui(self, callback: Callable[[], None]) -> None:
+        try:
+            callback()
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
+            return
+
+    def dispatch_ui(self, callback: Callable[[], None]) -> None:
+        try:
+            page = self.page
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
+            self._invoke_dispatched_ui(callback)
+            return
+
+        run_task = getattr(page, "run_task", None)
+        if not callable(run_task):
+            self._invoke_dispatched_ui(callback)
+            return
+
+        async def _run_callback() -> None:
+            self._invoke_dispatched_ui(callback)
+
+        try:
+            run_task(_run_callback)
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
+            return
+
     def _safe_update(self) -> None:
         self._build()
         try:
             self.update()
-        except (AssertionError, RuntimeError):
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
             pass
         self._sync_platform_navigation_stack()
 
@@ -1368,6 +1395,9 @@ class CompanionAppView(ft.Container, CompanionUIView):
             return self._current_immersive_text(role)
         return self._immersive_display_text
 
+    def _invalidate_immersive_typewriter(self) -> None:
+        self._immersive_typewriter_generation += 1
+
     def _set_immersive_dialogue_text(
         self,
         value: str,
@@ -1618,7 +1648,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._immersive_portrait_container.content = self._immersive_portrait_content(self.active_role, self._colors())
         try:
             self._immersive_portrait_container.update()
-        except (AssertionError, RuntimeError):
+        except (AssertionError, RuntimeError, TypeError, AttributeError):
             return False
         return True
 
@@ -2654,6 +2684,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         if mode not in ("normal", "immersive"):
             return
         if self._chat_mode != mode:
+            self._invalidate_immersive_typewriter()
             self._chat_mode = mode
             self._chat_mode_seed += 1
             if mode == "normal":
