@@ -3,7 +3,7 @@
 RootLink 是一款运行在 Android 端的 AI 角色陪伴应用。它把角色资料、长期记忆、每日会话、情绪标签、立绘表情和模型配置组织在同一个体验里，让用户可以创建、导入、维护并长期使用自己的角色。
 
 
-![RootLink 首页](assets/user-guide/01-home.png)
+![RootLink 首页](assets/user-guide/01-home.png){ width=46% }
 
 ## 目录
 
@@ -62,7 +62,7 @@ RootLink 当前主要面向 Android 手机使用。首次安装后，应用会�
 
 对话能力由模型提供商驱动。RootLink 会把界面设置和模型凭据分开保存，API Key 只用于本机调用所选模型服务。
 
-![RootLink 设置页](assets/user-guide/04-settings.png)
+![RootLink 设置页](assets/user-guide/04-settings.png){ width=46% }
 
 ### 2.1 进入设置
 
@@ -88,7 +88,7 @@ RootLink 当前主要面向 Android 手机使用。首次安装后，应用会�
 | DeepSeek | DeepSeek V4 Flash | 响应速度优先 |
 | DeepSeek | DeepSeek V4 Pro | 回复质量优先 |
 
-模型来源和模型名称需要匹配。切换提供商后，应用会自动刷新对应模型列表。
+建议使用 DeepSeek V4 Flash。
 
 ### 2.4 填写 API Key
 
@@ -116,7 +116,7 @@ API Key 获取入口：
 
 RootLink 的角色不是单个 prompt，而是一组结构化资料：基础信息、形象资源、人格设定、初始记忆和语言风格会共同影响聊天表现。
 
-![RootLink 创建角色](assets/user-guide/03-create.png)
+![RootLink 创建角色](assets/user-guide/03-create.png){ width=46% }
 
 从首页点击“创建角色”，进入五步创建向导。底部按钮用于上一步和下一步。最后一步点击“创建”后，角色会出现在首页。
 
@@ -161,9 +161,7 @@ RootLink 的角色不是单个 prompt，而是一组结构化资料：基础信�
 
 背景写法建议：
 
-```text
-system方向博士生，从小成绩优异，一直热衷于研究虚拟化人格。做事非常脱线，神经大条。喜欢偶像应援等亚文化，常在半夜上线打游戏。
-```
+
 
 好的背景应该具体，但不要塞入互相矛盾的要求。角色设定越稳定，后续记忆和日终总结越容易维持一致。
 
@@ -260,7 +258,8 @@ RootLink 支持把上传的角色图自动处理成适合移动端显示的立�
 
 聊天页负责日常对话、历史展示、情绪状态和同步状态。点击首页“立即聊天”即可进入。
 
-![RootLink 聊天页](assets/user-guide/02-chat.png)
+
+![RootLink 聊天页](assets/user-guide/shinji_chat.png){ width=46% }
 
 ### 5.1 常规聊天
 
@@ -386,8 +385,10 @@ RootLink 会围绕角色会话维护历史与摘要。日终总结的作用是�
 本文档使用相对图片路径，建议从仓库根目录执行导出：
 
 ```powershell
-pandoc docs/USER_GUIDE.md -o RootLink-user-guide.pdf
+pandoc docs/USER_GUIDE.md -o docs/USER_GUIDE.pdf
 ```
+
+文档截图已经在 Markdown 中使用 Pandoc 图片宽度属性限制为页面正文宽度的 46%，导出的 PDF 会保留手机截图比例，但不会按原始像素尺寸撑满页面。
 
 GitHub 首页建议使用根目录 `README.md` 作为简明入口，保留产品介绍、截图、快速开始和文档链接；详细步骤继续维护在 `docs/USER_GUIDE.md`。这样 README 不会过长，PDF 又能包含完整指引。
 

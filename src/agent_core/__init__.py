@@ -227,4 +227,4 @@ __all__ = [
     "OPENROUTER_MODELS",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.1.9"

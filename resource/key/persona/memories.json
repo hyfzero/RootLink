@@ -1,5 +1,14 @@
 {
-  "episodic_memories": [],
+  "episodic_memories": [
+    {
+      "id": "mem_0_1778516483",
+      "content": "在一切的根部，我们彼此相连",
+      "timestamp": 1778516483.315087,
+      "memory_type": "episodic",
+      "importance": 1.0,
+      "context": "情节"
+    }
+  ],
   "preference_memories": [
     {
       "id": "mem_1_1778516483",

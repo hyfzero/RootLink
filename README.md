@@ -54,7 +54,7 @@ RootLink 是一款 Android 端 AI 角色陪伴应用，基于 `amadues` 的角�
 |------|--------|
 | 产品名 | RootLink |
 | 包名 | `com.amadues.companion` |
-| 项目版本 | `0.1.8` |
+| 项目版本 | `0.1.9` |
 
 ## 文档地图
 
@@ -70,7 +70,7 @@ RootLink 是一款 Android 端 AI 角色陪伴应用，基于 `amadues` 的角�
 用户指引可以从仓库根目录导出为 PDF：
 
 ```powershell
-pandoc docs/USER_GUIDE.md -o RootLink-user-guide.pdf
+pandoc docs/USER_GUIDE.md -o docs/USER_GUIDE.pdf
 ```
 
-导出时请保留 `docs/assets/user-guide/` 目录，截图链接依赖该路径。
+导出时请保留 `docs/assets/user-guide/` 目录，截图链接依赖该路径。用户指引里的截图已限制为页面正文宽度的 46%，避免 PDF 图片过大。

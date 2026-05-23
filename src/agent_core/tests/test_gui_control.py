@@ -393,6 +393,8 @@ class GuiControlTests(unittest.TestCase):
 
         self.assertEqual(profile["name"], "\u5065")
         self.assertEqual(profile["background"], KEY_DEFAULT_BACKGROUND)
+        episodic_contents = [memory["content"] for memory in memories["episodic_memories"]]
+        self.assertIn("在一切的根部，我们彼此相连", episodic_contents)
         fact_contents = [memory["content"] for memory in memories["fact_memories"]]
         self.assertIn(KEY_PROJECT_MEMORY_CONTENT, fact_contents)
         self.assertIn(KEY_DOCTORATE_MEMORY_CONTENT, fact_contents)
@@ -561,6 +563,62 @@ class GuiControlTests(unittest.TestCase):
         self.assertIn(KEY_DOCTORATE_MEMORY_CONTENT, contents)
         self.assertIn("保留用户后续写入的记忆。", contents)
         self.assertNotIn("在院士门下读博，全年午休，半夜回到寝室打游戏", contents)
+
+    def test_default_startup_data_syncs_packaged_key_memory_ids(self) -> None:
+        key_dir = Path(self._data_tmp.name) / KEY_BRAIN_ID
+        (key_dir / "persona").mkdir(parents=True)
+        (key_dir / "persona" / "profile.json").write_text(json.dumps({"name": "健"}), encoding="utf-8")
+        (key_dir / "persona" / "memories.json").write_text(
+            json.dumps(
+                {
+                    "episodic_memories": [],
+                    "preference_memories": [
+                        {
+                            "id": "mem_1_1778516483",
+                            "content": "旧的喜好记忆。",
+                            "timestamp": 1778516483.315087,
+                            "memory_type": "preference",
+                            "importance": 0.1,
+                            "context": "旧上下文",
+                        },
+                        {
+                            "id": "custom",
+                            "content": "保留用户后续写入的喜好。",
+                            "memory_type": "preference",
+                            "importance": 1.0,
+                            "context": "喜好",
+                        },
+                    ],
+                    "fact_memories": [
+                        {
+                            "id": "mem_6_1778516483",
+                            "content": "旧的事实记忆。",
+                            "timestamp": 1778516483.315087,
+                            "memory_type": "fact",
+                            "importance": 0.1,
+                            "context": "旧上下文",
+                        }
+                    ],
+                    "daily_summary_memories": [],
+                    "monthly_summary_memories": [],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        ensure_default_startup_data()
+
+        memories = json.loads((key_dir / "persona" / "memories.json").read_text(encoding="utf-8"))
+        episodic_contents = [memory["content"] for memory in memories["episodic_memories"]]
+        preference_contents = [memory["content"] for memory in memories["preference_memories"]]
+        fact_contents = [memory["content"] for memory in memories["fact_memories"]]
+        self.assertIn("在一切的根部，我们彼此相连", episodic_contents)
+        self.assertIn("喜欢计算喜欢一切有条理能理清楚的事物。", preference_contents)
+        self.assertIn("保留用户后续写入的喜好。", preference_contents)
+        self.assertIn("身体很差，且表现出一直很困的样子", fact_contents)
+        self.assertNotIn("旧的喜好记忆。", preference_contents)
+        self.assertNotIn("旧的事实记忆。", fact_contents)
 
     def test_bind_view_keeps_roles_empty_when_data_directory_has_no_brain(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:

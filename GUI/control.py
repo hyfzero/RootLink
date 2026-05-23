@@ -550,7 +550,7 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
 
     _merge_json(persona_dir / "profile.json", _key_default_profile())
     _ensure_response_config(brain_dir / "config.json", DEFAULT_RESPONSE_LIMITS)
-    _sync_key_default_memories(persona_dir / "memories.json")
+    _sync_key_default_memories(persona_dir / "memories.json", add_missing_defaults=DEFAULT_KEY_SOURCE_ENV not in os.environ)
     _write_json_if_missing(
         persona_dir / "state.json",
         {
@@ -599,7 +599,7 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
 def _sync_key_defaults(brain_dir: Path) -> None:
     _copy_default_key_seed(_default_key_source_dirs(), brain_dir)
     _merge_json(brain_dir / "persona" / "profile.json", _key_default_profile())
-    _sync_key_default_memories(brain_dir / "persona" / "memories.json")
+    _sync_key_default_memories(brain_dir / "persona" / "memories.json", add_missing_defaults=True)
     _merge_json(brain_dir / "ui.json", _key_default_ui())
     _write_json_if_missing(brain_dir / PORTRAIT_EDIT_FILE, _key_default_portrait_edits())
     _ensure_key_portrait_source_assets(brain_dir)
@@ -641,7 +641,14 @@ def _key_default_memory(
 
 def _key_default_memories() -> dict:
     return {
-        "episodic_memories": [],
+        "episodic_memories": [
+            _key_default_memory(
+                "mem_0_1778516483",
+                "在一切的根部，我们彼此相连",
+                "episodic",
+                "情节",
+            )
+        ],
         "preference_memories": [
             _key_default_memory("mem_1_1778516483", "喜欢计算喜欢一切有条理能理清楚的事物。", "preference", "喜好"),
             _key_default_memory("mem_2_1778516483", "电子游戏沉迷，常参加一些偶像的地下活动。", "preference", "喜好"),
@@ -657,7 +664,7 @@ def _key_default_memories() -> dict:
     }
 
 
-def _sync_key_default_memories(path: Path) -> None:
+def _sync_key_default_memories(path: Path, *, add_missing_defaults: bool = False) -> None:
     if not path.exists():
         _write_json_if_missing(path, _key_default_memories())
         return
@@ -669,30 +676,58 @@ def _sync_key_default_memories(path: Path) -> None:
     if not isinstance(payload, dict):
         return
 
-    fact_memories = payload.get("fact_memories")
-    if not isinstance(fact_memories, list):
-        return
+    default_memories = _key_default_memories()
+    default_memories_by_id = {
+        memory["id"]: (category, memory)
+        for category, memories in default_memories.items()
+        if isinstance(memories, list)
+        for memory in memories
+        if isinstance(memory, dict) and isinstance(memory.get("id"), str)
+    }
+    seen_default_ids: set[str] = set()
 
     changed = False
-    for memory in fact_memories:
-        if not isinstance(memory, dict):
+    for memories in payload.values():
+        if not isinstance(memories, list):
             continue
-        if memory.get("content") in KEY_LEGACY_PROJECT_MEMORY_CONTENTS:
-            memory["content"] = KEY_PROJECT_MEMORY_CONTENT
-            memory["memory_type"] = "fact"
-            memory.setdefault("importance", 1.0)
-            memory.setdefault("context", "背景")
-            changed = True
-        if (
-            memory.get("id") == KEY_DOCTORATE_MEMORY_ID
-            or memory.get("content") in KEY_LEGACY_DOCTORATE_MEMORY_CONTENTS
-        ):
-            if memory.get("content") != KEY_DOCTORATE_MEMORY_CONTENT:
+        for memory in memories:
+            if not isinstance(memory, dict):
+                continue
+            memory_id = memory.get("id")
+            default_entry = default_memories_by_id.get(memory_id)
+            if default_entry is not None:
+                seen_default_ids.add(str(memory_id))
+                _, default_memory = default_entry
+                for key in ("content", "memory_type", "importance", "context"):
+                    if memory.get(key) != default_memory[key]:
+                        memory[key] = default_memory[key]
+                        changed = True
+                if "timestamp" not in memory:
+                    memory["timestamp"] = default_memory["timestamp"]
+                    changed = True
+                continue
+            if memory.get("content") in KEY_LEGACY_PROJECT_MEMORY_CONTENTS:
+                memory["content"] = KEY_PROJECT_MEMORY_CONTENT
+                memory["memory_type"] = "fact"
+                memory.setdefault("importance", 1.0)
+                memory.setdefault("context", "背景")
+                changed = True
+            if memory.get("content") in KEY_LEGACY_DOCTORATE_MEMORY_CONTENTS:
                 memory["content"] = KEY_DOCTORATE_MEMORY_CONTENT
                 memory["memory_type"] = "fact"
                 memory.setdefault("importance", 1.0)
                 memory.setdefault("context", "背景")
                 changed = True
+
+    if add_missing_defaults:
+        for memory_id, (category, default_memory) in default_memories_by_id.items():
+            if memory_id in seen_default_ids:
+                continue
+            memories = payload.setdefault(category, [])
+            if not isinstance(memories, list):
+                continue
+            memories.append(dict(default_memory))
+            changed = True
 
     if changed:
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
