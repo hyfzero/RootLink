@@ -19,13 +19,14 @@
 - `get_model_catalog()`、`get_all_providers()`：查询内置目录。
 - `setup_provider()`：快速写入 Provider 配置。
 - `list_available_models()`、`print_models_table()`：查看模型目录。
-- 内置目录：`MINIMAX_MODELS`、`OPENAI_MODELS`、`ANTHROPIC_MODELS`、`MOONSHOT_MODELS`、`OLLAMA_MODELS`、`OPENROUTER_MODELS`。
+- 内置目录：`MINIMAX_MODELS`、`DEEPSEEK_MODELS`、`OPENAI_MODELS`、`GLM_MODELS`、`ANTHROPIC_MODELS`、`MOONSHOT_MODELS`、`OLLAMA_MODELS`、`OPENROUTER_MODELS`。
 
 API 运行时 Provider：
 
 - `APIProvider`
 - `ModelConfig`
 - `MiniMaxAdapter`、`OpenAIAdapter`、`AnthropicAdapter`、`MoonshotAdapter`、`OllamaAdapter`、`OpenRouterAdapter`
+- DeepSeek、OpenAI 和 GLM 都复用 OpenAI-compatible 请求格式，由 `OpenAIAdapter` 承接。
 
 ## 数据流/存储
 
@@ -40,7 +41,9 @@ PathResolver.get_config_dir()/models.json
 环境变量也可直接供 `ProviderManager.from_env()` 使用：
 
 - `MINIMAX_API_KEY`
+- `DEEPSEEK_API_KEY`
 - `OPENAI_API_KEY`
+- `GLM_API_KEY`
 - `ANTHROPIC_API_KEY`
 - `MOONSHOT_API_KEY`
 - `OPENROUTER_API_KEY`
@@ -58,6 +61,15 @@ storage.set_default("minimax", "MiniMax-M2.5")
 
 print(models_config.default_provider)
 ```
+
+内置 GUI 当前暴露的 Provider 和默认模型：
+
+| Provider | 默认模型 | 默认 base URL |
+|----------|----------|---------------|
+| `minimax` | `MiniMax-M2.5` | `https://api.minimaxi.com/v1` |
+| `deepseek` | `deepseek-v4-flash` | `https://api.deepseek.com` |
+| `openai` | `gpt-4o-mini` | `https://api.openai.com/v1` |
+| `glm` | `glm-5.1` | `https://open.bigmodel.cn/api/paas/v4` |
 
 直接从环境变量创建 ProviderManager：
 

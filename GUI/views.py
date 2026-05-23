@@ -82,6 +82,8 @@ EMPTY_ROLE = CompanionRole(
 SETTINGS_PROVIDERS = [
     ("minimax", "MiniMax"),
     ("deepseek", "DeepSeek"),
+    ("openai", "OpenAI"),
+    ("glm", "GLM"),
 ]
 
 SETTINGS_MODELS = {
@@ -90,11 +92,26 @@ SETTINGS_MODELS = {
         ("deepseek-v4-flash", "DeepSeek V4 Flash"),
         ("deepseek-v4-pro", "DeepSeek V4 Pro"),
     ],
+    "openai": [
+        ("gpt-4o-mini", "GPT-4o Mini"),
+        ("gpt-4o", "GPT-4o"),
+        ("gpt-4.1-mini", "GPT-4.1 Mini"),
+        ("gpt-4.1", "GPT-4.1"),
+        ("gpt-4.1-nano", "GPT-4.1 Nano"),
+    ],
+    "glm": [
+        ("glm-5.1", "GLM-5.1"),
+        ("glm-4.7", "GLM-4.7"),
+        ("glm-4.5", "GLM-4.5"),
+        ("glm-4-flash-250414", "GLM-4 Flash"),
+    ],
 }
 
 DEFAULT_SETTINGS_MODELS = {
     "minimax": "MiniMax-M2.5",
     "deepseek": "deepseek-v4-flash",
+    "openai": "gpt-4o-mini",
+    "glm": "glm-5.1",
 }
 
 PORTRAIT_EMOTIONS = [
@@ -1732,6 +1749,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         provider_desc = {
             "minimax": "MiniMax M2.5",
             "deepseek": "DeepSeek V4 Flash / Pro",
+            "openai": "GPT-4o / GPT-4.1",
+            "glm": "GLM-5.1 / GLM-4.7",
         }.get(self._provider_dropdown.value or "minimax", "MiniMax M2.5")
         self._provider_desc_text = text(provider_desc, 11, colors["text_tertiary"])
         return ft.Column(
@@ -1765,6 +1784,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._provider_desc_text.value = {
                 "minimax": "MiniMax M2.5",
                 "deepseek": "DeepSeek V4 Flash / Pro",
+                "openai": "GPT-4o / GPT-4.1",
+                "glm": "GLM-5.1 / GLM-4.7",
             }.get(provider, "MiniMax M2.5")
         try:
             self._provider_dropdown.update()

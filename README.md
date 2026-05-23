@@ -1,6 +1,6 @@
 # RootLink
 
-RootLink 是一款 Android 端 AI 角色陪伴应用，基于 `amadues` 的角色人格、结构化记忆、会话调度和多模型 API 能力构建。它支持创建角色、导入角色包、配置 MiniMax 或 DeepSeek 模型、长期聊天、情绪联动、日终总结和角色资料维护。
+RootLink 是一款 Android 端 AI 角色陪伴应用，基于 `amadues` 的角色人格、结构化记忆、会话调度和多模型 API 能力构建。它支持创建角色、导入角色包、配置 MiniMax、DeepSeek、OpenAI 或 GLM 模型、长期聊天、情绪联动、日终总结和角色资料维护。
 
 ![RootLink 首页](docs/assets/user-guide/01-home.png)
 
@@ -9,7 +9,7 @@ RootLink 是一款 Android 端 AI 角色陪伴应用，基于 `amadues` 的角�
 | 能力 | 说明 |
 |------|------|
 | 角色创建 | 通过五步向导配置基础信息、立绘、人格、记忆和语言风格 |
-| 模型配置 | 支持 MiniMax 和 DeepSeek，API Key 在本机设置页维护 |
+| 模型配置 | 支持 MiniMax、DeepSeek、OpenAI 和 GLM，API Key 在本机设置页维护 |
 | 长期记忆 | 会话历史、日终总结和结构化记忆共同维持角色连续性 |
 | 情绪表现 | 角色回复会带动情绪状态和立绘表现 |
 | 角色包 | 支持 `.amadues` 角色包导入和导出 |

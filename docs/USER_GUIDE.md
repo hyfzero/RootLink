@@ -24,7 +24,7 @@ RootLink 当前主要面向 Android 手机使用。首次安装后，应用会�
 |------|------|
 | 系统 | Android 9.0 及以上 |
 | 网络 | 对话功能需要访问所选模型提供商 |
-| 模型账号 | MiniMax 或 DeepSeek API Key |
+| 模型账号 | MiniMax、DeepSeek、OpenAI 或 GLM API Key |
 | 存储权限 | 导入角色包、导出角色包、选择头像或立绘时需要文件访问能力 |
 
 ### 1.2 安装应用
@@ -87,8 +87,10 @@ RootLink 当前主要面向 Android 手机使用。首次安装后，应用会�
 | MiniMax | MiniMax-M2.5 | 成本和稳定性较均衡 |
 | DeepSeek | DeepSeek V4 Flash | 响应速度优先 |
 | DeepSeek | DeepSeek V4 Pro | 回复质量优先 |
+| OpenAI | GPT-4o Mini、GPT-4o、GPT-4.1 Mini、GPT-4.1、GPT-4.1 Nano | GPT 系列通用对话与多场景兼容 |
+| GLM | GLM-5.1、GLM-4.7、GLM-4.5、GLM-4 Flash | 智谱 GLM 系列对话与国内 API 线路 |
 
-建议使用 DeepSeek V4 Flash。
+建议首次使用优先选择响应稳定、成本可控的 Flash 或 Mini 类型模型，例如 DeepSeek V4 Flash、GPT-4o Mini 或 GLM-4 Flash。
 
 ### 2.4 填写 API Key
 
@@ -100,6 +102,8 @@ API Key 获取入口：
 |--------|------|
 | MiniMax | <https://platform.minimaxi.com> |
 | DeepSeek | <https://platform.deepseek.com> |
+| OpenAI | <https://platform.openai.com> |
+| GLM | <https://bigmodel.cn> |
 
 填写后点击“保存”。保存成功后，设置会立即生效，后续聊天会使用新的提供商、模型和密钥。
 

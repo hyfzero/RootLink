@@ -28,6 +28,8 @@ from GUI.control import (
     DEEPSEEK_V4_FLASH_MODEL,
     DEEPSEEK_V4_PRO_MODEL,
     DEFAULT_KEY_SOURCE_ENV,
+    GLM_5_1_MODEL,
+    GLM_PROVIDER,
     KEY_BRAIN_ID,
     KEY_DEFAULT_BACKGROUND,
     KEY_DOCTORATE_MEMORY_CONTENT,
@@ -35,6 +37,8 @@ from GUI.control import (
     KEY_PROJECT_MEMORY_CONTENT,
     MINIMAX_MODEL,
     MINIMAX_PROVIDER,
+    OPENAI_GPT_4O_MINI_MODEL,
+    OPENAI_PROVIDER,
     AmaduesController,
     AmaduesRuntime,
     UiSettingsStorage,
@@ -284,6 +288,69 @@ class GuiControlTests(unittest.TestCase):
         self.assertIsNotNone(catalog.find_model(DEEPSEEK_V4_FLASH_MODEL))
         self.assertIsNotNone(catalog.find_model(DEEPSEEK_V4_PRO_MODEL))
         self.assertEqual(AdapterRegistry.get(APIProvider.DEEPSEEK).__class__.__name__, "OpenAIAdapter")
+
+    def test_ui_settings_storage_persists_openai_and_glm_model_choices(self) -> None:
+        cases = [
+            (
+                OPENAI_PROVIDER,
+                OPENAI_GPT_4O_MINI_MODEL,
+                "openai-key",
+                "https://api.openai.com/v1",
+                APIProvider.OPENAI,
+            ),
+            (
+                GLM_PROVIDER,
+                GLM_5_1_MODEL,
+                "glm-key",
+                "https://open.bigmodel.cn/api/paas/v4",
+                APIProvider.GLM,
+            ),
+        ]
+
+        for provider_name, model_name, api_key, base_url, api_provider in cases:
+            with self.subTest(provider_name=provider_name), tempfile.TemporaryDirectory() as config_dir:
+                storage = UiSettingsStorage(config_dir)
+                settings = UiSettings(
+                    is_dark=True,
+                    token_quality=70,
+                    model_provider=provider_name,
+                    model_name=model_name,
+                    api_key=api_key,
+                    user_name="Tester",
+                )
+
+                storage.save_provider_config(settings.model_provider, settings.api_key, settings.model_name)
+                storage.save_ui_settings(settings)
+
+                chat_config = storage.load_chat_config()
+                provider = chat_config.providers[provider_name]
+                self.assertEqual(chat_config.default_provider, provider_name)
+                self.assertEqual(chat_config.default_model, model_name)
+                self.assertEqual(provider.base_url, base_url)
+                self.assertEqual(provider.api_key, api_key)
+                self.assertEqual(provider.api_type, "openai")
+
+                loaded = storage.load_ui_settings()
+                self.assertEqual(loaded.model_provider, provider_name)
+                self.assertEqual(loaded.model_name, model_name)
+                self.assertEqual(loaded.api_key, api_key)
+
+                model_config = _load_model_config(config_dir)
+                self.assertEqual(model_config.provider, api_provider)
+                self.assertEqual(model_config.name, model_name)
+                self.assertEqual(model_config.base_url, base_url)
+
+    def test_openai_and_glm_catalogs_and_adapters_are_registered(self) -> None:
+        for provider_name, model_name, api_provider in (
+            (OPENAI_PROVIDER, OPENAI_GPT_4O_MINI_MODEL, APIProvider.OPENAI),
+            (GLM_PROVIDER, GLM_5_1_MODEL, APIProvider.GLM),
+        ):
+            with self.subTest(provider_name=provider_name):
+                catalog = get_model_catalog(provider_name)
+
+                self.assertIsNotNone(catalog)
+                self.assertIsNotNone(catalog.find_model(model_name))
+                self.assertEqual(AdapterRegistry.get(api_provider).__class__.__name__, "OpenAIAdapter")
 
     def test_build_amadues_runtime_raises_when_no_brain_exists(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:

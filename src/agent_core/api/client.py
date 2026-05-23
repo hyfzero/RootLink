@@ -33,6 +33,7 @@ from .types import (
 AdapterRegistry.register(APIProvider.MINIMAX, MiniMaxAdapter)
 AdapterRegistry.register(APIProvider.DEEPSEEK, OpenAIAdapter)
 AdapterRegistry.register(APIProvider.OPENAI, OpenAIAdapter)
+AdapterRegistry.register(APIProvider.GLM, OpenAIAdapter)
 AdapterRegistry.register(APIProvider.ANTHROPIC, AnthropicAdapter)
 AdapterRegistry.register(APIProvider.MOONSHOT, MoonshotAdapter)
 AdapterRegistry.register(APIProvider.KIMI, MoonshotAdapter)  # Kimi 使用 Moonshot 兼容格式

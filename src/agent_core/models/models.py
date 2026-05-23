@@ -181,6 +181,33 @@ DEEPSEEK_MODELS = ProviderCatalog(
 OPENAI_MODELS = ProviderCatalog(
     models=[
         ModelInfo(
+            id="gpt-4.1",
+            name="GPT-4.1",
+            reasoning=False,
+            input_types=["text", "image"],
+            context_window=1047576,
+            max_tokens=32768,
+            cost=ModelCost(input=2.0, output=8.0),
+        ),
+        ModelInfo(
+            id="gpt-4.1-mini",
+            name="GPT-4.1 Mini",
+            reasoning=False,
+            input_types=["text", "image"],
+            context_window=1047576,
+            max_tokens=32768,
+            cost=ModelCost(input=0.4, output=1.6),
+        ),
+        ModelInfo(
+            id="gpt-4.1-nano",
+            name="GPT-4.1 Nano",
+            reasoning=False,
+            input_types=["text", "image"],
+            context_window=1047576,
+            max_tokens=32768,
+            cost=ModelCost(input=0.1, output=0.4),
+        ),
+        ModelInfo(
             id="gpt-4o",
             name="GPT-4o",
             reasoning=False,
@@ -224,6 +251,48 @@ OPENAI_MODELS = ProviderCatalog(
             context_window=128000,
             max_tokens=65536,
             cost=ModelCost(input=3.0, output=12.0),
+        ),
+    ]
+)
+
+# GLM Provider
+GLM_MODELS = ProviderCatalog(
+    models=[
+        ModelInfo(
+            id="glm-5.1",
+            name="GLM-5.1",
+            reasoning=True,
+            input_types=["text"],
+            context_window=128000,
+            max_tokens=8192,
+            cost=ModelCost(),
+        ),
+        ModelInfo(
+            id="glm-4.7",
+            name="GLM-4.7",
+            reasoning=True,
+            input_types=["text"],
+            context_window=128000,
+            max_tokens=8192,
+            cost=ModelCost(),
+        ),
+        ModelInfo(
+            id="glm-4.5",
+            name="GLM-4.5",
+            reasoning=True,
+            input_types=["text"],
+            context_window=128000,
+            max_tokens=8192,
+            cost=ModelCost(),
+        ),
+        ModelInfo(
+            id="glm-4-flash-250414",
+            name="GLM-4 Flash",
+            reasoning=False,
+            input_types=["text"],
+            context_window=128000,
+            max_tokens=8192,
+            cost=ModelCost(),
         ),
     ]
 )
@@ -374,6 +443,7 @@ MODEL_CATALOGS: dict[str, ProviderCatalog] = {
     "minimax": MINIMAX_MODELS,
     "deepseek": DEEPSEEK_MODELS,
     "openai": OPENAI_MODELS,
+    "glm": GLM_MODELS,
     "anthropic": ANTHROPIC_MODELS,
     "moonshot": MOONSHOT_MODELS,
     "kimi": MOONSHOT_MODELS,  # Kimi 使用 Moonshot 兼容 API
@@ -624,6 +694,7 @@ def create_provider_from_catalog(
         "minimax": "https://api.minimaxi.com/v1",
         "deepseek": "https://api.deepseek.com",
         "openai": "https://api.openai.com/v1",
+        "glm": "https://open.bigmodel.cn/api/paas/v4",
         "anthropic": "https://api.anthropic.com/v1",
         "moonshot": "https://api.moonshot.cn/v1",
         "kimi": "https://api.moonshot.cn/v1",

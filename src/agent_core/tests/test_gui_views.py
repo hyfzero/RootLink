@@ -770,7 +770,7 @@ class GuiViewTests(unittest.TestCase):
         self.assertEqual(view._template_dropdown.fill_color, colors["dropdown_surface"])
         self.assertEqual(view._template_dropdown.menu_style.bgcolor, colors["dropdown_surface"])
 
-    def test_settings_supports_deepseek_flash_and_pro(self) -> None:
+    def test_settings_supports_configured_model_providers(self) -> None:
         callback = SettingsCallback()
         view = CompanionAppView(callback=callback, roles=[make_role()])
         colors = view._colors()
@@ -778,6 +778,8 @@ class GuiViewTests(unittest.TestCase):
         view._build_settings_page(colors)
         provider_keys = [option.key for option in view._provider_dropdown.options]
         self.assertIn("deepseek", provider_keys)
+        self.assertIn("openai", provider_keys)
+        self.assertIn("glm", provider_keys)
         self.assertTrue(view._provider_dropdown.filled)
         self.assertEqual(view._provider_dropdown.fill_color, colors["dropdown_surface"])
         self.assertEqual(view._provider_dropdown.menu_style.bgcolor, colors["dropdown_surface"])
@@ -793,6 +795,24 @@ class GuiViewTests(unittest.TestCase):
         self.assertEqual(view._settings.model_provider, "deepseek")
         self.assertEqual(view._settings.model_name, "deepseek-v4-flash")
 
+        view._provider_dropdown.value = "openai"
+        view._on_settings_provider_changed(None)
+        model_keys = [option.key for option in view._model_dropdown.options]
+        self.assertEqual(model_keys, ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano"])
+        self.assertEqual(view._model_dropdown.value, "gpt-4o-mini")
+        self.assertEqual(view._settings.model_provider, "openai")
+        self.assertEqual(view._settings.model_name, "gpt-4o-mini")
+
+        view._provider_dropdown.value = "glm"
+        view._on_settings_provider_changed(None)
+        model_keys = [option.key for option in view._model_dropdown.options]
+        self.assertEqual(model_keys, ["glm-5.1", "glm-4.7", "glm-4.5", "glm-4-flash-250414"])
+        self.assertEqual(view._model_dropdown.value, "glm-5.1")
+        self.assertEqual(view._settings.model_provider, "glm")
+        self.assertEqual(view._settings.model_name, "glm-5.1")
+
+        view._provider_dropdown.value = "deepseek"
+        view._on_settings_provider_changed(None)
         view._model_dropdown.value = "deepseek-v4-pro"
         view._api_key_field.value = "deepseek-key"
         view._save_settings()

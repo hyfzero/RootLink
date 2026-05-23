@@ -22,6 +22,7 @@ class APIProvider(str):
     MINIMAX = "minimax"
     DEEPSEEK = "deepseek"
     OPENAI = "openai"
+    GLM = "glm"
     ANTHROPIC = "anthropic"
     MOONSHOT = "moonshot"
     KIMI = "kimi"
@@ -53,6 +54,7 @@ class ModelConfig:
             APIProvider.MINIMAX: "MINIMAX_API_KEY",
             APIProvider.DEEPSEEK: "DEEPSEEK_API_KEY",
             APIProvider.OPENAI: "OPENAI_API_KEY",
+            APIProvider.GLM: "GLM_API_KEY",
             APIProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
             APIProvider.MOONSHOT: "MOONSHOT_API_KEY",
             APIProvider.KIMI: "KIMI_API_KEY",
@@ -72,6 +74,7 @@ class ModelConfig:
             APIProvider.MINIMAX: "https://api.minimaxi.com/v1",
             APIProvider.DEEPSEEK: "https://api.deepseek.com",
             APIProvider.OPENAI: "https://api.openai.com/v1",
+            APIProvider.GLM: "https://open.bigmodel.cn/api/paas/v4",
             APIProvider.ANTHROPIC: "https://api.anthropic.com/v1",
             APIProvider.MOONSHOT: "https://api.moonshot.cn/v1",
             APIProvider.KIMI: "https://api.moonshot.cn/v1",

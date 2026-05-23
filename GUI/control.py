@@ -55,21 +55,33 @@ MINIMAX_MODEL = "MiniMax-M2.5"
 DEEPSEEK_PROVIDER = "deepseek"
 DEEPSEEK_V4_FLASH_MODEL = "deepseek-v4-flash"
 DEEPSEEK_V4_PRO_MODEL = "deepseek-v4-pro"
+OPENAI_PROVIDER = "openai"
+OPENAI_GPT_4O_MINI_MODEL = "gpt-4o-mini"
+GLM_PROVIDER = "glm"
+GLM_5_1_MODEL = "glm-5.1"
 DEFAULT_MODEL_BY_PROVIDER = {
     MINIMAX_PROVIDER: MINIMAX_MODEL,
     DEEPSEEK_PROVIDER: DEEPSEEK_V4_FLASH_MODEL,
+    OPENAI_PROVIDER: OPENAI_GPT_4O_MINI_MODEL,
+    GLM_PROVIDER: GLM_5_1_MODEL,
 }
 PROVIDER_BASE_URLS = {
     MINIMAX_PROVIDER: "https://api.minimaxi.com/v1",
     DEEPSEEK_PROVIDER: "https://api.deepseek.com",
+    OPENAI_PROVIDER: "https://api.openai.com/v1",
+    GLM_PROVIDER: "https://open.bigmodel.cn/api/paas/v4",
 }
 PROVIDER_API_TYPES = {
     MINIMAX_PROVIDER: "openai",
     DEEPSEEK_PROVIDER: "openai",
+    OPENAI_PROVIDER: "openai",
+    GLM_PROVIDER: "openai",
 }
 PROVIDER_API_ENUMS = {
     MINIMAX_PROVIDER: APIProvider.MINIMAX,
     DEEPSEEK_PROVIDER: APIProvider.DEEPSEEK,
+    OPENAI_PROVIDER: APIProvider.OPENAI,
+    GLM_PROVIDER: APIProvider.GLM,
 }
 DEFAULT_ASSISTANT_NAME = "Amadues"
 CONFIG_NOTICE = "\u8bf7\u5148\u5728\u8bbe\u7f6e\u9875\u4fdd\u5b58 API Key\u3002"
@@ -111,6 +123,8 @@ def _provider_display_name(provider_name: str) -> str:
     return {
         MINIMAX_PROVIDER: "MiniMax",
         DEEPSEEK_PROVIDER: "DeepSeek",
+        OPENAI_PROVIDER: "OpenAI",
+        GLM_PROVIDER: "GLM",
     }.get(provider_name, provider_name)
 
 
