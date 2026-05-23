@@ -1,12 +1,12 @@
 {
   "episodic_memories": [
     {
-      "id": "mem_0_1778516483",
-      "content": "在一切的根部，我们彼此相连",
-      "timestamp": 1778516483.315087,
+      "id": "mem_7_1779557083",
+      "content": "第一次见面时，会比较紧张",
+      "timestamp": 1779557083.507054,
       "memory_type": "episodic",
       "importance": 1.0,
-      "context": "情节"
+      "context": "第一次见面"
     }
   ],
   "preference_memories": [
@@ -59,6 +59,14 @@
       "memory_type": "fact",
       "importance": 1.0,
       "context": "背景"
+    },
+    {
+      "id": "mem_8_1779557083",
+      "content": "在一切的根部，我们彼此相连",
+      "timestamp": 1779557083.507054,
+      "memory_type": "fact",
+      "importance": 1.0,
+      "context": "底层逻辑"
     }
   ],
   "daily_summary_memories": [],

@@ -394,8 +394,9 @@ class GuiControlTests(unittest.TestCase):
         self.assertEqual(profile["name"], "\u5065")
         self.assertEqual(profile["background"], KEY_DEFAULT_BACKGROUND)
         episodic_contents = [memory["content"] for memory in memories["episodic_memories"]]
-        self.assertIn("在一切的根部，我们彼此相连", episodic_contents)
+        self.assertIn("第一次见面时，会比较紧张", episodic_contents)
         fact_contents = [memory["content"] for memory in memories["fact_memories"]]
+        self.assertIn("在一切的根部，我们彼此相连", fact_contents)
         self.assertIn(KEY_PROJECT_MEMORY_CONTENT, fact_contents)
         self.assertIn(KEY_DOCTORATE_MEMORY_CONTENT, fact_contents)
         self.assertNotIn("在院士门下读博，全年午休，半夜回到寝室打游戏", fact_contents)
@@ -480,7 +481,7 @@ class GuiControlTests(unittest.TestCase):
         )
         self.assertTrue((key_dir / "assets" / "portraits" / "happy-3dd92ea1.png").exists())
 
-    def test_default_startup_data_syncs_legacy_key_project_memory(self) -> None:
+    def test_default_startup_data_does_not_rewrite_existing_key_project_memory(self) -> None:
         key_dir = Path(self._data_tmp.name) / KEY_BRAIN_ID
         (key_dir / "persona").mkdir(parents=True)
         (key_dir / "persona" / "profile.json").write_text(json.dumps({"name": "健"}), encoding="utf-8")
@@ -518,11 +519,11 @@ class GuiControlTests(unittest.TestCase):
 
         memories = json.loads((key_dir / "persona" / "memories.json").read_text(encoding="utf-8"))
         contents = [memory["content"] for memory in memories["fact_memories"]]
-        self.assertIn(KEY_PROJECT_MEMORY_CONTENT, contents)
+        self.assertNotIn(KEY_PROJECT_MEMORY_CONTENT, contents)
         self.assertIn("保留用户后续写入的记忆。", contents)
-        self.assertNotIn("在一个“项目“中，把自己的消息输入给了ai，制作了健。", contents)
+        self.assertIn("在一个“项目“中，把自己的消息输入给了ai，制作了健。", contents)
 
-    def test_default_startup_data_syncs_legacy_key_doctorate_memory_typo(self) -> None:
+    def test_default_startup_data_does_not_rewrite_existing_key_doctorate_memory(self) -> None:
         key_dir = Path(self._data_tmp.name) / KEY_BRAIN_ID
         (key_dir / "persona").mkdir(parents=True)
         (key_dir / "persona" / "profile.json").write_text(json.dumps({"name": "健"}), encoding="utf-8")
@@ -560,11 +561,11 @@ class GuiControlTests(unittest.TestCase):
 
         memories = json.loads((key_dir / "persona" / "memories.json").read_text(encoding="utf-8"))
         contents = [memory["content"] for memory in memories["fact_memories"]]
-        self.assertIn(KEY_DOCTORATE_MEMORY_CONTENT, contents)
+        self.assertNotIn(KEY_DOCTORATE_MEMORY_CONTENT, contents)
         self.assertIn("保留用户后续写入的记忆。", contents)
-        self.assertNotIn("在院士门下读博，全年午休，半夜回到寝室打游戏", contents)
+        self.assertIn("在院士门下读博，全年午休，半夜回到寝室打游戏", contents)
 
-    def test_default_startup_data_syncs_packaged_key_memory_ids(self) -> None:
+    def test_default_startup_data_does_not_add_missing_packaged_key_memories(self) -> None:
         key_dir = Path(self._data_tmp.name) / KEY_BRAIN_ID
         (key_dir / "persona").mkdir(parents=True)
         (key_dir / "persona" / "profile.json").write_text(json.dumps({"name": "健"}), encoding="utf-8")
@@ -613,12 +614,12 @@ class GuiControlTests(unittest.TestCase):
         episodic_contents = [memory["content"] for memory in memories["episodic_memories"]]
         preference_contents = [memory["content"] for memory in memories["preference_memories"]]
         fact_contents = [memory["content"] for memory in memories["fact_memories"]]
-        self.assertIn("在一切的根部，我们彼此相连", episodic_contents)
-        self.assertIn("喜欢计算喜欢一切有条理能理清楚的事物。", preference_contents)
+        self.assertNotIn("在一切的根部，我们彼此相连", episodic_contents)
+        self.assertNotIn("第一次见面时，会比较紧张", episodic_contents)
+        self.assertIn("旧的喜好记忆。", preference_contents)
         self.assertIn("保留用户后续写入的喜好。", preference_contents)
-        self.assertIn("身体很差，且表现出一直很困的样子", fact_contents)
-        self.assertNotIn("旧的喜好记忆。", preference_contents)
-        self.assertNotIn("旧的事实记忆。", fact_contents)
+        self.assertIn("旧的事实记忆。", fact_contents)
+        self.assertNotIn("身体很差，且表现出一直很困的样子", fact_contents)
 
     def test_bind_view_keeps_roles_empty_when_data_directory_has_no_brain(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:

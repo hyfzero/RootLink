@@ -532,6 +532,7 @@ def _ensure_default_amadues_data(brain_id: str = AMADUES_BRAIN_ID) -> Path:
 
 def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
     brain_dir = PathResolver.get_brain_dir(brain_id)
+    is_new_brain = not brain_dir.exists()
     persona_dir = brain_dir / "persona"
     history_dir = brain_dir / "history"
     assets_dir = brain_dir / "assets"
@@ -550,7 +551,8 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
 
     _merge_json(persona_dir / "profile.json", _key_default_profile())
     _ensure_response_config(brain_dir / "config.json", DEFAULT_RESPONSE_LIMITS)
-    _sync_key_default_memories(persona_dir / "memories.json", add_missing_defaults=DEFAULT_KEY_SOURCE_ENV not in os.environ)
+    if is_new_brain:
+        _sync_key_default_memories(persona_dir / "memories.json")
     _write_json_if_missing(
         persona_dir / "state.json",
         {
@@ -599,7 +601,6 @@ def _ensure_default_key_data(brain_id: str = KEY_BRAIN_ID) -> Path:
 def _sync_key_defaults(brain_dir: Path) -> None:
     _copy_default_key_seed(_default_key_source_dirs(), brain_dir)
     _merge_json(brain_dir / "persona" / "profile.json", _key_default_profile())
-    _sync_key_default_memories(brain_dir / "persona" / "memories.json", add_missing_defaults=True)
     _merge_json(brain_dir / "ui.json", _key_default_ui())
     _write_json_if_missing(brain_dir / PORTRAIT_EDIT_FILE, _key_default_portrait_edits())
     _ensure_key_portrait_source_assets(brain_dir)
@@ -628,11 +629,12 @@ def _key_default_memory(
     context: str,
     *,
     importance: float = 1.0,
+    timestamp: float = KEY_DEFAULT_MEMORY_TIMESTAMP,
 ) -> dict:
     return {
         "id": memory_id,
         "content": content,
-        "timestamp": KEY_DEFAULT_MEMORY_TIMESTAMP,
+        "timestamp": timestamp,
         "memory_type": memory_type,
         "importance": importance,
         "context": context,
@@ -640,13 +642,22 @@ def _key_default_memory(
 
 
 def _key_default_memories() -> dict:
+    packaged_memories = RESOURCE_DIR / KEY_BRAIN_ID / "persona" / "memories.json"
+    try:
+        payload = json.loads(packaged_memories.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        payload = None
+    if isinstance(payload, dict):
+        return payload
+
     return {
         "episodic_memories": [
             _key_default_memory(
-                "mem_0_1778516483",
-                "在一切的根部，我们彼此相连",
+                "mem_7_1779557083",
+                "第一次见面时，会比较紧张",
                 "episodic",
-                "情节",
+                "第一次见面",
+                timestamp=1779557083.507054,
             )
         ],
         "preference_memories": [
@@ -658,79 +669,24 @@ def _key_default_memories() -> dict:
             _key_default_memory(KEY_DOCTORATE_MEMORY_ID, KEY_DOCTORATE_MEMORY_CONTENT, "fact", "背景"),
             _key_default_memory("mem_5_1778516483", KEY_PROJECT_MEMORY_CONTENT, "fact", "背景"),
             _key_default_memory("mem_6_1778516483", "身体很差，且表现出一直很困的样子", "fact", "背景"),
+            _key_default_memory(
+                "mem_8_1779557083",
+                "在一切的根部，我们彼此相连",
+                "fact",
+                "底层逻辑",
+                timestamp=1779557083.507054,
+            ),
         ],
         "daily_summary_memories": [],
         "monthly_summary_memories": [],
     }
 
 
-def _sync_key_default_memories(path: Path, *, add_missing_defaults: bool = False) -> None:
-    if not path.exists():
-        _write_json_if_missing(path, _key_default_memories())
+def _sync_key_default_memories(path: Path) -> None:
+    if path.exists():
         return
 
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return
-    if not isinstance(payload, dict):
-        return
-
-    default_memories = _key_default_memories()
-    default_memories_by_id = {
-        memory["id"]: (category, memory)
-        for category, memories in default_memories.items()
-        if isinstance(memories, list)
-        for memory in memories
-        if isinstance(memory, dict) and isinstance(memory.get("id"), str)
-    }
-    seen_default_ids: set[str] = set()
-
-    changed = False
-    for memories in payload.values():
-        if not isinstance(memories, list):
-            continue
-        for memory in memories:
-            if not isinstance(memory, dict):
-                continue
-            memory_id = memory.get("id")
-            default_entry = default_memories_by_id.get(memory_id)
-            if default_entry is not None:
-                seen_default_ids.add(str(memory_id))
-                _, default_memory = default_entry
-                for key in ("content", "memory_type", "importance", "context"):
-                    if memory.get(key) != default_memory[key]:
-                        memory[key] = default_memory[key]
-                        changed = True
-                if "timestamp" not in memory:
-                    memory["timestamp"] = default_memory["timestamp"]
-                    changed = True
-                continue
-            if memory.get("content") in KEY_LEGACY_PROJECT_MEMORY_CONTENTS:
-                memory["content"] = KEY_PROJECT_MEMORY_CONTENT
-                memory["memory_type"] = "fact"
-                memory.setdefault("importance", 1.0)
-                memory.setdefault("context", "背景")
-                changed = True
-            if memory.get("content") in KEY_LEGACY_DOCTORATE_MEMORY_CONTENTS:
-                memory["content"] = KEY_DOCTORATE_MEMORY_CONTENT
-                memory["memory_type"] = "fact"
-                memory.setdefault("importance", 1.0)
-                memory.setdefault("context", "背景")
-                changed = True
-
-    if add_missing_defaults:
-        for memory_id, (category, default_memory) in default_memories_by_id.items():
-            if memory_id in seen_default_ids:
-                continue
-            memories = payload.setdefault(category, [])
-            if not isinstance(memories, list):
-                continue
-            memories.append(dict(default_memory))
-            changed = True
-
-    if changed:
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_json_if_missing(path, _key_default_memories())
 
 
 def _key_default_ui() -> dict:
