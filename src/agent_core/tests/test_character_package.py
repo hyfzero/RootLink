@@ -10,6 +10,7 @@ import tempfile
 import unittest
 import warnings
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 TEST_FILE = Path(__file__).resolve()
@@ -21,7 +22,7 @@ for path in (str(REPO_ROOT), str(SRC_DIR)):
         sys.path.insert(0, path)
 
 from GUI.character_creator import CharacterCreator
-from GUI.character_package import CharacterPackageError, export_character_package, import_character_package
+from GUI.character_package import CharacterPackageError, build_character_package_filename, export_character_package, import_character_package
 from GUI.interfaces import CharacterDraft
 
 
@@ -34,6 +35,11 @@ def _file_hashes(root: Path) -> dict[str, str]:
 
 
 class CharacterPackageTests(unittest.TestCase):
+    def test_build_character_package_filename_adds_export_datetime(self) -> None:
+        filename = build_character_package_filename("key", datetime(2026, 5, 26, 21, 4))
+
+        self.assertEqual(filename, "key_2026.5.26_21.04.amadues")
+
     def test_export_import_restores_complete_brain_files(self) -> None:
         with tempfile.TemporaryDirectory() as source_root, tempfile.TemporaryDirectory() as target_root, tempfile.TemporaryDirectory() as assets_root:
             image_path = Path(assets_root) / "avatar.png"

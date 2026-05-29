@@ -35,6 +35,15 @@ class CharacterPackageResult:
     brain_dir: Path | None = None
 
 
+def build_character_package_filename(brain_id: str, exported_at: datetime | None = None) -> str:
+    """Return the default timestamped character package file name."""
+
+    brain_id = _validate_brain_id(brain_id)
+    exported_at = exported_at or datetime.now()
+    timestamp = f"{exported_at.year}.{exported_at.month}.{exported_at.day}_{exported_at.hour}.{exported_at.minute:02d}"
+    return f"{brain_id}_{timestamp}{PACKAGE_EXTENSION}"
+
+
 def export_character_package(data_dir: Path, brain_id: str, package_path: Path) -> CharacterPackageResult:
     """Write one complete brain directory into a portable package."""
 

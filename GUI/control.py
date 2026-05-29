@@ -33,7 +33,7 @@ from .chat_text import (
     consume_complete_sentence,
     split_display_sentences,
 )
-from .character_package import CharacterPackageError, export_character_package, import_character_package
+from .character_package import CharacterPackageError, build_character_package_filename, export_character_package, import_character_package
 from .character_creator import PORTRAIT_EDIT_FILE, PORTRAIT_EDIT_VERSION, VALID_BRAIN_ID, CharacterCreationError, CharacterCreator
 from .interfaces import (
     CharacterDraft,
@@ -1377,7 +1377,7 @@ class AmaduesController(CompanionUICallback):
     def _default_export_path(self, brain_id: str) -> Path:
         exports_dir = PathResolver.get_app_storage_root()
         base_dir = (exports_dir / "exports") if exports_dir is not None else (PathResolver.get_data_dir().parent / "exports")
-        return base_dir / f"{brain_id}.amadues"
+        return base_dir / build_character_package_filename(brain_id)
 
     def on_theme_toggled(self, is_dark: bool) -> None:
         self._settings.is_dark = is_dark

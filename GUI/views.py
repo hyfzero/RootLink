@@ -12,6 +12,7 @@ from typing import Callable, Optional
 import flet as ft
 
 from .chat_text import split_display_sentences
+from .character_package import build_character_package_filename
 from .components import (
     ChatInputBar,
     FormField,
@@ -580,7 +581,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         try:
             destination = await picker.save_file(
                 dialog_title="\u5bfc\u51fa\u89d2\u8272",
-                file_name=f"{role_id}.amadues",
+                file_name=build_character_package_filename(role_id),
                 file_type=ft.FilePickerFileType.CUSTOM,
                 allowed_extensions=["amadues", "zip"],
             )

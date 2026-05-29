@@ -1177,6 +1177,15 @@ class GuiControlTests(unittest.TestCase):
             self.assertEqual(view.applied_settings.model_provider, DEEPSEEK_PROVIDER)
             self.assertEqual(view.applied_settings.model_name, DEEPSEEK_V4_FLASH_MODEL)
 
+    def test_default_export_path_includes_datetime_suffix(self) -> None:
+        controller = AmaduesController(runtime_factory=lambda: AmaduesRuntime(FakeSessionManager(), SimpleNamespace()))
+
+        with patch.object(PathResolver, "get_app_storage_root", return_value=Path("D:/tmp/app")):
+            package_path = controller._default_export_path("key")
+
+        self.assertEqual(package_path.parent.as_posix(), "D:/tmp/app/exports")
+        self.assertRegex(package_path.name, r"^key_\d{4}\.\d{1,2}\.\d{1,2}_\d{1,2}\.\d{2}\.amadues$")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -937,9 +937,11 @@ class GuiViewTests(unittest.TestCase):
         class FakePicker:
             def __init__(self) -> None:
                 self.save_calls = 0
+                self.kwargs: dict[str, object] = {}
 
-            async def save_file(self, **_kwargs) -> str:
+            async def save_file(self, **kwargs) -> str:
                 self.save_calls += 1
+                self.kwargs = kwargs
                 return "D:/tmp/amadeus.amadues"
 
         picker = FakePicker()
@@ -949,6 +951,7 @@ class GuiViewTests(unittest.TestCase):
 
         self.assertEqual(fake_page.task_calls, 1)
         self.assertEqual(picker.save_calls, 1)
+        self.assertRegex(str(picker.kwargs["file_name"]), r"^amadeus_\d{4}\.\d{1,2}\.\d{1,2}_\d{1,2}\.\d{2}\.amadues$")
         self.assertEqual(callback.exported_destination, "D:/tmp/amadeus.amadues")
 
     def test_memory_editor_type_dropdown_uses_opaque_menu_surface(self) -> None:

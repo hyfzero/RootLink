@@ -6,9 +6,9 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "charset-normalizer==2.1.1",
-    "flet>=0.84.0",
-    "Pillow>=10.0.0",
-    "requests>=2.32.0",
+    "flet==0.84.0",
+    "Pillow==11.1.0",
+    "requests==2.33.1",
 ]
 
 [dependency-groups]
@@ -23,6 +23,7 @@ product = "RootLink"
 artifact = "RootLink"
 org = "com.amadues"
 bundle_id = "com.amadues.companion"
+build_number = 113
 
 [tool.flet.app]
 path = "."
