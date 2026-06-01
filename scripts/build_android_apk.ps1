@@ -1,5 +1,11 @@
 param(
-    [switch]$ClearCache
+    [switch]$ClearCache,
+    [switch]$RefreshCache,
+    [switch]$Offline,
+    [switch]$PrepareCacheOnly,
+    [switch]$EnableDeveloperMode,
+    [ValidateSet("arm64-v8a", "armeabi-v7a", "x86_64")]
+    [string[]]$TargetArch = @("arm64-v8a")
 )
 
 Set-StrictMode -Version Latest
@@ -152,6 +158,41 @@ function Stop-StaleBuildProcesses {
     }
 }
 
+function Test-IsAdministrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [Security.Principal.WindowsPrincipal]$identity
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Enable-WindowsDeveloperMode {
+    if (-not (Test-IsAdministrator)) {
+        throw "Enabling Windows Developer Mode requires an elevated PowerShell. Run as Administrator: powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_android_apk.ps1 -EnableDeveloperMode"
+    }
+
+    $key = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+    New-Item -Path $key -Force | Out-Null
+    Set-ItemProperty -Path $key -Name "AllowDevelopmentWithoutDevLicense" -Type DWord -Value 1
+    Set-ItemProperty -Path $key -Name "AllowAllTrustedApps" -Type DWord -Value 1
+    Write-Host "Windows Developer Mode registry settings were enabled."
+}
+
+function Assert-SymlinkSupport {
+    $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "amadues-symlink-test-$PID"
+    try {
+        New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+        $source = Join-Path $tempDir "source.txt"
+        $link = Join-Path $tempDir "link.txt"
+        Set-Content -LiteralPath $source -Value "test" -Encoding UTF8
+        New-Item -ItemType SymbolicLink -Path $link -Target $source -ErrorAction Stop | Out-Null
+    }
+    catch {
+        throw "Flutter plugin builds require Windows symlink support. Enable Developer Mode in Settings with: start ms-settings:developers. Or run this script as Administrator with -EnableDeveloperMode."
+    }
+    finally {
+        Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Test-TcpPortOpen {
     param(
         [Parameter(Mandatory = $true)]
@@ -290,6 +331,206 @@ function Remove-GeneratedBuildCache {
     }
 }
 
+function Test-ZipFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($Path)
+        try {
+            return $zip.Entries.Count -gt 0
+        }
+        finally {
+            $zip.Dispose()
+        }
+    }
+    catch {
+        return $false
+    }
+}
+
+function Invoke-CachedDownload {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Url,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Destination,
+
+        [switch]$Refresh
+    )
+
+    if ((Test-Path -LiteralPath $Destination) -and -not $Refresh) {
+        return
+    }
+
+    if ($Offline) {
+        throw "Offline mode is enabled and required cache is missing: $Destination"
+    }
+
+    New-Item -ItemType Directory -Path (Split-Path -Parent $Destination) -Force | Out-Null
+    $tempPath = "$Destination.tmp"
+    Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+
+    Write-Host "Downloading with retries: $Url"
+    & curl.exe --fail --location --retry 5 --retry-all-errors --connect-timeout 30 --output $tempPath $Url
+    if ($LASTEXITCODE -ne 0) {
+        Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+        throw "Failed to download $Url."
+    }
+
+    Move-Item -LiteralPath $tempPath -Destination $Destination -Force
+}
+
+function Ensure-FletBuildTemplateCache {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FletVersion
+    )
+
+    $cacheDir = Join-Path $repoRoot "build\template-cache"
+    New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
+
+    $zipPath = Join-Path $cacheDir "flet-build-template-v$FletVersion.zip"
+    if ($RefreshCache -and (Test-Path -LiteralPath $zipPath)) {
+        Remove-Item -LiteralPath $zipPath -Force
+    }
+
+    $cookiecutterZip = Join-Path $env:USERPROFILE ".cookiecutters\flet-build-template.zip"
+    if (-not (Test-Path -LiteralPath $zipPath) -and (Test-Path -LiteralPath $cookiecutterZip)) {
+        if (Test-ZipFile -Path $cookiecutterZip) {
+            Copy-Item -LiteralPath $cookiecutterZip -Destination $zipPath -Force
+            Write-Host "Imported Flet build template from Cookiecutter cache: $cookiecutterZip"
+        }
+        else {
+            Write-Warning "Ignoring invalid Cookiecutter template cache: $cookiecutterZip"
+        }
+    }
+
+    $url = "https://github.com/flet-dev/flet/releases/download/v$FletVersion/flet-build-template.zip"
+    if (-not ((Test-Path -LiteralPath $zipPath) -and (Test-ZipFile -Path $zipPath))) {
+        if (Test-Path -LiteralPath $zipPath) {
+            Write-Warning "Removing invalid Flet build template cache: $zipPath"
+            Remove-Item -LiteralPath $zipPath -Force
+        }
+        Invoke-CachedDownload -Url $url -Destination $zipPath -Refresh:$RefreshCache
+    }
+
+    if (-not (Test-ZipFile -Path $zipPath)) {
+        Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+        throw "Downloaded Flet build template is not a valid zip: $url"
+    }
+
+    Write-Host "Using cached Flet build template: $zipPath"
+    return $zipPath
+}
+
+function Ensure-HostPythonCache {
+    $pythonVersion = "3.12.9"
+    $releaseDate = "20250205"
+    $arch = "x86_64-pc-windows-msvc-shared"
+    $archiveName = "cpython-$pythonVersion+$releaseDate-$arch-install_only_stripped.tar.gz"
+    $cacheDir = Join-Path $repoRoot "build\tool-cache\host-python"
+    $archivePath = Join-Path $cacheDir $archiveName
+    $extractDir = Join-Path $repoRoot "build\flutter\build\build_python_$pythonVersion"
+    $pythonExe = Join-Path $extractDir "python\python.exe"
+
+    if ($RefreshCache) {
+        Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    if (-not (Test-Path -LiteralPath $pythonExe)) {
+        $url = "https://github.com/astral-sh/python-build-standalone/releases/download/$releaseDate/$archiveName"
+        Invoke-CachedDownload -Url $url -Destination $archivePath -Refresh:$RefreshCache
+        New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+        Write-Host "Extracting cached host Python: $archivePath"
+        & tar.exe -xzf $archivePath -C $extractDir
+        if ($LASTEXITCODE -ne 0) {
+            Remove-Item -LiteralPath $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+            throw "Failed to extract cached host Python: $archivePath"
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $pythonExe)) {
+        throw "Host Python cache is incomplete: $pythonExe"
+    }
+
+    Write-Host "Using cached serious_python host Python: $pythonExe"
+}
+
+function Ensure-AndroidPythonDistCache {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$AbiList
+    )
+
+    $pythonVersion = "3.12"
+    $cacheDir = Join-Path $repoRoot "build\tool-cache\android-python"
+    $distRoot = Join-Path $repoRoot "build\android-python-dist"
+
+    foreach ($abi in $AbiList) {
+        $archiveName = "python-android-dart-$pythonVersion-$abi.tar.gz"
+        $archivePath = Join-Path $cacheDir $archiveName
+        $abiDir = Join-Path $distRoot $abi
+
+        if ($RefreshCache) {
+            Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $abiDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        if (-not (Test-Path -LiteralPath $abiDir)) {
+            $url = "https://github.com/flet-dev/python-build/releases/download/v$pythonVersion/$archiveName"
+            Invoke-CachedDownload -Url $url -Destination $archivePath -Refresh:$RefreshCache
+            New-Item -ItemType Directory -Path $abiDir -Force | Out-Null
+            Write-Host "Extracting cached Android Python for $abi"
+            & tar.exe -xzf $archivePath -C $abiDir
+            if ($LASTEXITCODE -ne 0) {
+                Remove-Item -LiteralPath $abiDir -Recurse -Force -ErrorAction SilentlyContinue
+                throw "Failed to extract cached Android Python archive: $archivePath"
+            }
+        }
+
+        if (-not (Test-Path -LiteralPath $abiDir)) {
+            throw "Android Python cache is incomplete: $abiDir"
+        }
+    }
+
+    $env:SERIOUS_PYTHON_BUILD_DIST = $distRoot
+    Write-Host "Using cached Android Python dist: $distRoot"
+    Write-Host "Android target ABI: $($AbiList -join ', ')"
+}
+
+function Remove-IncompleteSeriousPythonCache {
+    $flutterBuildDir = Join-Path $repoRoot "build\flutter\build"
+    if (-not (Test-Path -LiteralPath $flutterBuildDir)) {
+        return
+    }
+
+    $resolvedBuildDir = (Resolve-Path -LiteralPath $flutterBuildDir).Path
+    if (-not $resolvedBuildDir.StartsWith("$repoRoot\", [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to inspect path outside repository: $resolvedBuildDir"
+    }
+
+    foreach ($dir in Get-ChildItem -LiteralPath $resolvedBuildDir -Directory -Filter "build_python_*" -ErrorAction SilentlyContinue) {
+        $pythonExe = Join-Path $dir.FullName "python\python.exe"
+        if (Test-Path -LiteralPath $pythonExe) {
+            continue
+        }
+
+        Write-Warning "Removing incomplete serious_python cache: $($dir.FullName)"
+        Remove-Item -LiteralPath $dir.FullName -Recurse -Force
+
+        foreach ($archive in Get-ChildItem -LiteralPath $resolvedBuildDir -File -Filter "cpython-*.tar.gz" -ErrorAction SilentlyContinue) {
+            Write-Warning "Removing possibly incomplete Python archive: $($archive.FullName)"
+            Remove-Item -LiteralPath $archive.FullName -Force
+        }
+    }
+}
+
 Repair-PyvenvIfNeeded
 
 if (-not (Test-Path -LiteralPath $venvPython)) {
@@ -314,29 +555,52 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Using Flet:"
-& $flet --version
+$fletVersionOutput = & $flet --version 2>&1
+$fletVersionOutput
 if ($LASTEXITCODE -ne 0) {
     throw ".venv Flet failed."
 }
+$fletVersionMatch = [regex]::Match(($fletVersionOutput | Out-String), "Flet:\s*([0-9]+\.[0-9]+\.[0-9]+)")
+if (-not $fletVersionMatch.Success) {
+    throw "Could not determine Flet version from: $($fletVersionOutput | Out-String)"
+}
+$fletVersion = $fletVersionMatch.Groups[1].Value
 
 Stop-StaleBuildProcesses
+
+if ($EnableDeveloperMode) {
+    Enable-WindowsDeveloperMode
+}
 
 if ($ClearCache) {
     Remove-GeneratedBuildCache
 }
 
+$fletBuildTemplate = Ensure-FletBuildTemplateCache -FletVersion $fletVersion
+Ensure-HostPythonCache
+Ensure-AndroidPythonDistCache -AbiList $TargetArch
+if ($PrepareCacheOnly) {
+    Write-Host "Build cache is ready."
+    exit 0
+}
+Assert-SymlinkSupport
+Remove-IncompleteSeriousPythonCache
+
 Push-Location $repoRoot
 $gradleProxyState = Disable-BrokenGradleProxyIfNeeded
-$prunerState = Start-AndroidTemplatePruner
+$prunerState = $null
 try {
     $arguments = @(
         "build",
         "apk",
         ".",
         "--no-rich-output",
-        "--skip-flutter-doctor"
+        "--skip-flutter-doctor",
+        "--template",
+        $fletBuildTemplate,
+        "--arch"
     )
-
+    $arguments += $TargetArch
     Write-Host "Running: $flet $($arguments -join ' ')"
     & $flet @arguments
     if ($LASTEXITCODE -ne 0) {
