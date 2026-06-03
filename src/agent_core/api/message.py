@@ -114,13 +114,17 @@ class Message:
     def to_dict(self) -> dict:
         if isinstance(self.content, str):
             content_value = self.content
+            tool_calls = None
         else:
-            content_value = self.content.to_dict()
+            content_value = self.content.text or ""
+            tool_calls = self.content.tool_calls
 
         result: dict[str, Any] = {
             "role": self.role.value,
             "content": content_value,
         }
+        if tool_calls:
+            result["tool_calls"] = [tc.to_dict() for tc in tool_calls]
         if self.name:
             result["name"] = self.name
         if self.tool_call_id:
@@ -131,11 +135,20 @@ class Message:
     def from_dict(cls, data: dict) -> "Message":
         role = MessageRole(data.get("role", "user"))
         content_data = data.get("content", "")
+        top_level_tool_calls = data.get("tool_calls")
 
         if isinstance(content_data, str):
-            content = content_data
+            if top_level_tool_calls:
+                content = MessageContent(
+                    text=content_data,
+                    tool_calls=[ToolCall.from_dict(tc) for tc in top_level_tool_calls],
+                )
+            else:
+                content = content_data
         else:
             content = MessageContent.from_dict(content_data)
+            if top_level_tool_calls:
+                content.tool_calls = [ToolCall.from_dict(tc) for tc in top_level_tool_calls]
 
         return cls(
             role=role,

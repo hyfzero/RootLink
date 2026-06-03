@@ -8,11 +8,16 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Any, Iterator
+from typing import Optional, Any, Callable, Iterator
 
-from ..api.client import ChatAgent
+from ..api.client import ChatAgent, ToolExecutor
 from ..api.adapter import ModelConfig
-from ..api.message import Message as ApiMessage, MessageRole as ApiMessageRole
+from ..api.message import (
+    Message as ApiMessage,
+    MessageContent as ApiMessageContent,
+    MessageRole as ApiMessageRole,
+    ToolDefinition,
+)
 from ..brain import (
     ReplyTag,
     TagGenerator,
@@ -54,7 +59,10 @@ class SessionManager:
         brain_registry: BrainRegistry,
         chat_agent: ChatAgent,
         tag_generator: Optional[TagGenerator] = None,
-        use_msgpack: bool = False
+        use_msgpack: bool = False,
+        tools: Optional[dict[str, Callable[..., Any]]] = None,
+        tool_definitions: Optional[list[ToolDefinition]] = None,
+        max_tool_turns: int = 10,
     ):
         """初始化 Session 管理器。
 
@@ -69,6 +77,9 @@ class SessionManager:
         self.brain_registry = brain_registry
         self.chat_agent = chat_agent
         self.use_msgpack = use_msgpack
+        self.tools = tools or {}
+        self.tool_definitions = tool_definitions
+        self.max_tool_turns = max_tool_turns
 
         # 当前 Brain ID
         self._current_brain_id = brain_registry.current_brain_id()
@@ -231,25 +242,7 @@ class SessionManager:
 
         # 4. 调用 API
         response = await self._call_api(system_prompt, context, stream)
-
-        # 5. 生成回复标签
-        message_id = self._generate_message_id()
-        assistant_content = response.get("content", "")
-        reply_tag = self.tagger.generate_and_save(message_id, assistant_content)
-
-        # 6. 保存助手消息
-        self.storage.add_message("assistant", assistant_content)
-        self._sync_history_message("assistant", assistant_content)
-        self._sync_relationship_state("assistant", assistant_content)
-        self._sync_personality_state("assistant", assistant_content, reply_tag.emotion)
-
-        # 7. 返回
-        return {
-            "content": assistant_content,
-            "tag": reply_tag,
-            "message_id": message_id,
-            "brain_id": self._current_brain_id,
-        }
+        return self._finalize_assistant_message(response.get("content", ""))
 
     def send_message_sync(
         self,
@@ -281,24 +274,8 @@ class SessionManager:
 
         # 调用 API（同步）
         response = self._call_api_sync(system_prompt, context)
+        return self._finalize_assistant_message(response.get("content", ""))
 
-        # 生成回复标签
-        message_id = self._generate_message_id()
-        assistant_content = response.get("content", "")
-        reply_tag = self.tagger.generate_and_save(message_id, assistant_content)
-
-        # 保存助手消息
-        self.storage.add_message("assistant", assistant_content)
-        self._sync_history_message("assistant", assistant_content)
-        self._sync_relationship_state("assistant", assistant_content)
-        self._sync_personality_state("assistant", assistant_content, reply_tag.emotion)
-
-        return {
-            "content": assistant_content,
-            "tag": reply_tag,
-            "message_id": message_id,
-            "brain_id": self._current_brain_id,
-        }
 
     def send_message_stream(
         self,
@@ -328,21 +305,43 @@ class SessionManager:
             assistant_content = ""
             try:
                 max_sentences = self._chat_response_sentence_limit()
-                for chunk in self.chat_agent.stream_chat(messages, **self._chat_response_kwargs()):
-                    delta = getattr(chunk, "delta", "") or ""
-                    if not delta:
+                for _ in range(self.max_tool_turns):
+                    turn_content = ""
+                    turn_deltas: list[str] = []
+                    turn_tool_calls: list[Any] = []
+
+                    for chunk in self.chat_agent.stream_chat(messages, **self._chat_kwargs_with_tools()):
+                        tool_calls = getattr(chunk, "tool_calls", None) or []
+                        if tool_calls:
+                            turn_tool_calls.extend(tool_calls)
+
+                        delta = getattr(chunk, "delta", "") or ""
+                        if not delta:
+                            continue
+                        delta = self._delta_within_sentence_limit(
+                            turn_content,
+                            delta,
+                            max_sentences,
+                        )
+                        if not delta:
+                            break
+                        turn_content += delta
+                        turn_deltas.append(delta)
+                        if self._has_reached_sentence_limit(turn_content, max_sentences):
+                            break
+
+                    if turn_tool_calls and self.tools:
+                        self._append_tool_result_messages(messages, turn_content, turn_tool_calls)
                         continue
-                    delta = self._delta_within_sentence_limit(
-                        assistant_content,
-                        delta,
-                        max_sentences,
-                    )
-                    if not delta:
-                        break
-                    assistant_content += delta
-                    yield {"type": "delta", "delta": delta}
-                    if self._has_reached_sentence_limit(assistant_content, max_sentences):
-                        break
+
+                    assistant_content = turn_content
+                    for delta in turn_deltas:
+                        yield {"type": "delta", "delta": delta}
+                    break
+                else:
+                    assistant_content = "Tool call loop reached max turns."
+                    for delta in self._iter_simulated_deltas(assistant_content):
+                        yield {"type": "delta", "delta": delta}
             except Exception as stream_error:
                 if assistant_content:
                     yield {"type": "error", "error": str(stream_error)}
@@ -761,6 +760,82 @@ class SessionManager:
             ApiMessage(role=ApiMessageRole.USER, content=context),
         ]
 
+    def _active_tool_definitions(self) -> Optional[list[ToolDefinition]]:
+        if not self.tools:
+            return None
+        if self.tool_definitions is not None:
+            return self.tool_definitions
+        return [
+            ToolDefinition(
+                name=name,
+                description=func.__doc__ or "",
+                parameters={"type": "object", "properties": {}},
+            )
+            for name, func in self.tools.items()
+        ]
+
+    def _chat_kwargs_with_tools(self) -> dict[str, Any]:
+        kwargs = self._chat_response_kwargs()
+        tool_defs = self._active_tool_definitions()
+        if tool_defs:
+            kwargs["tools"] = tool_defs
+        return kwargs
+
+    def _response_content_and_tools(self, response: Any) -> tuple[str, list[Any]]:
+        if hasattr(response, "content"):
+            content = response.content
+        elif hasattr(response, "delta"):
+            content = response.delta
+        else:
+            content = str(response)
+        return content or "", list(getattr(response, "tool_calls", None) or [])
+
+    def _format_tool_result(self, result: Any) -> str:
+        if isinstance(result, (dict, list)):
+            return json.dumps(result, ensure_ascii=False)
+        return str(result)
+
+    def _append_tool_result_messages(
+        self,
+        messages: list[ApiMessage],
+        assistant_content: str,
+        tool_calls: list[Any],
+    ) -> None:
+        messages.append(
+            ApiMessage(
+                role=ApiMessageRole.ASSISTANT,
+                content=ApiMessageContent(
+                    text=assistant_content or "",
+                    tool_calls=tool_calls,
+                ),
+            )
+        )
+
+        executor = ToolExecutor(self.tools)
+        for tool_id, result in executor.execute_all(tool_calls):
+            messages.append(
+                ApiMessage(
+                    role=ApiMessageRole.TOOL,
+                    content=self._format_tool_result(result),
+                    tool_call_id=tool_id,
+                )
+            )
+
+    def _run_api_tool_loop(self, messages: list[ApiMessage], stream: bool = False) -> str:
+        for _ in range(self.max_tool_turns):
+            response = self.chat_agent.chat(
+                messages,
+                stream=stream,
+                **self._chat_kwargs_with_tools(),
+            )
+            content, tool_calls = self._response_content_and_tools(response)
+            if tool_calls and self.tools:
+                self._append_tool_result_messages(messages, content, tool_calls)
+                continue
+            return self._apply_response_sentence_limit(content)
+
+        return "Tool call loop reached max turns."
+
     def _iter_simulated_deltas(self, content: str) -> Iterator[str]:
         """在 provider 不支持流式时，按句模拟前端可消费的增量。"""
         pending = ""
@@ -1035,28 +1110,14 @@ class SessionManager:
         # 使用 api.message.Message 而不是 brain.Message
         messages = self._build_api_messages(system_prompt, context)
 
-        response = self.chat_agent.chat(messages, stream=stream, **self._chat_response_kwargs())
-
-        if hasattr(response, 'content'):
-            content = response.content
-        elif hasattr(response, 'delta'):
-            content = response.delta
-        else:
-            content = str(response)
-        return {"content": self._apply_response_sentence_limit(content)}
+        return {"content": self._run_api_tool_loop(messages, stream=stream)}
 
     def _call_api_sync(self, system_prompt: str, context: str) -> dict:
         """调用 API（同步）"""
         # 使用 api.message.Message 而不是 brain.Message
         messages = self._build_api_messages(system_prompt, context)
 
-        response = self.chat_agent.chat(messages, stream=False, **self._chat_response_kwargs())
-
-        if hasattr(response, 'content'):
-            content = response.content
-        else:
-            content = str(response)
-        return {"content": self._apply_response_sentence_limit(content)}
+        return {"content": self._run_api_tool_loop(messages, stream=False)}
 
     def get_conversation_history(self, days: int = 7) -> list[DaySession]:
         """获取最近 N 天的会话历史。

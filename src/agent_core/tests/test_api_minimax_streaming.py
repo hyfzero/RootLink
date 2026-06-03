@@ -92,6 +92,38 @@ class MiniMaxStreamingTests(unittest.TestCase):
         self.assertEqual(response.usage.reasoning_tokens, 2)
         self.assertEqual(response.usage.total_tokens, 10)
 
+    def test_parse_response_reads_top_level_tool_calls(self) -> None:
+        response = MiniMaxAdapter().parse_response(
+            {
+                "id": "chatcmpl-1",
+                "model": "MiniMax-M2.5",
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call-1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "lookup",
+                                        "arguments": "{\"query\":\"hi\"}",
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+            }
+        )
+
+        self.assertEqual(response.content, "")
+        self.assertEqual(response.tool_calls[0].id, "call-1")
+        self.assertEqual(response.tool_calls[0].name, "lookup")
+        self.assertEqual(response.tool_calls[0].arguments, {"query": "hi"})
+
     def test_stream_chat_converts_minimax_cumulative_content_to_deltas(self) -> None:
         config = ModelConfig(
             name="MiniMax-M2.5",
@@ -119,6 +151,52 @@ class MiniMaxStreamingTests(unittest.TestCase):
         self.assertEqual([chunk.delta for chunk in chunks], ["你", "好", "。"])
         self.assertEqual(captured_request["max_completion_tokens"], 50)
         self.assertNotIn("max_tokens", captured_request)
+
+    def test_chat_stream_aggregation_preserves_tool_calls(self) -> None:
+        config = ModelConfig(
+            name="MiniMax-M2.5",
+            provider=APIProvider.MINIMAX,
+            api_key="test-key",
+            base_url="https://example.test/v1",
+            supports_thinking=True,
+        )
+        agent = ChatAgent(config=config)
+        payloads = [
+            {"choices": [{"delta": {"content": "checking"}, "finish_reason": None}]},
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "id": "call-1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "lookup",
+                                        "arguments": "{\"query\":\"hi\"}",
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": None,
+                    }
+                ]
+            },
+            {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]},
+        ]
+
+        def fake_post(url, headers, json, stream, timeout):
+            return FakeStreamingResponse(payloads)
+
+        with patch("agent_core.api.client.requests.post", side_effect=fake_post):
+            chunk = agent.chat([Message(role=MessageRole.USER, content="hi")], stream=True)
+
+        self.assertEqual(chunk.delta, "checking")
+        self.assertEqual(chunk.finish_reason, "tool_calls")
+        self.assertIsNotNone(chunk.tool_calls)
+        self.assertEqual(chunk.tool_calls[0].id, "call-1")
+        self.assertEqual(chunk.tool_calls[0].name, "lookup")
+        self.assertEqual(chunk.tool_calls[0].arguments, {"query": "hi"})
 
     def test_minimax_catalog_uses_chat_completion_output_limit(self) -> None:
         catalog = get_model_catalog("minimax")

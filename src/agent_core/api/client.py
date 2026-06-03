@@ -180,13 +180,23 @@ class ChatAgent:
         """发送流式请求，并兼容旧接口返回聚合后的完整块。"""
         accumulated = ""
         final_chunk: Optional[StreamChunk] = None
+        tool_calls: list[ToolCall] = []
         for chunk in self._iter_stream(request):
             accumulated += chunk.delta
+            if chunk.tool_calls:
+                tool_calls.extend(chunk.tool_calls)
             final_chunk = chunk
 
         is_complete = final_chunk.is_complete if final_chunk else True
         reasoning = final_chunk.reasoning if final_chunk else None
-        return StreamChunk(delta=accumulated, is_complete=is_complete, reasoning=reasoning)
+        finish_reason = final_chunk.finish_reason if final_chunk else None
+        return StreamChunk(
+            delta=accumulated,
+            is_complete=is_complete,
+            reasoning=reasoning,
+            finish_reason=finish_reason,
+            tool_calls=tool_calls or None,
+        )
 
     def _iter_stream(self, request: ChatCompletionRequest) -> Iterator[StreamChunk]:
         """发送流式请求并逐个产出解析后的增量块。"""
