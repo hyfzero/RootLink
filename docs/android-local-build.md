@@ -2,30 +2,40 @@
 
 This project builds Android APKs with Flet from the repo-local `.venv`.
 
-## Localized build setup
+## Build command
 
-The Android build wrapper is `scripts/build_android_apk.ps1`. It keeps large
-build inputs in local cache directories so normal packaging can run without
-network access after the cache is prepared once.
-
-Cached inputs:
-
-- `build/template-cache`: Flet build template zip.
-- `build/tool-cache/host-python`: CPython used by `serious_python` while
-  packaging the Python app.
-- `build/tool-cache/android-python`: Android Python runtime archives.
-- `build/android-python-dist`: extracted Android Python runtime used by Gradle.
-
-The default Android ABI is `arm64-v8a`. This matches current Android phones and
-avoids downloading legacy `armeabi-v7a` and emulator `x86_64` runtimes unless
-they are explicitly requested.
-
-## One-time cache preparation
-
-Run this once while network access is available:
+Use the native Flet command from the repository root:
 
 ```powershell
-.\scripts\build_android_apk.ps1 -RefreshCache -PrepareCacheOnly
+.\.venv\Scripts\flet.exe build apk . --no-rich-output --skip-flutter-doctor --template .\build\template-cache\flet-build-template-v0.84.0.zip --arch arm64-v8a
+```
+
+This is the verified phone APK command used on 2026-06-04.
+
+Do not set `SERIOUS_PYTHON_BUILD_DIST` for this build. In this project it caused
+`serious_python_android` to skip packaging `site-packages`, producing an APK
+that launched on Android with missing modules such as `certifi`.
+
+A valid APK must contain:
+
+```text
+lib/arm64-v8a/libpythonsitepackages.so
+```
+
+## Environment
+
+Run the command from the repository root and use the repo-local virtual
+environment:
+
+```powershell
+.\.venv\Scripts\python.exe --version
+.\.venv\Scripts\flet.exe --version
+```
+
+The current Windows build machine also needs these tools available on `PATH`:
+
+```powershell
+$env:PATH = "C:\Program Files\Git\cmd;C:\Users\YY\flutter\3.41.4\bin;C:\Users\YY\Android\sdk\platform-tools;$env:PATH"
 ```
 
 Windows Developer Mode must be enabled before building APKs, because Flutter
@@ -35,58 +45,66 @@ plugins create symlinks during the Android build:
 start ms-settings:developers
 ```
 
-Turn on `Developer Mode` in the settings window, then run the build command
-again. Without this setting, Flutter stops with `Building with plugins requires
-symlink support`.
+Turn on `Developer Mode` in the settings window, then run the Flet build command
+again. Without this setting, Flutter can stop with `Building with plugins
+requires symlink support`.
 
-Alternatively, run PowerShell as Administrator and let the build wrapper enable
-the required Windows setting:
+## Verify APK contents
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_android_apk.ps1 -EnableDeveloperMode
-```
-
-This is a one-time Windows setting. It cannot be enabled from a normal
-non-admin shell.
-
-For the default phone APK, only the `arm64-v8a` Android Python runtime is
-required. To prepare additional ABIs, pass them explicitly:
+After building, confirm the APK contains packaged Python dependencies:
 
 ```powershell
-.\scripts\build_android_apk.ps1 -RefreshCache -PrepareCacheOnly -TargetArch arm64-v8a,armeabi-v7a,x86_64
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$apk = "D:\Godot\amadues\build\apk\RootLink.apk"
+$zip = [IO.Compression.ZipFile]::OpenRead($apk)
+try {
+    $zip.Entries |
+        Where-Object { $_.FullName -match "libpythonsitepackages|app\.zip" } |
+        Select-Object FullName, Length |
+        Format-Table -AutoSize
+}
+finally {
+    $zip.Dispose()
+}
 ```
 
-## Offline packaging
+Expected output includes:
 
-After cache preparation succeeds, build without network access:
+```text
+lib/arm64-v8a/libpythonsitepackages.so
+assets/flutter_assets/app/app.zip
+```
+
+## Install on phone
+
+Connect the Android phone and confirm it is visible:
 
 ```powershell
-.\scripts\build_android_apk.ps1 -Offline
+adb devices -l
 ```
 
-To clear generated Flet output while keeping the local tool cache:
+Install the APK:
 
 ```powershell
-.\scripts\build_android_apk.ps1 -ClearCache -Offline
+adb install -r .\build\apk\RootLink.apk
 ```
 
-## ABI selection
-
-Default:
+Launch the app:
 
 ```powershell
-.\scripts\build_android_apk.ps1 -Offline -TargetArch arm64-v8a
+adb shell monkey -p com.amadues.companion -c android.intent.category.LAUNCHER 1
 ```
 
-Build all supported ABIs only after all ABI caches have been prepared:
+## Troubleshooting
 
-```powershell
-.\scripts\build_android_apk.ps1 -Offline -TargetArch arm64-v8a,armeabi-v7a,x86_64
-```
-
-## Proxy behavior
-
-If `%USERPROFILE%\.gradle\gradle.properties` points Gradle to a dead
-`127.0.0.1:7890` proxy, the wrapper temporarily removes those Gradle proxy
-settings for the build and restores them afterward. In `-Offline` mode, missing
-cache files fail fast instead of triggering downloads.
+- `git` is missing: install Git or add `C:\Program Files\Git\cmd` to `PATH`.
+- `flutter` is missing: add `C:\Users\YY\flutter\3.41.4\bin` to `PATH`.
+- `adb` is missing: add `C:\Users\YY\Android\sdk\platform-tools` to `PATH`.
+- `Building with plugins requires symlink support`: enable Windows Developer
+  Mode, then rerun the Flet build command.
+- `Connect to 127.0.0.1:7890 failed`: Gradle is using a local proxy that is not
+  running. Start the proxy or temporarily remove `systemProp.*.proxy*` entries
+  from `%USERPROFILE%\.gradle\gradle.properties`.
+- `No module named 'certifi'` on Android: verify that
+  `lib/arm64-v8a/libpythonsitepackages.so` exists in the APK and that
+  `SERIOUS_PYTHON_BUILD_DIST` was not set during packaging.
