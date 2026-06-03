@@ -70,7 +70,7 @@ result = manager.send_message_sync("晚上好")
 
 ## 注意事项
 
-- `send_message()` 是异步方法，`send_message_sync()` 是同步方法。
+- `send_message()` 是 async 兼容入口，内部在线程中复用 `send_message_sync()`；底层 HTTP 仍是同步 I/O，流式事件使用 `send_message_stream()`。
 - 同步路径与异步路径都会在日期切换时尝试生成日终摘要（满足 `min_messages_for_summary` 时）。
 - 切换 Brain 会重置 storage、summarizer、prompt builder 和 memory updater 缓存。
 

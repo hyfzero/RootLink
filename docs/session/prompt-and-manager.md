@@ -30,11 +30,11 @@
 
 ## 数据流/存储
 
-异步发送流程：
+同步主链路：
 
 ```text
-send_message(user_message)
-  -> _check_and_handle_day_change()
+send_message_sync(user_message)
+  -> _check_and_handle_day_change_sync()
   -> restore today MessageHistory queue from history/session storage if needed
   -> storage.add_message("user", user_message)
   -> add_message_to_history("user", user_message)
@@ -42,7 +42,8 @@ send_message(user_message)
   -> update_personality_state("user", user_message) # 更新长期关系/中期氛围/tension/current_focus
   -> prompt_builder.build_system_prompt()
   -> prompt_builder.build_conversation_context()
-  -> _call_api()
+  -> _call_api_sync()
+  -> _run_api_tool_loop()
   -> ReplyTagger.generate_and_save()
   -> storage.add_message("assistant", response)
   -> add_message_to_history("assistant", response)
@@ -50,6 +51,8 @@ send_message(user_message)
   -> update_personality_state("assistant", response) # 更新 mood/energy/last_emotion
   -> return dict
 ```
+
+`send_message()` 是 async 兼容入口，内部通过 `asyncio.to_thread()` 复用 `send_message_sync()`；底层 HTTP 仍是同步 I/O。需要流式事件时使用 `send_message_stream()`。
 
 Prompt 历史来源：
 
@@ -95,6 +98,7 @@ json_text = manager.export_session("2026-04-11", format="json")
 - `set_emotion_mode("llm")` 会配置 `TagGenerator` 使用 LLM callable。
 - `switch_brain()` 会让 SessionStorage 切到新 `brain_id` 并清空相关延迟初始化缓存。
 - `build_conversation_context()` 当前只注入“用户最新消息”，历史摘要和队列消息由 system prompt 统一承载，避免重复占用 token。
+- `send_message()` 只作为 async wrapper 保持调用兼容，不返回流式事件；流式事件接口是 `send_message_stream()`。
 - `send_message()` 与 `send_message_sync()` 都会调用 `ReplyTagger.generate_and_save()`，确保 `reply_tags.json` 每轮稳定落盘。
 - 消息写入和保存 `MessageHistory` 是“尽力而为”：异常只会告警，不会阻塞主聊天流程。
 - `send_message()` 与 `send_message_sync()` 都会同步更新 `Persona.state` 并写入 `persona/state.json`；失败只告警，不阻塞聊天流程。

@@ -3,6 +3,7 @@
 协调所有组件，提供统一的会话管理接口。
 """
 
+import asyncio
 import json
 import os
 import time
@@ -207,42 +208,23 @@ class SessionManager:
         emotion: Optional[str] = None,
         stream: bool = False
     ) -> dict:
-        """发送消息并处理响应。
+        """Async-compatible wrapper around the synchronous message path.
 
-        流程:
-        1. 检查日期切换 → 归档旧 Session → 生成摘要
-        2. 保存用户消息
-        3. 构建 Prompt
-        4. 调用 API
-        5. 生成回复标签
-        6. 保存助手消息
-        7. 返回响应
+        The underlying API call still uses synchronous I/O and is executed in
+        a worker thread so callers do not block the event loop. The ``stream``
+        argument is kept only for backward compatibility; use
+        ``send_message_stream()`` when streaming events are required.
 
         Args:
-            user_message: 用户消息
-            emotion: 当前情绪状态
-            stream: 是否流式返回
+            user_message: User message.
+            emotion: Current emotion state.
+            stream: Compatibility parameter, intentionally ignored.
 
         Returns:
-            响应字典，包含 content、tag 等
+            Response dict containing content, tag, message_id and brain_id.
         """
-        # 1. 日期切换检查
-        await self._check_and_handle_day_change()
-
-        # 2. 保存用户消息
-        self._sync_tokenizer_runtime()
-        self.storage.add_message("user", user_message)
-        self._sync_history_message("user", user_message)
-        self._sync_relationship_state("user", user_message)
-        self._sync_personality_state("user", user_message, emotion)
-
-        # 3. 构建 Prompt
-        system_prompt = self.prompt_builder.build_system_prompt(emotion)
-        context = self.prompt_builder.build_conversation_context(user_message)
-
-        # 4. 调用 API
-        response = await self._call_api(system_prompt, context, stream)
-        return self._finalize_assistant_message(response.get("content", ""))
+        _ = stream
+        return await asyncio.to_thread(self.send_message_sync, user_message, emotion)
 
     def send_message_sync(
         self,
@@ -1099,18 +1081,6 @@ class SessionManager:
 
     def _count_complete_sentences(self, content: str) -> int:
         return sum(1 for char in content if char in SENTENCE_DELIMITERS)
-
-    async def _call_api(
-        self,
-        system_prompt: str,
-        context: str,
-        stream: bool
-    ) -> dict:
-        """调用 API（异步）"""
-        # 使用 api.message.Message 而不是 brain.Message
-        messages = self._build_api_messages(system_prompt, context)
-
-        return {"content": self._run_api_tool_loop(messages, stream=stream)}
 
     def _call_api_sync(self, system_prompt: str, context: str) -> dict:
         """调用 API（同步）"""

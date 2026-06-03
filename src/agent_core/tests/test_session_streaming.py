@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -63,11 +65,13 @@ class FakeChatAgent:
         fail_stream: bool = False,
         chat_responses: list[object] | None = None,
         stream_turns: list[list[str | StreamChunk]] | None = None,
+        chat_delay: float = 0.0,
     ) -> None:
         self.chunks = chunks
         self.fallback = fallback
         self.fail_stream = fail_stream
         self.chat_responses = list(chat_responses or [])
+        self.chat_delay = chat_delay
         self.stream_turns = stream_turns
         self.stream_turn_index = 0
         self.stream_kwargs: list[dict] = []
@@ -89,6 +93,8 @@ class FakeChatAgent:
             yield chunk if isinstance(chunk, StreamChunk) else StreamChunk(delta=chunk)
 
     def chat(self, messages, stream: bool = False, **kwargs):
+        if self.chat_delay:
+            time.sleep(self.chat_delay)
         self.chat_messages.append(list(messages))
         self.chat_kwargs.append({"stream": stream, **kwargs})
         if self.chat_responses:
@@ -212,6 +218,80 @@ class SessionStreamingTests(unittest.TestCase):
         self.assertEqual(chat_agent.chat_kwargs, [{"stream": False, "max_tokens": 321}])
         self.assertEqual(response["content"], "one.")
         self.assertEqual(manager.storage.messages, [("user", "hi"), ("assistant", "one.")])
+
+    def test_send_message_async_matches_sync_message_path(self) -> None:
+        sync_manager = make_manager(FakeChatAgent([], fallback="same reply."))
+        async_manager = make_manager(FakeChatAgent([], fallback="same reply."))
+
+        sync_response = sync_manager.send_message_sync("hi", emotion="calm")
+        async_response = asyncio.run(
+            async_manager.send_message("hi", emotion="calm", stream=True)
+        )
+
+        self.assertEqual(async_response["content"], sync_response["content"])
+        self.assertEqual(async_manager.storage.messages, sync_manager.storage.messages)
+        self.assertEqual(async_manager.chat_agent.chat_kwargs, [{"stream": False}])
+
+    def test_send_message_async_does_not_call_legacy_call_api_helper(self) -> None:
+        manager = make_manager(FakeChatAgent([], fallback="async final."))
+
+        async def fail_call_api(*args, **kwargs):
+            raise AssertionError("_call_api should not be used")
+
+        manager._call_api = fail_call_api  # type: ignore[attr-defined]
+
+        response = asyncio.run(manager.send_message("hi"))
+
+        self.assertEqual(response["content"], "async final.")
+        self.assertEqual(manager.storage.messages, [("user", "hi"), ("assistant", "async final.")])
+
+    def test_send_message_async_does_not_block_event_loop(self) -> None:
+        manager = make_manager(FakeChatAgent([], fallback="slow final.", chat_delay=0.2))
+
+        async def run_message_and_sleep() -> tuple[dict, float]:
+            task = asyncio.create_task(manager.send_message("hi"))
+            started = time.perf_counter()
+            await asyncio.sleep(0.02)
+            sleep_elapsed = time.perf_counter() - started
+            response = await task
+            return response, sleep_elapsed
+
+        response, sleep_elapsed = asyncio.run(run_message_and_sleep())
+
+        self.assertLess(sleep_elapsed, 0.12)
+        self.assertEqual(response["content"], "slow final.")
+
+    def test_send_message_async_executes_tool_calls_before_final_reply(self) -> None:
+        tool_call = ToolCall(id="call-1", name="lookup", arguments={"query": "hi"})
+        chat_agent = FakeChatAgent(
+            [],
+            chat_responses=[
+                SimpleNamespace(content="", tool_calls=[tool_call]),
+                SimpleNamespace(content="async tool final."),
+            ],
+        )
+        tool_definition = ToolDefinition(
+            name="lookup",
+            description="Lookup.",
+            parameters={
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+            },
+        )
+        manager = make_manager(
+            chat_agent,
+            tools={"lookup": lambda query: {"answer": query.upper()}},
+            tool_definitions=[tool_definition],
+        )
+
+        response = asyncio.run(manager.send_message("hi"))
+
+        self.assertEqual(response["content"], "async tool final.")
+        self.assertEqual(manager.storage.messages, [("user", "hi"), ("assistant", "async tool final.")])
+        self.assertEqual(len(chat_agent.chat_messages), 2)
+        self.assertEqual(chat_agent.chat_messages[1][-2].role.value, "assistant")
+        self.assertEqual(chat_agent.chat_messages[1][-1].role.value, "tool")
+        self.assertEqual(chat_agent.chat_messages[1][-1].tool_call_id, "call-1")
 
     def test_send_message_sync_executes_tool_calls_before_final_reply(self) -> None:
         tool_call = ToolCall(id="call-1", name="lookup", arguments={"query": "hi"})
