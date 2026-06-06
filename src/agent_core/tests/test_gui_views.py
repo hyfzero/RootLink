@@ -229,11 +229,13 @@ class EditCallback(CompanionUICallback):
 
 
 class SettingsCallback(CompanionUICallback):
-    def __init__(self) -> None:
+    def __init__(self, save_result: bool | None = None) -> None:
         self.saved_settings: UiSettings | None = None
+        self.save_result = save_result
 
-    def on_settings_saved(self, settings: UiSettings) -> None:
+    def on_settings_saved(self, settings: UiSettings) -> bool | None:
         self.saved_settings = settings
+        return self.save_result
 
 
 class ModeCallback(CompanionUICallback):
@@ -777,9 +779,11 @@ class GuiViewTests(unittest.TestCase):
 
         view._build_settings_page(colors)
         provider_keys = [option.key for option in view._provider_dropdown.options]
+        self.assertIn("minimax", provider_keys)
         self.assertIn("deepseek", provider_keys)
-        self.assertIn("openai", provider_keys)
+        self.assertIn("qwen", provider_keys)
         self.assertIn("glm", provider_keys)
+        self.assertNotIn("openai", provider_keys)
         self.assertTrue(view._provider_dropdown.filled)
         self.assertEqual(view._provider_dropdown.fill_color, colors["dropdown_surface"])
         self.assertEqual(view._provider_dropdown.menu_style.bgcolor, colors["dropdown_surface"])
@@ -795,13 +799,13 @@ class GuiViewTests(unittest.TestCase):
         self.assertEqual(view._settings.model_provider, "deepseek")
         self.assertEqual(view._settings.model_name, "deepseek-v4-flash")
 
-        view._provider_dropdown.value = "openai"
+        view._provider_dropdown.value = "qwen"
         view._on_settings_provider_changed(None)
         model_keys = [option.key for option in view._model_dropdown.options]
-        self.assertEqual(model_keys, ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano"])
-        self.assertEqual(view._model_dropdown.value, "gpt-4o-mini")
-        self.assertEqual(view._settings.model_provider, "openai")
-        self.assertEqual(view._settings.model_name, "gpt-4o-mini")
+        self.assertEqual(model_keys, ["qwen3.6-flash", "qwen3.7-max"])
+        self.assertEqual(view._model_dropdown.value, "qwen3.6-flash")
+        self.assertEqual(view._settings.model_provider, "qwen")
+        self.assertEqual(view._settings.model_name, "qwen3.6-flash")
 
         view._provider_dropdown.value = "glm"
         view._on_settings_provider_changed(None)
@@ -821,6 +825,22 @@ class GuiViewTests(unittest.TestCase):
         self.assertEqual(callback.saved_settings.model_provider, "deepseek")
         self.assertEqual(callback.saved_settings.model_name, "deepseek-v4-pro")
         self.assertEqual(callback.saved_settings.api_key, "deepseek-key")
+
+    def test_settings_save_stays_on_settings_when_callback_rejects(self) -> None:
+        callback = SettingsCallback(save_result=False)
+        view = CompanionAppView(callback=callback, roles=[make_role()])
+        colors = view._colors()
+        view.show_page("settings")
+        view._build_settings_page(colors)
+
+        view._provider_dropdown.value = "qwen"
+        view._on_settings_provider_changed(None)
+        view._api_key_field.value = ""
+        view._save_settings()
+
+        self.assertIsNotNone(callback.saved_settings)
+        self.assertEqual(callback.saved_settings.model_provider, "qwen")
+        self.assertEqual(view._page_name, "settings")
 
     def test_edit_mode_loads_draft_locks_id_and_saves_update(self) -> None:
         callback = EditCallback()

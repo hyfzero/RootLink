@@ -44,6 +44,10 @@ class FakeView:
     def __init__(self, callback: object, is_dark: bool) -> None:
         self.callback = callback
         self.is_dark = is_dark
+        self.pages: list[tuple[str, bool]] = []
+
+    def show_page(self, page: str, *, add_to_history: bool = True) -> None:
+        self.pages.append((page, add_to_history))
 
 
 class GuiAppStorageTests(unittest.IsolatedAsyncioTestCase):

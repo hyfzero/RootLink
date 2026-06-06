@@ -21,6 +21,7 @@ from .models import (
     # 内置目录
     MINIMAX_MODELS,
     DEEPSEEK_MODELS,
+    QWEN_MODELS,
     OPENAI_MODELS,
     GLM_MODELS,
     ANTHROPIC_MODELS,
@@ -43,6 +44,7 @@ __all__ = [
     "print_models_table",
     "MINIMAX_MODELS",
     "DEEPSEEK_MODELS",
+    "QWEN_MODELS",
     "OPENAI_MODELS",
     "GLM_MODELS",
     "ANTHROPIC_MODELS",

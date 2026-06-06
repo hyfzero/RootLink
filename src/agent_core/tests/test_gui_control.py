@@ -37,8 +37,9 @@ from GUI.control import (
     KEY_PROJECT_MEMORY_CONTENT,
     MINIMAX_MODEL,
     MINIMAX_PROVIDER,
-    OPENAI_GPT_4O_MINI_MODEL,
-    OPENAI_PROVIDER,
+    QWEN_FLASH_MODEL,
+    QWEN_MAX_MODEL,
+    QWEN_PROVIDER,
     AmaduesController,
     AmaduesRuntime,
     UiSettingsStorage,
@@ -49,7 +50,7 @@ from GUI.control import (
 from GUI.character_creator import PORTRAIT_EDIT_FILE, CharacterCreator
 from GUI.interfaces import CharacterDraft, ChatMessage, CompanionRole, CompanionUIView, UiSettings
 from GUI.role_loader import load_roles_from_data
-from agent_core.api.adapter import APIProvider, AdapterRegistry
+from agent_core.api.adapter import APIProvider, AdapterRegistry, ModelConfig
 from agent_core.models import get_model_catalog
 from agent_core.session.path_resolver import PathResolver
 
@@ -289,14 +290,14 @@ class GuiControlTests(unittest.TestCase):
         self.assertIsNotNone(catalog.find_model(DEEPSEEK_V4_PRO_MODEL))
         self.assertEqual(AdapterRegistry.get(APIProvider.DEEPSEEK).__class__.__name__, "OpenAIAdapter")
 
-    def test_ui_settings_storage_persists_openai_and_glm_model_choices(self) -> None:
+    def test_ui_settings_storage_persists_qwen_and_glm_model_choices(self) -> None:
         cases = [
             (
-                OPENAI_PROVIDER,
-                OPENAI_GPT_4O_MINI_MODEL,
-                "openai-key",
-                "https://api.openai.com/v1",
-                APIProvider.OPENAI,
+                QWEN_PROVIDER,
+                QWEN_MAX_MODEL,
+                "qwen-key",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                APIProvider.QWEN,
             ),
             (
                 GLM_PROVIDER,
@@ -340,9 +341,10 @@ class GuiControlTests(unittest.TestCase):
                 self.assertEqual(model_config.name, model_name)
                 self.assertEqual(model_config.base_url, base_url)
 
-    def test_openai_and_glm_catalogs_and_adapters_are_registered(self) -> None:
+    def test_qwen_and_glm_catalogs_and_adapters_are_registered(self) -> None:
         for provider_name, model_name, api_provider in (
-            (OPENAI_PROVIDER, OPENAI_GPT_4O_MINI_MODEL, APIProvider.OPENAI),
+            (QWEN_PROVIDER, QWEN_FLASH_MODEL, APIProvider.QWEN),
+            (QWEN_PROVIDER, QWEN_MAX_MODEL, APIProvider.QWEN),
             (GLM_PROVIDER, GLM_5_1_MODEL, APIProvider.GLM),
         ):
             with self.subTest(provider_name=provider_name):
@@ -351,6 +353,53 @@ class GuiControlTests(unittest.TestCase):
                 self.assertIsNotNone(catalog)
                 self.assertIsNotNone(catalog.find_model(model_name))
                 self.assertEqual(AdapterRegistry.get(api_provider).__class__.__name__, "OpenAIAdapter")
+
+    def test_legacy_openai_settings_fall_back_to_qwen(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir:
+            config_path = Path(config_dir)
+            (config_path / "ui_settings.json").write_text(
+                json.dumps(
+                    {
+                        "is_dark": True,
+                        "token_quality": 50,
+                        "model_provider": "openai",
+                        "model_name": "gpt-4o-mini",
+                        "user_name": "Tester",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (config_path / "models.json").write_text(
+                json.dumps(
+                    {
+                        "version": "1.0",
+                        "providers": {
+                            "openai": {
+                                "base_url": "https://api.openai.com/v1",
+                                "api_key": "old-openai-key",
+                                "api_type": "openai",
+                                "auth_header": True,
+                            }
+                        },
+                        "default_provider": "openai",
+                        "default_model": "gpt-4o-mini",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = UiSettingsStorage(config_dir).load_ui_settings()
+
+            self.assertEqual(loaded.model_provider, QWEN_PROVIDER)
+            self.assertEqual(loaded.model_name, QWEN_FLASH_MODEL)
+            self.assertEqual(loaded.api_key, "")
+
+    def test_qwen_model_config_reads_dashscope_api_key(self) -> None:
+        with patch.dict(os.environ, {"DASHSCOPE_API_KEY": "dashscope-key"}, clear=False):
+            model_config = ModelConfig(name=QWEN_FLASH_MODEL, provider=APIProvider.QWEN)
+            self.assertEqual(model_config.resolved_api_key, "dashscope-key")
+
+        self.assertEqual(model_config.provider, APIProvider.QWEN)
 
     def test_build_amadues_runtime_raises_when_no_brain_exists(self) -> None:
         with tempfile.TemporaryDirectory() as config_dir, tempfile.TemporaryDirectory() as data_dir:
@@ -1176,6 +1225,94 @@ class GuiControlTests(unittest.TestCase):
             self.assertEqual(view.applied_settings.api_key, "new-key")
             self.assertEqual(view.applied_settings.model_provider, DEEPSEEK_PROVIDER)
             self.assertEqual(view.applied_settings.model_name, DEEPSEEK_V4_FLASH_MODEL)
+
+    def test_saving_settings_preloads_runtime_before_returning(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir:
+            calls = {"count": 0}
+
+            def factory() -> AmaduesRuntime:
+                calls["count"] += 1
+                return AmaduesRuntime(FakeSessionManager(), SimpleNamespace())
+
+            controller = AmaduesController(
+                settings_storage=UiSettingsStorage(config_dir),
+                runtime_factory=factory,
+            )
+            view = StubView()
+            controller.bind_view(view)
+
+            saved = controller.on_settings_saved(
+                UiSettings(
+                    is_dark=True,
+                    token_quality=50,
+                    model_provider=QWEN_PROVIDER,
+                    model_name=QWEN_FLASH_MODEL,
+                    api_key="qwen-key",
+                    user_name="Tester",
+                )
+            )
+
+            self.assertTrue(saved)
+            self.assertEqual(calls["count"], 1)
+            self.assertIsNotNone(controller._runtime)
+            self.assertEqual(view.applied_settings.api_key, "qwen-key")
+
+    def test_saving_settings_requires_api_key_before_main_screen(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir:
+            calls = {"count": 0}
+
+            def factory() -> AmaduesRuntime:
+                calls["count"] += 1
+                return AmaduesRuntime(FakeSessionManager(), SimpleNamespace())
+
+            controller = AmaduesController(
+                settings_storage=UiSettingsStorage(config_dir),
+                runtime_factory=factory,
+            )
+            view = StubView()
+            controller.bind_view(view)
+
+            saved = controller.on_settings_saved(
+                UiSettings(
+                    is_dark=True,
+                    token_quality=50,
+                    model_provider=QWEN_PROVIDER,
+                    model_name=QWEN_FLASH_MODEL,
+                    api_key="",
+                    user_name="Tester",
+                )
+            )
+
+            self.assertFalse(saved)
+            self.assertEqual(calls["count"], 0)
+            self.assertIsNone(controller._runtime)
+            self.assertTrue(view.notices[-1][1])
+            self.assertIn("API Key", view.notices[-1][0])
+
+    def test_saving_settings_keeps_settings_pending_when_runtime_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as config_dir:
+            controller = AmaduesController(
+                settings_storage=UiSettingsStorage(config_dir),
+                runtime_factory=lambda: (_ for _ in ()).throw(RuntimeError("runtime failed")),
+            )
+            view = StubView()
+            controller.bind_view(view)
+
+            saved = controller.on_settings_saved(
+                UiSettings(
+                    is_dark=True,
+                    token_quality=50,
+                    model_provider=QWEN_PROVIDER,
+                    model_name=QWEN_FLASH_MODEL,
+                    api_key="qwen-key",
+                    user_name="Tester",
+                )
+            )
+
+            self.assertFalse(saved)
+            self.assertIsNone(controller._runtime)
+            self.assertTrue(view.notices[-1][1])
+            self.assertIn("API 设置未完成", view.notices[-1][0])
 
     def test_default_export_path_includes_datetime_suffix(self) -> None:
         controller = AmaduesController(runtime_factory=lambda: AmaduesRuntime(FakeSessionManager(), SimpleNamespace()))

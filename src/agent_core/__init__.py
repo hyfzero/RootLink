@@ -11,7 +11,7 @@
   - config: 配置管理
   - persistence: JSON/Markdown文件持久化
   - prompt_builder: 分段式Prompt构建
-- api: 统一多模型API调用 (优先MiniMax，支持OpenAI/Anthropic等)
+- api: 统一多模型API调用 (优先MiniMax，支持Qwen/DeepSeek/GLM等)
 - models: 模型目录配置和Provider管理 (参考OpenClaw models.json)
 
 使用示例：
@@ -134,6 +134,7 @@ from .models import (
     print_models_table,
     MINIMAX_MODELS,
     DEEPSEEK_MODELS,
+    QWEN_MODELS,
     OPENAI_MODELS,
     GLM_MODELS,
     ANTHROPIC_MODELS,
@@ -221,6 +222,7 @@ __all__ = [
     "print_models_table",
     "MINIMAX_MODELS",
     "DEEPSEEK_MODELS",
+    "QWEN_MODELS",
     "OPENAI_MODELS",
     "GLM_MODELS",
     "ANTHROPIC_MODELS",

@@ -172,8 +172,9 @@ class DemoCallback(CompanionUICallback):
     def on_chat_mode_changed(self, mode: str) -> None:
         print(f"[ui] chat mode: {mode}")
 
-    def on_settings_saved(self, settings: UiSettings) -> None:
+    def on_settings_saved(self, settings: UiSettings) -> bool:
         print(f"[ui] settings saved: provider={settings.model_provider} quality={settings.token_quality}")
+        return True
 
     def on_character_create_requested(self, draft: CharacterDraft) -> None:
         print(f"[ui] create character: id={draft.brain_id} name={draft.name}")

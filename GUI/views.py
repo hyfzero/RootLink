@@ -83,7 +83,7 @@ EMPTY_ROLE = CompanionRole(
 SETTINGS_PROVIDERS = [
     ("minimax", "MiniMax"),
     ("deepseek", "DeepSeek"),
-    ("openai", "OpenAI"),
+    ("qwen", "Qwen"),
     ("glm", "GLM"),
 ]
 
@@ -93,12 +93,9 @@ SETTINGS_MODELS = {
         ("deepseek-v4-flash", "DeepSeek V4 Flash"),
         ("deepseek-v4-pro", "DeepSeek V4 Pro"),
     ],
-    "openai": [
-        ("gpt-4o-mini", "GPT-4o Mini"),
-        ("gpt-4o", "GPT-4o"),
-        ("gpt-4.1-mini", "GPT-4.1 Mini"),
-        ("gpt-4.1", "GPT-4.1"),
-        ("gpt-4.1-nano", "GPT-4.1 Nano"),
+    "qwen": [
+        ("qwen3.6-flash", "Qwen 3.6 Flash"),
+        ("qwen3.7-max", "Qwen 3.7 Max"),
     ],
     "glm": [
         ("glm-5.1", "GLM-5.1"),
@@ -111,7 +108,7 @@ SETTINGS_MODELS = {
 DEFAULT_SETTINGS_MODELS = {
     "minimax": "MiniMax-M2.5",
     "deepseek": "deepseek-v4-flash",
-    "openai": "gpt-4o-mini",
+    "qwen": "qwen3.6-flash",
     "glm": "glm-5.1",
 }
 
@@ -1750,7 +1747,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
         provider_desc = {
             "minimax": "MiniMax M2.5",
             "deepseek": "DeepSeek V4 Flash / Pro",
-            "openai": "GPT-4o / GPT-4.1",
+            "qwen": "Qwen 3.6 Flash / 3.7 Max",
             "glm": "GLM-5.1 / GLM-4.7",
         }.get(self._provider_dropdown.value or "minimax", "MiniMax M2.5")
         self._provider_desc_text = text(provider_desc, 11, colors["text_tertiary"])
@@ -1785,7 +1782,7 @@ class CompanionAppView(ft.Container, CompanionUIView):
             self._provider_desc_text.value = {
                 "minimax": "MiniMax M2.5",
                 "deepseek": "DeepSeek V4 Flash / Pro",
-                "openai": "GPT-4o / GPT-4.1",
+                "qwen": "Qwen 3.6 Flash / 3.7 Max",
                 "glm": "GLM-5.1 / GLM-4.7",
             }.get(provider, "MiniMax M2.5")
         try:
@@ -2748,7 +2745,8 @@ class CompanionAppView(ft.Container, CompanionUIView):
         self._settings.api_key = self._api_key_field.value or ""
         self._settings.user_name = self._settings_name_field.value or "用户"
         self._profile.name = self._settings.user_name
-        self._callback.on_settings_saved(self._settings)
+        if self._callback.on_settings_saved(self._settings) is False:
+            return
         self.show_page("home", add_to_history=False)
 
     def _set_emotion(self, emotion_id: str) -> None:

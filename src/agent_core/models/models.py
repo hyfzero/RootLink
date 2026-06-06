@@ -255,6 +255,30 @@ OPENAI_MODELS = ProviderCatalog(
     ]
 )
 
+# Qwen Provider
+QWEN_MODELS = ProviderCatalog(
+    models=[
+        ModelInfo(
+            id="qwen3.6-flash",
+            name="Qwen 3.6 Flash",
+            reasoning=False,
+            input_types=["text"],
+            context_window=128000,
+            max_tokens=8192,
+            cost=ModelCost(),
+        ),
+        ModelInfo(
+            id="qwen3.7-max",
+            name="Qwen 3.7 Max",
+            reasoning=True,
+            input_types=["text"],
+            context_window=128000,
+            max_tokens=8192,
+            cost=ModelCost(),
+        ),
+    ]
+)
+
 # GLM Provider
 GLM_MODELS = ProviderCatalog(
     models=[
@@ -442,6 +466,7 @@ OPENROUTER_MODELS = ProviderCatalog(
 MODEL_CATALOGS: dict[str, ProviderCatalog] = {
     "minimax": MINIMAX_MODELS,
     "deepseek": DEEPSEEK_MODELS,
+    "qwen": QWEN_MODELS,
     "openai": OPENAI_MODELS,
     "glm": GLM_MODELS,
     "anthropic": ANTHROPIC_MODELS,
@@ -693,6 +718,7 @@ def create_provider_from_catalog(
     default_urls = {
         "minimax": "https://api.minimaxi.com/v1",
         "deepseek": "https://api.deepseek.com",
+        "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "openai": "https://api.openai.com/v1",
         "glm": "https://open.bigmodel.cn/api/paas/v4",
         "anthropic": "https://api.anthropic.com/v1",

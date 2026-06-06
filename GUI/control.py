@@ -55,32 +55,33 @@ MINIMAX_MODEL = "MiniMax-M2.5"
 DEEPSEEK_PROVIDER = "deepseek"
 DEEPSEEK_V4_FLASH_MODEL = "deepseek-v4-flash"
 DEEPSEEK_V4_PRO_MODEL = "deepseek-v4-pro"
-OPENAI_PROVIDER = "openai"
-OPENAI_GPT_4O_MINI_MODEL = "gpt-4o-mini"
+QWEN_PROVIDER = "qwen"
+QWEN_FLASH_MODEL = "qwen3.6-flash"
+QWEN_MAX_MODEL = "qwen3.7-max"
 GLM_PROVIDER = "glm"
 GLM_5_1_MODEL = "glm-5.1"
 DEFAULT_MODEL_BY_PROVIDER = {
     MINIMAX_PROVIDER: MINIMAX_MODEL,
     DEEPSEEK_PROVIDER: DEEPSEEK_V4_FLASH_MODEL,
-    OPENAI_PROVIDER: OPENAI_GPT_4O_MINI_MODEL,
+    QWEN_PROVIDER: QWEN_FLASH_MODEL,
     GLM_PROVIDER: GLM_5_1_MODEL,
 }
 PROVIDER_BASE_URLS = {
     MINIMAX_PROVIDER: "https://api.minimaxi.com/v1",
     DEEPSEEK_PROVIDER: "https://api.deepseek.com",
-    OPENAI_PROVIDER: "https://api.openai.com/v1",
+    QWEN_PROVIDER: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     GLM_PROVIDER: "https://open.bigmodel.cn/api/paas/v4",
 }
 PROVIDER_API_TYPES = {
     MINIMAX_PROVIDER: "openai",
     DEEPSEEK_PROVIDER: "openai",
-    OPENAI_PROVIDER: "openai",
+    QWEN_PROVIDER: "openai",
     GLM_PROVIDER: "openai",
 }
 PROVIDER_API_ENUMS = {
     MINIMAX_PROVIDER: APIProvider.MINIMAX,
     DEEPSEEK_PROVIDER: APIProvider.DEEPSEEK,
-    OPENAI_PROVIDER: APIProvider.OPENAI,
+    QWEN_PROVIDER: APIProvider.QWEN,
     GLM_PROVIDER: APIProvider.GLM,
 }
 DEFAULT_ASSISTANT_NAME = "Amadues"
@@ -105,6 +106,8 @@ class ChatConfigurationError(RuntimeError):
 
 def _normalize_model_provider(provider_name: str) -> str:
     provider_name = (provider_name or "").strip().lower()
+    if provider_name == "openai":
+        return QWEN_PROVIDER
     if provider_name in DEFAULT_MODEL_BY_PROVIDER:
         return provider_name
     return MINIMAX_PROVIDER
@@ -123,7 +126,7 @@ def _provider_display_name(provider_name: str) -> str:
     return {
         MINIMAX_PROVIDER: "MiniMax",
         DEEPSEEK_PROVIDER: "DeepSeek",
-        OPENAI_PROVIDER: "OpenAI",
+        QWEN_PROVIDER: "Qwen",
         GLM_PROVIDER: "GLM",
     }.get(provider_name, provider_name)
 
@@ -1250,15 +1253,31 @@ class AmaduesController(CompanionUICallback):
     def on_chat_mode_changed(self, mode: str) -> None:
         print(f"[ui] chat mode: {mode}")
 
-    def on_settings_saved(self, settings: UiSettings) -> None:
+    def on_settings_saved(self, settings: UiSettings) -> bool:
         settings.model_provider = _normalize_model_provider(settings.model_provider)
         settings.model_name = _normalize_model_name(settings.model_provider, settings.model_name)
-        self.settings_storage.save_provider_config(settings.model_provider, settings.api_key, settings.model_name)
-        self.settings_storage.save_ui_settings(settings)
-        self._settings = self.settings_storage.load_ui_settings()
+        if not (settings.api_key or "").strip():
+            if self.view is not None:
+                self.view.show_notice(MISSING_API_KEY_NOTICE, is_error=True)
+            return False
+
+        previous_runtime = self._runtime
+        previous_settings = self._settings
         self._invalidate_runtime()
+        try:
+            self.settings_storage.save_provider_config(settings.model_provider, settings.api_key, settings.model_name)
+            self.settings_storage.save_ui_settings(settings)
+            self._settings = self.settings_storage.load_ui_settings()
+            self._get_runtime()
+        except Exception as exc:
+            self._runtime = previous_runtime
+            self._settings = previous_settings
+            if self.view is not None:
+                self.view.show_notice(f"API 设置未完成：{exc}", is_error=True)
+            return False
         if self.view is not None:
             self.view.apply_settings(self._settings)
+        return True
 
     def on_character_create_requested(self, draft: CharacterDraft) -> None:
         try:

@@ -32,6 +32,7 @@ from .types import (
 # 注册内置适配器
 AdapterRegistry.register(APIProvider.MINIMAX, MiniMaxAdapter)
 AdapterRegistry.register(APIProvider.DEEPSEEK, OpenAIAdapter)
+AdapterRegistry.register(APIProvider.QWEN, OpenAIAdapter)
 AdapterRegistry.register(APIProvider.OPENAI, OpenAIAdapter)
 AdapterRegistry.register(APIProvider.GLM, OpenAIAdapter)
 AdapterRegistry.register(APIProvider.ANTHROPIC, AnthropicAdapter)
@@ -308,12 +309,12 @@ class ProviderManager:
                 )
             )
 
-        # OpenAI
-        if os.getenv("OPENAI_API_KEY"):
+        # Qwen/DashScope
+        if os.getenv("DASHSCOPE_API_KEY"):
             manager.add_provider(
                 ModelConfig(
-                    name="gpt-4o",
-                    provider=APIProvider.OPENAI,
+                    name="qwen3.6-flash",
+                    provider=APIProvider.QWEN,
                     supports_function_calling=True,
                 )
             )

@@ -129,7 +129,7 @@ def soft_shadow(is_dark: bool, accent_color: str | None = None, level: str = "ca
 
 
 PROVIDERS = [
-    ("openai", "OpenAI", "GPT 系列"),
+    ("qwen", "Qwen", "Qwen 系列"),
     ("anthropic", "Anthropic", "Claude 系列"),
     ("google", "Google", "Gemini 系列"),
     ("deepseek", "DeepSeek", "DeepSeek 系列"),

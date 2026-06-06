@@ -21,6 +21,7 @@ class APIProvider(str):
 
     MINIMAX = "minimax"
     DEEPSEEK = "deepseek"
+    QWEN = "qwen"
     OPENAI = "openai"
     GLM = "glm"
     ANTHROPIC = "anthropic"
@@ -53,6 +54,7 @@ class ModelConfig:
         env_map = {
             APIProvider.MINIMAX: "MINIMAX_API_KEY",
             APIProvider.DEEPSEEK: "DEEPSEEK_API_KEY",
+            APIProvider.QWEN: "DASHSCOPE_API_KEY",
             APIProvider.OPENAI: "OPENAI_API_KEY",
             APIProvider.GLM: "GLM_API_KEY",
             APIProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
@@ -73,6 +75,7 @@ class ModelConfig:
         defaults = {
             APIProvider.MINIMAX: "https://api.minimaxi.com/v1",
             APIProvider.DEEPSEEK: "https://api.deepseek.com",
+            APIProvider.QWEN: "https://dashscope.aliyuncs.com/compatible-mode/v1",
             APIProvider.OPENAI: "https://api.openai.com/v1",
             APIProvider.GLM: "https://open.bigmodel.cn/api/paas/v4",
             APIProvider.ANTHROPIC: "https://api.anthropic.com/v1",

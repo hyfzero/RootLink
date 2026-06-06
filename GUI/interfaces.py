@@ -152,8 +152,8 @@ class CompanionUICallback(ABC):
     def on_chat_mode_changed(self, mode: str) -> None:
         pass
 
-    def on_settings_saved(self, settings: UiSettings) -> None:
-        pass
+    def on_settings_saved(self, settings: UiSettings) -> bool:
+        return True
 
     def on_character_create_requested(self, draft: CharacterDraft) -> None:
         pass

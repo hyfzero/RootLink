@@ -15,7 +15,7 @@
 
 - `MessageRole`、`MessageContent`、`Message`：统一消息结构。
 - `ToolCall`、`ToolDefinition`：工具调用结果与工具 schema。
-- `APIProvider`：`minimax`、`openai`、`anthropic`、`moonshot`、`ollama`、`openrouter`。
+- `APIProvider`：`minimax`、`deepseek`、`qwen`、`openai`、`glm`、`anthropic`、`moonshot`、`ollama`、`openrouter`。
 - `ModelConfig`：单次 API 客户端配置。
 - `BaseAdapter`、`AdapterRegistry`：Provider 适配器基类和注册表。
 - `ChatCompletionRequest`、`ChatCompletionResponse`、`StreamChunk`、`UsageInfo`：请求和响应类型。
