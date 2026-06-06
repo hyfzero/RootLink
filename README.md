@@ -83,6 +83,37 @@ pandoc docs/USER_GUIDE.md -o docs/USER_GUIDE.pdf
 .\.venv\Scripts\flet.exe build apk . --no-rich-output --skip-flutter-doctor --template .\build\template-cache\flet-build-template-v0.84.0.zip --arch arm64-v8a
 ```
 
+同时构建 Windows 和 Android 发布文件：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_release.ps1
+```
+
+只构建 Windows：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_release.ps1 -Targets windows
+```
+
+只构建 Android APK：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_release.ps1 -Targets apk
+```
+
+完成后，待发布文件位于 `dist/release/`：
+
+- `RootLink-v<version>-windows.zip`
+- `RootLink-v<version>-android.apk`
+
+推送与 `pyproject.toml` 版本一致的标签后，GitHub Actions 会构建这两个文件并放入同一个 GitHub Release：
+
+```powershell
+git push origin main
+git tag v0.1.9
+git push origin v0.1.9
+```
+
 打包前如果当前 PowerShell 没有这些工具路径，先在当前进程内加入，不修改系统环境变量：
 
 ```powershell

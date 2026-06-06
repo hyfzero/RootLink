@@ -24,12 +24,17 @@ if (-not $versionMatch.Success) {
     throw "Project version was not found in pyproject.toml."
 }
 $buildVersion = $versionMatch.Groups[1].Value
+$artifactMatch = [regex]::Match($pyprojectText, '(?m)^artifact\s*=\s*"([^"]+)"')
+if (-not $artifactMatch.Success) {
+    throw "Flet artifact name was not found in pyproject.toml."
+}
+$artifactName = $artifactMatch.Groups[1].Value
 if ($BuildNumber -le 0) {
-    $versionParts = $buildVersion.Split(".")
-    if ($versionParts.Count -lt 3) {
-        throw "BuildNumber was not provided and version '$buildVersion' is not a major.minor.patch version."
+    $buildNumberMatch = [regex]::Match($pyprojectText, '(?m)^build_number\s*=\s*(\d+)')
+    if (-not $buildNumberMatch.Success) {
+        throw "BuildNumber was not provided and tool.flet.build_number was not found in pyproject.toml."
     }
-    $BuildNumber = ([int]$versionParts[0] * 10000) + ([int]$versionParts[1] * 100) + [int]$versionParts[2]
+    $BuildNumber = [int]$buildNumberMatch.Groups[1].Value
 }
 
 $env:PYTHONUTF8 = "1"
@@ -42,23 +47,80 @@ try {
     foreach ($target in $Targets) {
         Write-Host "Building $target release, version $buildVersion, build $BuildNumber..."
 
-        $arguments = @(
-            "build",
-            $target,
-            "--build-version",
-            $buildVersion,
-            "--build-number",
-            $BuildNumber,
-            "--no-rich-output"
-        )
+        if ($target -eq "windows") {
+            $windowsOutput = Join-Path $repoRoot "build\windows"
+            $windowsAppDir = Join-Path $windowsOutput $artifactName
+            if (Test-Path -LiteralPath $windowsAppDir) {
+                $removeError = $null
+                for ($attempt = 1; $attempt -le 5; $attempt++) {
+                    try {
+                        Remove-Item -LiteralPath $windowsAppDir -Recurse -Force
+                        $removeError = $null
+                        break
+                    }
+                    catch {
+                        $removeError = $_
+                        Start-Sleep -Seconds 3
+                    }
+                }
+                if ($null -ne $removeError) {
+                    throw $removeError
+                }
+            }
+            $arguments = @(
+                "pack",
+                "main.py",
+                "--onedir",
+                "--name",
+                $artifactName,
+                "--product-name",
+                $artifactName,
+                "--product-version",
+                $buildVersion,
+                "--file-version",
+                "$buildVersion.$BuildNumber",
+                "--bundle-id",
+                "com.amadues.companion",
+                "--distpath",
+                $windowsOutput,
+                "--add-data",
+                "resource:resource",
+                "assets:assets",
+                "--pyinstaller-build-args=--paths=src",
+                "--yes"
+            )
+        }
+        else {
+            $arguments = @(
+                "build",
+                $target,
+                ".",
+                "--build-version",
+                $buildVersion,
+                "--build-number",
+                $BuildNumber,
+                "--no-rich-output"
+            )
 
-        if ($ClearCache) {
-            $arguments += "--clear-cache"
+            $cachedTemplate = Join-Path $repoRoot "build\template-cache\flet-build-template-v0.84.0.zip"
+            if ($target -eq "apk" -and (Test-Path -LiteralPath $cachedTemplate)) {
+                $arguments += @(
+                    "--skip-flutter-doctor",
+                    "--template",
+                    $cachedTemplate,
+                    "--arch",
+                    "arm64-v8a"
+                )
+            }
+
+            if ($ClearCache) {
+                $arguments += "--clear-cache"
+            }
         }
 
         & $flet @arguments
         if ($LASTEXITCODE -ne 0) {
-            Write-Warning "flet build $target failed with exit code $LASTEXITCODE."
+            Write-Warning "Flet packaging for $target failed with exit code $LASTEXITCODE."
             $failedTargets += $target
             continue
         }
@@ -80,6 +142,38 @@ try {
 
     if ($failedTargets.Count -gt 0) {
         throw "Failed release targets: $($failedTargets -join ', ')"
+    }
+
+    $releaseDir = Join-Path $repoRoot "dist\release"
+    New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+
+    if ($Targets -contains "windows") {
+        $windowsDir = Join-Path $repoRoot "build\windows\$artifactName"
+        $windowsArchive = Join-Path $releaseDir "$artifactName-v$buildVersion-windows.zip"
+        $archiveError = $null
+        for ($attempt = 1; $attempt -le 5; $attempt++) {
+            try {
+                Start-Sleep -Seconds 3
+                Compress-Archive -Path $windowsDir -DestinationPath $windowsArchive -Force
+                $archiveError = $null
+                break
+            }
+            catch {
+                $archiveError = $_
+                Write-Warning "Windows archive attempt $attempt failed: $($_.Exception.Message)"
+            }
+        }
+        if ($null -ne $archiveError) {
+            throw $archiveError
+        }
+        Get-Item -LiteralPath $windowsArchive | Select-Object FullName, Length, LastWriteTime
+    }
+
+    if ($Targets -contains "apk") {
+        $apkSource = Join-Path $repoRoot "build\apk\$artifactName.apk"
+        $apkDestination = Join-Path $releaseDir "$artifactName-v$buildVersion-android.apk"
+        Copy-Item -LiteralPath $apkSource -Destination $apkDestination -Force
+        Get-Item -LiteralPath $apkDestination | Select-Object FullName, Length, LastWriteTime
     }
 }
 finally {
