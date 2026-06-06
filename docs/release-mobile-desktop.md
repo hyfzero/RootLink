@@ -1,87 +1,221 @@
-# Android/iOS 发布打包
+# Windows 和 Android 发布流程
 
-本项目使用 Flet 打包。Windows、Android 和 iOS 统一通过
-`.github/workflows/release-mobile-desktop.yml` 构建，避免在 Windows 本机打 iOS。
+RootLink 的正式发布由 `.github/workflows/release-mobile-desktop.yml` 完成。
+推送版本标签后，GitHub Actions 会构建 Windows ZIP 和正式签名 Android APK，
+并把两个文件发布到同一个 GitHub Release。
+
+本地构建用于提前发现问题，不作为正式发布产物来源。
 
 ## 固定配置
 
 - 应用入口：`main.py`
-- Flet module：`main`
-- 产品名：`Amadues Companion`
-- artifact：`AmaduesCompanion`
-- bundle id：`com.amadues.companion`
-- 版本号来源：workflow 中的 `BUILD_VERSION`
+- 产品名和 artifact：`RootLink`
+- Android 包名：`com.amadues.companion`
+- 版本号：`pyproject.toml` 中的 `project.version`
+- Android build number：`pyproject.toml` 中的 `tool.flet.build_number`
+- 正式签名文件：`C:\Users\YY\.rootlink\signing\rootlink-release.jks`
+- 正式发布 workflow：`Release Windows and Android`
 
-这些值需要和 `pyproject.toml` 的 `[tool.flet]` 配置保持一致。
+`project.version` 使用语义化版本。每次 Android 发布时，
+`tool.flet.build_number` 必须严格递增。
 
-## Android 签名
+## 一次性签名配置
 
-准备一个发布 keystore，并把内容写入 GitHub Actions secrets。
+正式 keystore 已经创建并配置到 GitHub。日常发布不得重新生成证书，
+否则新 APK 无法覆盖安装旧版本。
 
-```powershell
-.\scripts\prepare_android_signing.ps1 `
-  -KeystorePath .\release.jks `
-  -StorePassword "<store-password>" `
-  -KeyPassword "<key-password>" `
-  -Alias "amadues-release"
+本地签名目录需要单独备份：
+
+```text
+C:\Users\YY\.rootlink\signing\
 ```
 
-脚本会输出 `ANDROID_KEYSTORE_BASE64`，其余 secrets 按实际值填写：
+仓库的 GitHub Actions Secrets 必须包含：
 
 - `ANDROID_KEYSTORE_BASE64`
 - `ANDROID_KEYSTORE_PASSWORD`
 - `ANDROID_KEY_PASSWORD`
 - `ANDROID_KEY_ALIAS`
 
-`release.jks` 是私钥文件，不能提交到仓库。
-
-## iOS 签名
-
-在 Apple Developer 后台为 `com.amadues.companion` 准备发布证书和 App Store
-provisioning profile。
-
-需要写入 GitHub Actions secrets：
-
-- `APPLE_TEAM_ID`
-- `IOS_CERTIFICATE_BASE64`
-- `IOS_CERTIFICATE_PASSWORD`
-- `IOS_PROVISIONING_PROFILE_BASE64`
-- `IOS_PROVISIONING_PROFILE_NAME`
-
-本地把 `.p12` 和 `.mobileprovision` 转成 base64：
+只检查 Secrets 名称，不读取值：
 
 ```powershell
-.\scripts\encode_file_base64.ps1 .\ios_distribution.p12
-.\scripts\encode_file_base64.ps1 .\AmaduesCompanion.mobileprovision
+gh secret list
 ```
 
-`.p12` 和 `.mobileprovision` 都是敏感文件，不能提交到仓库。
+`*.jks`、密码、Base64 私钥内容不得提交到 Git、Release 或日志。只有在首次创建
+全新应用签名时才使用 `scripts/prepare_android_signing.ps1`。该脚本会安全提示输入密码，
+不会显示密码或私钥 Base64。
 
-## 触发构建
+## 1. 更新版本
 
-手动构建：
+修改 `pyproject.toml`：
 
-1. 打开 GitHub Actions。
-2. 选择 `Release Windows Android iOS`。
-3. 点击 `Run workflow`。
-4. 下载 artifacts：
-   - `AmaduesCompanion-windows`
-   - `AmaduesCompanion-android`
-   - `AmaduesCompanion-ios`
+```toml
+[project]
+version = "0.1.10"
 
-发布构建：
+[tool.flet]
+build_number = 114
+```
+
+检查版本和工作区：
 
 ```powershell
-git tag v0.1.0
-git push origin v0.1.0
+git status --short --branch
+git diff -- pyproject.toml
 ```
 
-tag 名匹配 `v*` 时，workflow 会在三端构建成功后创建 GitHub Release。
+## 2. 本地验证
 
-## 验证
+始终使用仓库中的 `.venv`：
 
-- Windows job 需要通过 smoke test。
-- Android artifact 需要包含 `.apk` 和 `.aab`。
-- iOS artifact 需要包含 `.ipa`。
-- Android APK 下载到真机安装并启动，确认主界面、资源图片、聊天页和设置页可用。
-- iOS IPA 用 TestFlight 或 Apple Transporter 上传验证签名。
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+同时构建 Windows 和 Android 测试产物：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_release.ps1
+```
+
+也可以只构建其中一个：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_release.ps1 -Targets windows
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_release.ps1 -Targets apk
+```
+
+本地产物位于 `dist/release/`。本地 APK 不替代 GitHub Actions 生成的正式签名 APK。
+
+连接手机后做冒烟测试：
+
+```powershell
+adb devices -l
+adb install -r .\dist\release\RootLink-v0.1.10-android.apk
+adb shell monkey -p com.amadues.companion -c android.intent.category.LAUNCHER 1
+```
+
+至少检查启动、API 设置、主界面和一次模型请求。
+
+## 3. 提交并创建标签
+
+先提交版本和本次发布内容，再推送 `main`：
+
+```powershell
+git add <本次修改的文件>
+git commit -m "release: prepare v0.1.10"
+git push origin main
+```
+
+标签必须与 `project.version` 完全一致，格式为 `v<version>`：
+
+```powershell
+git tag -a v0.1.10 -m "RootLink v0.1.10"
+git push origin v0.1.10
+```
+
+不要在已公开的 Release 上移动或复用标签。发布后需要修复时，递增补丁版本并创建新标签。
+
+## 4. 检查 GitHub Actions
+
+标签推送后，workflow 会依次执行：
+
+1. `Read release version`
+2. `Windows`
+3. `Android APK`
+4. `GitHub Release`
+
+查看运行状态：
+
+```powershell
+gh run list --workflow release-mobile-desktop.yml --limit 5
+gh run watch <run-id>
+```
+
+四个 job 全部成功后，Release 应包含：
+
+- `RootLink-v0.1.10-windows.zip`
+- `RootLink-v0.1.10-android.apk`
+
+Release 标题和说明统一使用英文，避免客户端或终端编码导致乱码。
+
+## 5. 验证正式产物
+
+下载 Release 产物：
+
+```powershell
+gh release download v0.1.10 --dir .\dist\verify\v0.1.10
+```
+
+验证 APK 包名、版本和签名：
+
+```powershell
+aapt dump badging .\dist\verify\v0.1.10\RootLink-v0.1.10-android.apk
+apksigner verify --verbose --print-certs .\dist\verify\v0.1.10\RootLink-v0.1.10-android.apk
+```
+
+确认以下结果：
+
+- 包名是 `com.amadues.companion`
+- `versionName` 等于本次 `project.version`
+- `versionCode` 等于本次 `tool.flet.build_number`
+- APK 签名有效
+- 证书不是 `CN=Android Debug`
+- 证书 SHA-256 与正式证书记录一致
+
+在已安装正式版本的手机上覆盖安装，用于验证后续升级能力：
+
+```powershell
+adb install -r .\dist\verify\v0.1.10\RootLink-v0.1.10-android.apk
+adb shell monkey -p com.amadues.companion -c android.intent.category.LAUNCHER 1
+```
+
+解压 Windows ZIP，启动 `RootLink.exe`，确认程序可以进入主界面。
+
+## 常见失败
+
+### 缺少 Android signing Secrets
+
+确认四个 Secrets 都存在，然后重新运行失败的 job。不要生成新 keystore。
+
+```powershell
+gh secret list
+gh run rerun <run-id> --failed
+```
+
+### 标签与版本不一致
+
+workflow 要求标签等于 `v<project.version>`。如果 Release 尚未公开，可以修正版本并重建标签；
+如果已经公开，发布新的补丁版本，不移动旧标签。
+
+### GitHub 连接超时
+
+这是到 `github.com:443` 的网络问题，不是 Git 分支问题。确认代理或网络恢复后重试：
+
+```powershell
+git push origin main
+git push origin v0.1.10
+```
+
+### APK 无法覆盖安装
+
+先用 `apksigner` 比较新旧 APK 的证书 SHA-256。签名不同只能卸载旧应用，
+会清除本地数据。正式版本必须始终使用同一份 keystore。
+
+### 正式 keystore 丢失
+
+从离线备份恢复。没有原 keystore 就无法为现有安装用户提供可覆盖升级的 APK。
+
+## 发布完成清单
+
+- `main` 已推送，工作区干净
+- 标签与 `project.version` 一致
+- Android build number 已递增
+- GitHub Actions 四个 job 全部成功
+- Release 说明为英文
+- Windows ZIP 和 Android APK 均存在
+- APK 包名、版本、正式证书验证通过
+- 手机覆盖安装和启动通过
+- Windows 解压启动通过

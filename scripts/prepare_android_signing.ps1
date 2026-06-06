@@ -1,16 +1,13 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$KeystorePath,
-
-    [Parameter(Mandatory = $true)]
-    [string]$StorePassword,
-
-    [Parameter(Mandatory = $true)]
-    [string]$KeyPassword,
-
-    [Parameter(Mandatory = $true)]
-    [string]$Alias
+    [string]$KeystorePath = (Join-Path $HOME ".rootlink\signing\rootlink-release.jks"),
+    [string]$Alias = "rootlink-release",
+    [string]$DistinguishedName = "CN=RootLink, OU=Release, O=RootLink, L=Shanghai, ST=Shanghai, C=CN",
+    [int]$ValidityDays = 10000,
+    [SecureString]$StorePassword,
+    [SecureString]$KeyPassword
 )
+
+$ErrorActionPreference = "Stop"
 
 function Find-Keytool {
     $fromPath = Get-Command keytool -ErrorAction SilentlyContinue
@@ -26,6 +23,8 @@ function Find-Keytool {
     }
 
     $commonRoots = @(
+        (Join-Path $HOME "java"),
+        "${env:ProgramFiles}\Android\Android Studio\jbr",
         "${env:ProgramFiles}\Java",
         "${env:ProgramFiles}\Eclipse Adoptium",
         "${env:ProgramFiles}\Microsoft"
@@ -43,38 +42,106 @@ function Find-Keytool {
         }
     }
 
-    return $null
-}
-
-$keytool = Find-Keytool
-if (-not $keytool) {
     throw "keytool was not found. Install a JDK or add keytool to PATH."
 }
 
-if (-not (Test-Path -LiteralPath $KeystorePath)) {
-    & $keytool `
-        -genkeypair `
-        -v `
-        -keystore $KeystorePath `
-        -storepass $StorePassword `
-        -keypass $KeyPassword `
-        -alias $Alias `
-        -keyalg RSA `
-        -keysize 2048 `
-        -validity 10000 `
-        -dname "CN=Amadues Companion, OU=Release, O=Amadues, L=Shanghai, S=Shanghai, C=CN"
+function ConvertFrom-SecureStringPlainText {
+    param([Parameter(Mandatory = $true)][SecureString]$Value)
 
-    if ($LASTEXITCODE -ne 0) {
-        throw "keytool failed with exit code $LASTEXITCODE."
+    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
+    try {
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
     }
 }
 
-$resolvedPath = Resolve-Path -LiteralPath $KeystorePath -ErrorAction Stop
-$bytes = [System.IO.File]::ReadAllBytes($resolvedPath.Path)
+if (-not $StorePassword) {
+    $StorePassword = Read-Host "Keystore password" -AsSecureString
+}
+if (-not $KeyPassword) {
+    $KeyPassword = Read-Host "Key password" -AsSecureString
+}
 
-Write-Output "ANDROID_KEYSTORE_BASE64:"
-Write-Output ([Convert]::ToBase64String($bytes))
-Write-Output ""
-Write-Output "ANDROID_KEYSTORE_PASSWORD: $StorePassword"
-Write-Output "ANDROID_KEY_PASSWORD: $KeyPassword"
-Write-Output "ANDROID_KEY_ALIAS: $Alias"
+$keytool = Find-Keytool
+$resolvedKeystorePath = [System.IO.Path]::GetFullPath($KeystorePath)
+$signingDirectory = Split-Path -Parent $resolvedKeystorePath
+$certificatePath = Join-Path $signingDirectory "rootlink-release.pem"
+$certificateInfoPath = Join-Path $signingDirectory "certificate-fingerprints.txt"
+
+New-Item -ItemType Directory -Path $signingDirectory -Force | Out-Null
+
+$storePasswordText = ConvertFrom-SecureStringPlainText $StorePassword
+$keyPasswordText = ConvertFrom-SecureStringPlainText $KeyPassword
+
+try {
+    $env:ROOTLINK_KEYSTORE_PASSWORD = $storePasswordText
+    $env:ROOTLINK_KEY_PASSWORD = $keyPasswordText
+
+    if (-not (Test-Path -LiteralPath $resolvedKeystorePath)) {
+        & $keytool `
+            -genkeypair `
+            -keystore $resolvedKeystorePath `
+            -storetype JKS `
+            -storepass:env ROOTLINK_KEYSTORE_PASSWORD `
+            -keypass:env ROOTLINK_KEY_PASSWORD `
+            -alias $Alias `
+            -keyalg RSA `
+            -keysize 4096 `
+            -validity $ValidityDays `
+            -dname $DistinguishedName
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "keytool failed to generate the keystore with exit code $LASTEXITCODE."
+        }
+    }
+    else {
+        Write-Output "Using the existing keystore. No key was generated."
+    }
+
+    & $keytool `
+        -exportcert `
+        -rfc `
+        -keystore $resolvedKeystorePath `
+        -storepass:env ROOTLINK_KEYSTORE_PASSWORD `
+        -alias $Alias `
+        -file $certificatePath
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "keytool failed to export the certificate with exit code $LASTEXITCODE."
+    }
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell 5 wraps keytool warnings from stderr as ErrorRecord objects.
+        $ErrorActionPreference = "Continue"
+        $certificateInfo = & $keytool `
+            -list `
+            -v `
+            -keystore $resolvedKeystorePath `
+            -storepass:env ROOTLINK_KEYSTORE_PASSWORD `
+            -alias $Alias 2>&1
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "keytool failed to inspect the certificate with exit code $LASTEXITCODE."
+    }
+
+    $certificateInfo | Set-Content -LiteralPath $certificateInfoPath -Encoding UTF8
+
+    Write-Output "Keystore: $resolvedKeystorePath"
+    Write-Output "Alias: $Alias"
+    Write-Output "Public certificate: $certificatePath"
+    Write-Output "Certificate details: $certificateInfoPath"
+    Write-Output "Passwords and private-key Base64 were not printed."
+}
+finally {
+    Remove-Item Env:ROOTLINK_KEYSTORE_PASSWORD -ErrorAction SilentlyContinue
+    Remove-Item Env:ROOTLINK_KEY_PASSWORD -ErrorAction SilentlyContinue
+    $storePasswordText = $null
+    $keyPasswordText = $null
+}

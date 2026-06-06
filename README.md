@@ -106,12 +106,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_release.
 - `RootLink-v<version>-windows.zip`
 - `RootLink-v<version>-android.apk`
 
-推送与 `pyproject.toml` 版本一致的标签后，GitHub Actions 会构建这两个文件并放入同一个 GitHub Release：
+正式发布统一由 GitHub Actions 生成并签名。完整的版本更新、标签、Release 和产物验证流程见
+[Windows 和 Android 发布流程](docs/release-mobile-desktop.md)。
+
+推送与 `pyproject.toml` 版本一致的标签后，GitHub Actions 会构建这两个文件并放入同一个 GitHub Release。
+以下命令中的版本号必须替换为本次 `project.version`：
 
 ```powershell
 git push origin main
-git tag v0.1.9
-git push origin v0.1.9
+git tag -a v<version> -m "RootLink v<version>"
+git push origin v<version>
 ```
 
 打包前如果当前 PowerShell 没有这些工具路径，先在当前进程内加入，不修改系统环境变量：
