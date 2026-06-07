@@ -14,9 +14,10 @@ on:
       artifact_source:
         description: Source for release artifacts
         required: true
-        default: github_release
+        default: auto
         type: choice
         options:
+          - auto
           - github_release
           - local_dist
       local_release_dir:
@@ -43,7 +44,7 @@ jobs:
       GITEE_TOKEN: ${{ secrets.GITEE_RELEASE }}
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
-      ARTIFACT_SOURCE: ${{ inputs.artifact_source || 'github_release' }}
+      ARTIFACT_SOURCE: ${{ inputs.artifact_source || 'auto' }}
       LOCAL_RELEASE_DIR: ${{ inputs.local_release_dir || 'D:/Godot/amadues/dist/release' }}
     steps:
       - name: Validate inputs
@@ -65,17 +66,26 @@ jobs:
             base64 --decode > sync-gitee-release.sh
           bash -n sync-gitee-release.sh
 
-      - name: Download existing GitHub release
+      - name: Prepare release artifacts
         shell: bash
         run: |
           mkdir -p release-artifacts
-          if [ "$ARTIFACT_SOURCE" = "local_dist" ]; then
-            cp "${LOCAL_RELEASE_DIR}/RootLink-${RELEASE_TAG}-android.apk" release-artifacts/
-            cp "${LOCAL_RELEASE_DIR}/RootLink-${RELEASE_TAG}-windows.zip" release-artifacts/
+          local_apk="${LOCAL_RELEASE_DIR}/RootLink-${RELEASE_TAG}-android.apk"
+          local_windows="${LOCAL_RELEASE_DIR}/RootLink-${RELEASE_TAG}-windows.zip"
+          if [ "$ARTIFACT_SOURCE" != "github_release" ] &&
+             [ -s "$local_apk" ] &&
+             [ -s "$local_windows" ]; then
+            cp "$local_apk" release-artifacts/
+            cp "$local_windows" release-artifacts/
             test -s "release-artifacts/RootLink-${RELEASE_TAG}-android.apk"
             test -s "release-artifacts/RootLink-${RELEASE_TAG}-windows.zip"
             test "$(find release-artifacts -type f -size +50M | wc -l)" -eq 2
+            echo "Using release artifacts from ${LOCAL_RELEASE_DIR}"
             exit 0
+          fi
+          if [ "$ARTIFACT_SOURCE" = "local_dist" ]; then
+            echo "Local release artifacts are missing or invalid in ${LOCAL_RELEASE_DIR}"
+            exit 1
           fi
 
           github_api_headers=(
