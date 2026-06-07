@@ -90,46 +90,64 @@ existing="$(
 )"
 if [ "$existing" = "200" ]; then
   release_id="$(jq --raw-output '.id // empty' existing-release.json)"
-  if [ -n "$release_id" ]; then
-    curl --fail --silent --show-error --request DELETE --get \
-      --data-urlencode "access_token=${GITEE_TOKEN}" \
-      "${repo_api}/releases/${release_id}" > /dev/null
-  fi
 elif [ "$existing" != "404" ]; then
   echo "Unable to inspect existing Gitee release: HTTP ${existing}"
   exit 1
 fi
 
-for attempt in {1..6}; do
-  create_status="$(
-    curl --silent --show-error --request POST \
-      --data-urlencode "access_token=${GITEE_TOKEN}" \
-      --data-urlencode "tag_name=${RELEASE_TAG}" \
-      --data-urlencode "name=RootLink ${RELEASE_TAG}" \
-      --data-urlencode "body=Primary release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}" \
-      --data-urlencode "target_commitish=main" \
-      --output created-release.json \
-      --write-out "%{http_code}" \
-      "${repo_api}/releases"
-  )"
-  if [ "$create_status" = "200" ] || [ "$create_status" = "201" ]; then
-    break
-  fi
-  if [ "$attempt" = "6" ]; then
-    echo "Unable to create Gitee release: HTTP ${create_status}"
-    exit 1
-  fi
-  sleep 5
-done
-release_json="$(cat created-release.json)"
-release_id="$(jq --raw-output '.id' <<< "$release_json")"
+if [ -z "${release_id:-}" ]; then
+  for attempt in {1..6}; do
+    create_status="$(
+      curl --silent --show-error --request POST \
+        --data-urlencode "access_token=${GITEE_TOKEN}" \
+        --data-urlencode "tag_name=${RELEASE_TAG}" \
+        --data-urlencode "name=RootLink ${RELEASE_TAG}" \
+        --data-urlencode "body=Primary release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}" \
+        --data-urlencode "target_commitish=main" \
+        --output created-release.json \
+        --write-out "%{http_code}" \
+        "${repo_api}/releases"
+    )"
+    if [ "$create_status" = "200" ] || [ "$create_status" = "201" ]; then
+      break
+    fi
+    if [ "$attempt" = "6" ]; then
+      echo "Unable to create Gitee release: HTTP ${create_status}"
+      exit 1
+    fi
+    sleep 5
+  done
+  release_id="$(jq --raw-output '.id' created-release.json)"
+fi
 test -n "$release_id" && test "$release_id" != "null"
 
+attachments="$(
+  curl --fail --silent --show-error --get \
+    --data-urlencode "access_token=${GITEE_TOKEN}" \
+    "${repo_api}/releases/${release_id}/attach_files"
+)"
+
+pids=()
 for artifact in "${artifact_dir}"/*; do
-  curl --fail --silent --show-error \
-    --form "access_token=${GITEE_TOKEN}" \
-    --form "file=@${artifact}" \
-    "${repo_api}/releases/${release_id}/attach_files" > /dev/null
+  artifact_name="$(basename "$artifact")"
+  if jq --exit-status --arg name "$artifact_name" \
+    'any(.[]; .name == $name)' <<< "$attachments" > /dev/null; then
+    echo "Already uploaded: ${artifact_name}"
+    continue
+  fi
+
+  (
+    curl --fail --silent --show-error --retry 3 --retry-all-errors \
+      --form "access_token=${GITEE_TOKEN}" \
+      --form "file=@${artifact}" \
+      "${repo_api}/releases/${release_id}/attach_files" > /dev/null
+    echo "Uploaded: ${artifact_name}"
+  ) &
+  pids+=("$!")
+done
+
+for pid in "${pids[@]}"; do
+  wait "$pid"
 done
 
 echo "Gitee release: https://gitee.com/${owner}/${GITEE_REPO}/releases/tag/${RELEASE_TAG}"

@@ -1,18 +1,9 @@
 name: Sync Gitee Release
 
 on:
-  workflow_call:
-    inputs:
-      tag:
-        required: true
-        type: string
-      use_workflow_artifacts:
-        required: false
-        type: boolean
-        default: false
-    secrets:
-      GITEE_RELEASE:
-        required: true
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
       tag:
@@ -27,11 +18,17 @@ permissions:
 jobs:
   mirror:
     name: Mirror to Gitee
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - rootlink-release-cn
+    timeout-minutes: 90
+    concurrency:
+      group: gitee-release-${{ github.event.release.tag_name || inputs.tag }}
+      cancel-in-progress: false
     env:
       GITEE_REPO: RootLink
       GITEE_TOKEN: ${{ secrets.GITEE_RELEASE }}
-      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
       - name: Validate inputs
         shell: bash
@@ -43,24 +40,17 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Download workflow artifacts
-        if: inputs.use_workflow_artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-artifacts
-          merge-multiple: true
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
 
       - name: Download existing GitHub release
-        if: ${{ !inputs.use_workflow_artifacts }}
         shell: bash
         run: |
           mkdir -p release-artifacts
           base_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
-          curl --fail --location --retry 3 \
+          curl --fail --location --retry 8 --retry-all-errors \
             --output "release-artifacts/RootLink-${RELEASE_TAG}-android.apk" \
             "${base_url}/RootLink-${RELEASE_TAG}-android.apk"
-          curl --fail --location --retry 3 \
+          curl --fail --location --retry 8 --retry-all-errors \
             --output "release-artifacts/RootLink-${RELEASE_TAG}-windows.zip" \
             "${base_url}/RootLink-${RELEASE_TAG}-windows.zip"
 

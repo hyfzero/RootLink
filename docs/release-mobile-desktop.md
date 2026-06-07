@@ -2,8 +2,9 @@
 
 RootLink 的正式发布由 `.github/workflows/release-mobile-desktop.yml` 完成。
 推送版本标签后，GitHub Actions 会构建 Windows ZIP 和正式签名 Android APK，
-把两个文件发布到同一个 GitHub Release，然后同步当前发布提交、标签和安装包到
-Gitee 公开镜像。GitHub 始终是主仓库，日常开发不向 Gitee 推送。
+把两个文件发布到同一个 GitHub Release。独立的 Gitee 同步流程随后通过国内
+自托管 runner，同步当前发布提交、标签和安装包到 Gitee 公开镜像。
+GitHub 始终是主仓库，日常开发不向 Gitee 推送。
 
 ## Gitee 发布镜像
 
@@ -16,8 +17,22 @@ Gitee 公开镜像。GitHub 始终是主仓库，日常开发不向 Gitee 推送
 |------|------|
 | `GITEE_RELEASE` | Gitee 私人令牌 |
 
-不需要手动创建 Gitee 仓库。首次发布时，workflow 会在令牌所属账号下创建公开的
-`RootLink` 仓库。此后的同步只在版本标签触发，并且必须等待 GitHub Release 发布成功。
+不需要手动创建 Gitee 仓库。首次同步时，workflow 会在令牌所属账号下创建公开的
+`RootLink` 仓库。此后的同步由 GitHub Release 的 `published` 事件触发。
+
+Gitee 附件上传必须使用一台位于国内、带 `rootlink-release-cn` 标签的 GitHub
+self-hosted runner。不要使用 GitHub 托管的美国 runner 直接上传大文件，否则跨境链路
+可能持续数小时。runner 只负责读取已经发布的 GitHub 安装包并上传到 Gitee，不参与日常构建。
+
+在仓库的 `Settings > Actions > Runners` 中添加 runner，按 GitHub 页面给出的命令安装，
+配置时增加标签：
+
+```text
+rootlink-release-cn
+```
+
+Windows runner 需要安装 Git for Windows，确保 Actions 可以使用 `bash`、`git`、`curl`
+和 `base64`；同时需要提供 `jq`。Linux runner 需要安装 Git、curl 和 jq。
 
 Gitee 镜像包含：
 
@@ -31,6 +46,8 @@ Gitee 镜像包含：
 
 需要补同步已有版本时，在 GitHub Actions 中手动运行 `Sync Gitee Release`，
 输入对应版本标签即可。该流程直接读取现有 GitHub Release，不会重新构建安装包。
+如果国内 runner 暂时离线，GitHub Release 仍会正常完成，Gitee 同步任务会排队等待，
+不会阻塞主发布流程。
 
 本地构建用于提前发现问题，不作为正式发布产物来源。
 

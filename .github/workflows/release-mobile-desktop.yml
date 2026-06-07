@@ -199,15 +199,3 @@ jobs:
           generate_release_notes: true
           files: release-artifacts/*
           fail_on_unmatched_files: true
-
-  gitee-release:
-    name: Gitee Release Mirror
-    needs:
-      - prepare
-      - github-release
-    if: startsWith(github.ref, 'refs/tags/')
-    uses: ./.github/workflows/sync-gitee-release.yml
-    with:
-      tag: ${{ github.ref_name }}
-      use_workflow_artifacts: true
-    secrets: inherit
