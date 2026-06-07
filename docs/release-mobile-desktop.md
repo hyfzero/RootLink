@@ -3,7 +3,7 @@
 RootLink 的正式发布由 `.github/workflows/release-mobile-desktop.yml` 完成。
 推送版本标签后，GitHub Actions 会构建 Windows ZIP 和正式签名 Android APK，
 把两个文件发布到同一个 GitHub Release。独立的 Gitee 同步流程随后通过国内
-自托管 runner，同步当前发布提交、标签和安装包到 Gitee 公开镜像。
+自托管 runner，同步安装包到 Gitee 公开镜像。
 GitHub 始终是主仓库，日常开发不向 Gitee 推送。
 
 ## Gitee 发布镜像
@@ -31,15 +31,11 @@ self-hosted runner。不要使用 GitHub 托管的美国 runner 直接上传大�
 rootlink-release-cn
 ```
 
-Windows runner 需要安装 Git for Windows，确保 Actions 可以使用 `bash`、`git`、`curl`
-和 `base64`；同时需要提供 `jq`。Linux runner 需要安装 Git、curl 和 jq。
+Windows runner 需要安装 Git for Windows，确保 Actions 可以使用 `bash`、`curl`
+和 `base64`；同时需要提供 `jq`。Linux runner 需要安装 Bash、curl、base64 和 jq。
 
-Gitee 镜像包含：
-
-- 当前版本源码快照对应的 `main` 分支，不包含日常开发历史
-- 当前版本标签
-- 同版本 Release
-- Windows ZIP 和 Android APK
+Gitee 镜像包含同版本 Release、版本标签、Windows ZIP 和 Android APK。同步任务不会检出
+项目源码，也不会日常同步 Git 分支；Gitee 标签以镜像仓库的 `main` 为目标创建。
 
 本地仓库只保留 GitHub `origin`，不要把 Gitee 设置为默认 push 远端。这样普通提交和
 分支仍只进入 GitHub，Gitee 仅保存已经正式发布的版本。

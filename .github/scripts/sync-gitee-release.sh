@@ -62,25 +62,6 @@ for attempt in {1..12}; do
   sleep 5
 done
 
-auth="$(printf '%s:%s' "$owner" "$GITEE_TOKEN" | base64 --wrap=0)"
-release_tree="$(git rev-parse "${RELEASE_TAG}^{tree}")"
-release_date="$(git show --no-patch --format=%aI "${RELEASE_TAG}^{commit}")"
-snapshot_commit="$(
-  printf 'RootLink %s release snapshot\n' "$RELEASE_TAG" |
-    GIT_AUTHOR_NAME="RootLink Release" \
-    GIT_AUTHOR_EMAIL="actions@users.noreply.github.com" \
-    GIT_AUTHOR_DATE="$release_date" \
-    GIT_COMMITTER_NAME="RootLink Release" \
-    GIT_COMMITTER_EMAIL="actions@users.noreply.github.com" \
-    GIT_COMMITTER_DATE="$release_date" \
-    git commit-tree "$release_tree"
-)"
-test -n "$snapshot_commit"
-git remote add gitee "https://gitee.com/${owner}/${GITEE_REPO}.git"
-git -c "http.extraHeader=Authorization: Basic ${auth}" push gitee \
-  "+${snapshot_commit}:refs/heads/main" \
-  "+${snapshot_commit}:refs/tags/${RELEASE_TAG}"
-
 existing="$(
   curl --silent --get \
     --data-urlencode "access_token=${GITEE_TOKEN}" \
