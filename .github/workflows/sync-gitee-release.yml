@@ -39,7 +39,7 @@ jobs:
       - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           ref: ${{ github.event.release.tag_name || inputs.tag }}
 
       - name: Download existing GitHub release
@@ -49,10 +49,14 @@ jobs:
           base_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
           curl --fail --location --retry 8 --retry-all-errors \
             --output "release-artifacts/RootLink-${RELEASE_TAG}-android.apk" \
-            "${base_url}/RootLink-${RELEASE_TAG}-android.apk"
+            "${base_url}/RootLink-${RELEASE_TAG}-android.apk" &
+          apk_pid=$!
           curl --fail --location --retry 8 --retry-all-errors \
             --output "release-artifacts/RootLink-${RELEASE_TAG}-windows.zip" \
-            "${base_url}/RootLink-${RELEASE_TAG}-windows.zip"
+            "${base_url}/RootLink-${RELEASE_TAG}-windows.zip" &
+          windows_pid=$!
+          wait "$apk_pid"
+          wait "$windows_pid"
 
       - name: Sync release to Gitee
         shell: bash
