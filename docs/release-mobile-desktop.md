@@ -45,6 +45,10 @@ Gitee 镜像包含同版本 Release、版本标签、Windows ZIP 和 Android APK
 如果国内 runner 暂时离线，GitHub Release 仍会正常完成，Gitee 同步任务会排队等待，
 不会阻塞主发布流程。
 
+如果现有 GitHub Release 产物从国内下载过慢，并且发布机本地 `dist/release` 已保留同版本
+正式产物，可以手动运行 `Sync Gitee Release` 并把 `artifact_source` 设为 `local_dist`。
+这条快速路径只读取国内 runner 本机文件，然后上传到 Gitee Release。
+
 本地构建用于提前发现问题，不作为正式发布产物来源。
 
 ## 固定配置

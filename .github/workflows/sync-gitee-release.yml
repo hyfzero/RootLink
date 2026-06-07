@@ -11,6 +11,19 @@ on:
         required: true
         default: v0.1.9
         type: string
+      artifact_source:
+        description: Source for release artifacts
+        required: true
+        default: github_release
+        type: choice
+        options:
+          - github_release
+          - local_dist
+      local_release_dir:
+        description: Directory on the domestic runner used when artifact_source is local_dist
+        required: true
+        default: D:/Godot/amadues/dist/release
+        type: string
 
 permissions:
   contents: read
@@ -30,6 +43,8 @@ jobs:
       GITEE_TOKEN: ${{ secrets.GITEE_RELEASE }}
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      ARTIFACT_SOURCE: ${{ inputs.artifact_source || 'github_release' }}
+      LOCAL_RELEASE_DIR: ${{ inputs.local_release_dir || 'D:/Godot/amadues/dist/release' }}
     steps:
       - name: Validate inputs
         shell: bash
@@ -54,6 +69,15 @@ jobs:
         shell: bash
         run: |
           mkdir -p release-artifacts
+          if [ "$ARTIFACT_SOURCE" = "local_dist" ]; then
+            cp "${LOCAL_RELEASE_DIR}/RootLink-${RELEASE_TAG}-android.apk" release-artifacts/
+            cp "${LOCAL_RELEASE_DIR}/RootLink-${RELEASE_TAG}-windows.zip" release-artifacts/
+            test -s "release-artifacts/RootLink-${RELEASE_TAG}-android.apk"
+            test -s "release-artifacts/RootLink-${RELEASE_TAG}-windows.zip"
+            test "$(find release-artifacts -type f -size +50M | wc -l)" -eq 2
+            exit 0
+          fi
+
           github_api_headers=(
             --header "Authorization: Bearer ${GH_TOKEN}"
             --header "X-GitHub-Api-Version: 2022-11-28"
