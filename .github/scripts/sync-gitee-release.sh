@@ -38,6 +38,14 @@ elif [ "$status" != "200" ]; then
   exit 1
 fi
 
+curl --fail --silent --show-error --request PATCH \
+  --data-urlencode "access_token=${GITEE_TOKEN}" \
+  --data-urlencode "name=${GITEE_REPO}" \
+  --data-urlencode "description=RootLink release mirror. The primary repository is hosted on GitHub." \
+  --data-urlencode "homepage=https://github.com/${GITHUB_REPOSITORY}" \
+  --data-urlencode "private=false" \
+  "$repo_api" > /dev/null
+
 auth="$(printf '%s:%s' "$owner" "$GITEE_TOKEN" | base64 --wrap=0)"
 release_tree="$(git rev-parse "${RELEASE_TAG}^{tree}")"
 release_date="$(git show --no-patch --format=%aI "${RELEASE_TAG}^{commit}")"
