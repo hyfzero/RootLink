@@ -46,6 +46,22 @@ curl --fail --silent --show-error --request PATCH \
   --data-urlencode "private=false" \
   "$repo_api" > /dev/null
 
+for attempt in {1..12}; do
+  repo_json="$(
+    curl --fail --silent --show-error --get \
+      --data-urlencode "access_token=${GITEE_TOKEN}" \
+      "$repo_api"
+  )"
+  if jq --exit-status '.private == false' <<< "$repo_json" > /dev/null; then
+    break
+  fi
+  if [ "$attempt" = "12" ]; then
+    echo "Gitee repository did not become public in time."
+    exit 1
+  fi
+  sleep 5
+done
+
 auth="$(printf '%s:%s' "$owner" "$GITEE_TOKEN" | base64 --wrap=0)"
 release_tree="$(git rev-parse "${RELEASE_TAG}^{tree}")"
 release_date="$(git show --no-patch --format=%aI "${RELEASE_TAG}^{commit}")"
@@ -82,15 +98,28 @@ elif [ "$existing" != "404" ]; then
   exit 1
 fi
 
-release_json="$(
-  curl --fail --silent --show-error \
-    --data-urlencode "access_token=${GITEE_TOKEN}" \
-    --data-urlencode "tag_name=${RELEASE_TAG}" \
-    --data-urlencode "name=RootLink ${RELEASE_TAG}" \
-    --data-urlencode "body=Primary release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}" \
-    --data-urlencode "target_commitish=main" \
-    "${repo_api}/releases"
-)"
+for attempt in {1..6}; do
+  create_status="$(
+    curl --silent --show-error --request POST \
+      --data-urlencode "access_token=${GITEE_TOKEN}" \
+      --data-urlencode "tag_name=${RELEASE_TAG}" \
+      --data-urlencode "name=RootLink ${RELEASE_TAG}" \
+      --data-urlencode "body=Primary release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}" \
+      --data-urlencode "target_commitish=main" \
+      --output created-release.json \
+      --write-out "%{http_code}" \
+      "${repo_api}/releases"
+  )"
+  if [ "$create_status" = "200" ] || [ "$create_status" = "201" ]; then
+    break
+  fi
+  if [ "$attempt" = "6" ]; then
+    echo "Unable to create Gitee release: HTTP ${create_status}"
+    exit 1
+  fi
+  sleep 5
+done
+release_json="$(cat created-release.json)"
 release_id="$(jq --raw-output '.id' <<< "$release_json")"
 test -n "$release_id" && test "$release_id" != "null"
 
