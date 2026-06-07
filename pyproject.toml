@@ -3,6 +3,7 @@ name = "amadues"
 version = "0.1.9"
 description = "Add your description here"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "certifi==2026.2.25",

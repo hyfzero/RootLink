@@ -172,3 +172,7 @@ adb shell monkey -p com.amadues.companion -c android.intent.category.LAUNCHER 1
 - `No module named 'certifi'`：确认 APK 包含 `lib/arm64-v8a/libpythonsitepackages.so`，并确认打包过程中没有设置 `SERIOUS_PYTHON_BUILD_DIST`。
 - 网络中断导致依赖下载失败：重新运行 Flet 打包命令。
 - 上次构建被中断：手动结束指向当前仓库的残留 Flet/Dart 构建进程后重试。
+
+## 开源协议
+
+本项目基于 [MIT License](LICENSE) 开源。
