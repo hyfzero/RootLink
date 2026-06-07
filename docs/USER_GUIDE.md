@@ -1,5 +1,16 @@
 # RootLink 用户指引
 
+## 下载 RootLink
+
+当前稳定版本：`v0.1.9`
+
+| 平台 | 下载与使用 |
+|------|------------|
+| Android | [直接下载 APK](https://github.com/hyfzero/RootLink/releases/download/v0.1.9/RootLink-v0.1.9-android.apk)，支持 Android 9.0 及以上 |
+| Windows | [直接下载 ZIP](https://github.com/hyfzero/RootLink/releases/download/v0.1.9/RootLink-v0.1.9-windows.zip)，下载后解压并运行 `RootLink.exe` |
+
+需要查看更新版本或历史版本时，请前往 [GitHub Releases](https://github.com/hyfzero/RootLink/releases/latest)。
+
 RootLink 是一款运行在 Android 端的 AI 角色陪伴应用。它把角色资料、长期记忆、每日会话、情绪标签、立绘表情和模型配置组织在同一个体验里，让用户可以创建、导入、维护并长期使用自己的角色。
 
 

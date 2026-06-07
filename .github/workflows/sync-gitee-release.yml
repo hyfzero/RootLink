@@ -1,0 +1,69 @@
+name: Sync Gitee Release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      use_workflow_artifacts:
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      GITEE_RELEASE:
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing GitHub release tag to mirror
+        required: true
+        default: v0.1.9
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    name: Mirror to Gitee
+    runs-on: ubuntu-latest
+    env:
+      GITEE_REPO: RootLink
+      GITEE_TOKEN: ${{ secrets.GITEE_RELEASE }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Validate inputs
+        shell: bash
+        run: |
+          test -n "$GITEE_TOKEN" || (echo "Missing GITEE_RELEASE secret" && exit 1)
+          [[ "$RELEASE_TAG" == v* ]] || (echo "Release tag must start with v" && exit 1)
+
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download workflow artifacts
+        if: inputs.use_workflow_artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Download existing GitHub release
+        if: ${{ !inputs.use_workflow_artifacts }}
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          base_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
+          curl --fail --location --retry 3 \
+            --output "release-artifacts/RootLink-${RELEASE_TAG}-android.apk" \
+            "${base_url}/RootLink-${RELEASE_TAG}-android.apk"
+          curl --fail --location --retry 3 \
+            --output "release-artifacts/RootLink-${RELEASE_TAG}-windows.zip" \
+            "${base_url}/RootLink-${RELEASE_TAG}-windows.zip"
+
+      - name: Sync release to Gitee
+        shell: bash
+        run: bash .github/scripts/sync-gitee-release.sh

@@ -2,7 +2,35 @@
 
 RootLink 的正式发布由 `.github/workflows/release-mobile-desktop.yml` 完成。
 推送版本标签后，GitHub Actions 会构建 Windows ZIP 和正式签名 Android APK，
-并把两个文件发布到同一个 GitHub Release。
+把两个文件发布到同一个 GitHub Release，然后同步当前发布提交、标签和安装包到
+Gitee 公开镜像。GitHub 始终是主仓库，日常开发不向 Gitee 推送。
+
+## Gitee 发布镜像
+
+首次启用前，在 [Gitee 私人令牌设置](https://gitee.com/profile/personal_access_tokens)
+创建一个启用 `projects` 权限的令牌，然后在 GitHub 仓库的
+[`Actions secrets`](https://github.com/hyfzero/RootLink/settings/secrets/actions/new)
+中添加 Repository secret：
+
+| 名称 | 内容 |
+|------|------|
+| `GITEE_RELEASE` | Gitee 私人令牌 |
+
+不需要手动创建 Gitee 仓库。首次发布时，workflow 会在令牌所属账号下创建公开的
+`RootLink` 仓库。此后的同步只在版本标签触发，并且必须等待 GitHub Release 发布成功。
+
+Gitee 镜像包含：
+
+- 当前发布提交对应的 `main` 分支
+- 当前版本标签
+- 同版本 Release
+- Windows ZIP 和 Android APK
+
+本地仓库只保留 GitHub `origin`，不要把 Gitee 设置为默认 push 远端。这样普通提交和
+分支仍只进入 GitHub，Gitee 仅保存已经正式发布的版本。
+
+需要补同步已有版本时，在 GitHub Actions 中手动运行 `Sync Gitee Release`，
+输入对应版本标签即可。该流程直接读取现有 GitHub Release，不会重新构建安装包。
 
 本地构建用于提前发现问题，不作为正式发布产物来源。
 
