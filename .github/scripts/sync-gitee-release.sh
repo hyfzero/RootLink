@@ -89,10 +89,12 @@ existing="$(
     "${repo_api}/releases/tags/${RELEASE_TAG}"
 )"
 if [ "$existing" = "200" ]; then
-  release_id="$(jq --raw-output '.id' existing-release.json)"
-  curl --fail --silent --show-error --request DELETE --get \
-    --data-urlencode "access_token=${GITEE_TOKEN}" \
-    "${repo_api}/releases/${release_id}" > /dev/null
+  release_id="$(jq --raw-output '.id // empty' existing-release.json)"
+  if [ -n "$release_id" ]; then
+    curl --fail --silent --show-error --request DELETE --get \
+      --data-urlencode "access_token=${GITEE_TOKEN}" \
+      "${repo_api}/releases/${release_id}" > /dev/null
+  fi
 elif [ "$existing" != "404" ]; then
   echo "Unable to inspect existing Gitee release: HTTP ${existing}"
   exit 1
