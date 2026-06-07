@@ -40,7 +40,7 @@ fi
 
 auth="$(printf '%s:%s' "$owner" "$GITEE_TOKEN" | base64 --wrap=0)"
 release_tree="$(git rev-parse "${RELEASE_TAG}^{tree}")"
-release_date="$(git show --no-patch --format=%aI "$RELEASE_TAG")"
+release_date="$(git show --no-patch --format=%aI "${RELEASE_TAG}^{commit}")"
 snapshot_commit="$(
   printf 'RootLink %s release snapshot\n' "$RELEASE_TAG" |
     GIT_AUTHOR_NAME="RootLink Release" \
