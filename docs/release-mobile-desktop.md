@@ -21,7 +21,7 @@ Gitee 公开镜像。GitHub 始终是主仓库，日常开发不向 Gitee 推送
 
 Gitee 镜像包含：
 
-- 当前发布提交对应的 `main` 分支
+- 当前版本源码快照对应的 `main` 分支，不包含日常开发历史
 - 当前版本标签
 - 同版本 Release
 - Windows ZIP 和 Android APK
