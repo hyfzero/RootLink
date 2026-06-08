@@ -109,7 +109,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_release.
 正式发布统一由 GitHub Actions 生成并签名。完整的版本更新、标签、Release 和产物验证流程见
 [Windows 和 Android 发布流程](docs/release-mobile-desktop.md)。
 
-推送与 `pyproject.toml` 版本一致的标签后，GitHub Actions 会构建这两个文件并放入同一个 GitHub Release。
+推送与 `pyproject.toml` 版本一致的标签后，GitHub Actions 会构建这两个文件并放入同一个 GitHub Release，
+随后同步到阿里云 OSS 国内下载源和 Gitee 备用镜像。
 以下命令中的版本号必须替换为本次 `project.version`：
 
 ```powershell

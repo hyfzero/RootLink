@@ -2,9 +2,59 @@
 
 RootLink 的正式发布由 `.github/workflows/release-mobile-desktop.yml` 完成。
 推送版本标签后，GitHub Actions 会构建 Windows ZIP 和正式签名 Android APK，
-把两个文件发布到同一个 GitHub Release。独立的 Gitee 同步流程随后通过国内
-自托管 runner，同步安装包到 Gitee 公开镜像。
+把两个文件发布到同一个 GitHub Release。独立的阿里云 OSS 和 Gitee 同步流程随后通过国内
+自托管 runner，同步安装包到国内下载源。
 GitHub 始终是主仓库，日常开发不向 Gitee 推送。
+
+## 阿里云 OSS 国内下载源
+
+阿里云 OSS 是国内用户的主下载源。Gitee Release 保留为备用镜像，但 Gitee 附件可能把
+APK 返回为 `application/zip`，手机浏览器可能把文件保存成 `.apk.zip`。OSS 上传时必须显式设置
+APK 的 `Content-Type`，避免这个问题。
+
+首次启用前，创建公开可读或绑定 CDN/自定义域名的 OSS Bucket，并在发布 runner 上安装
+阿里云 `ossutil` 2.0。然后在 GitHub 仓库的
+[`Actions secrets`](https://github.com/hyfzero/RootLink/settings/secrets/actions/new)
+中添加 Repository secrets：
+
+| 名称 | 内容 |
+|------|------|
+| `ALIYUN_OSS_ACCESS_KEY_ID` | 只允许写入发布目录的 AccessKey ID |
+| `ALIYUN_OSS_ACCESS_KEY_SECRET` | 对应 AccessKey Secret |
+| `ALIYUN_OSS_BUCKET` | OSS Bucket 名称 |
+| `ALIYUN_OSS_ENDPOINT` | OSS endpoint，例如 `https://oss-cn-beijing.aliyuncs.com` |
+| `ALIYUN_OSS_REGION` | OSS region，例如 `cn-beijing` |
+| `ALIYUN_OSS_PUBLIC_BASE_URL` | 用户可访问的公开根地址，不带末尾斜杠 |
+
+可选在 GitHub Actions Variables 中设置：
+
+| 名称 | 默认值 | 说明 |
+|------|--------|------|
+| `ALIYUN_OSS_PREFIX` | `releases` | OSS 中保存 Release 产物的目录前缀 |
+
+Release 发布后，`Sync Aliyun OSS Release` 会上传：
+
+```text
+https://rootlink-release.oss-cn-beijing.aliyuncs.com/releases/v0.1.9/RootLink-v0.1.9-android.apk
+https://rootlink-release.oss-cn-beijing.aliyuncs.com/releases/v0.1.9/RootLink-v0.1.9-windows.zip
+```
+
+上传脚本会为 APK 设置：
+
+```text
+Content-Type: application/vnd.android.package-archive
+Content-Disposition: attachment; filename="RootLink-v<version>-android.apk"
+```
+
+Windows ZIP 设置为：
+
+```text
+Content-Type: application/zip
+Content-Disposition: attachment; filename="RootLink-v<version>-windows.zip"
+```
+
+同步完成后脚本会用公开 URL 做 HEAD 校验。APK MIME 或文件名响应头不正确时，workflow 会失败，
+不要把该 OSS 地址写进用户手册。
 
 ## Gitee 发布镜像
 
@@ -173,10 +223,16 @@ git push origin v0.1.10
 3. `Android APK`
 4. `GitHub Release`
 
+GitHub Release 发布成功后，会另外触发两个国内同步 workflow：
+
+- `Sync Aliyun OSS Release`
+- `Sync Gitee Release`
+
 查看运行状态：
 
 ```powershell
 gh run list --workflow release-mobile-desktop.yml --limit 5
+gh run list --workflow sync-aliyun-oss-release.yml --limit 5
 gh run watch <run-id>
 ```
 
@@ -260,6 +316,7 @@ git push origin v0.1.10
 - 标签与 `project.version` 一致
 - Android build number 已递增
 - GitHub Actions 四个 job 全部成功
+- 阿里云 OSS 同步成功，APK 公开 URL 返回正确 `Content-Type`
 - Release 说明为英文
 - Windows ZIP 和 Android APK 均存在
 - APK 包名、版本、正式证书验证通过

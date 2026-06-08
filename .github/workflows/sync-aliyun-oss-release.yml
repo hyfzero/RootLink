@@ -1,0 +1,139 @@
+name: Sync Aliyun OSS Release
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing GitHub release tag to mirror
+        required: true
+        default: v0.1.9
+        type: string
+      artifact_source:
+        description: Source for release artifacts
+        required: true
+        default: auto
+        type: choice
+        options:
+          - auto
+          - github_release
+          - local_dist
+      local_release_dir:
+        description: Directory on the domestic runner used when artifact_source is local_dist
+        required: true
+        default: D:/Godot/amadues/dist/release
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Sync to Aliyun OSS
+    runs-on:
+      - self-hosted
+      - rootlink-release-cn
+    timeout-minutes: 90
+    concurrency:
+      group: aliyun-oss-release-${{ github.event.release.tag_name || inputs.tag }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      ARTIFACT_SOURCE: ${{ inputs.artifact_source || 'auto' }}
+      LOCAL_RELEASE_DIR: ${{ inputs.local_release_dir || 'D:/Godot/amadues/dist/release' }}
+      ALIYUN_OSS_ACCESS_KEY_ID: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_ID }}
+      ALIYUN_OSS_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_SECRET }}
+      ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+      ALIYUN_OSS_ENDPOINT: ${{ secrets.ALIYUN_OSS_ENDPOINT }}
+      ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
+      ALIYUN_OSS_PUBLIC_BASE_URL: ${{ secrets.ALIYUN_OSS_PUBLIC_BASE_URL }}
+      ALIYUN_OSS_PREFIX: ${{ vars.ALIYUN_OSS_PREFIX || 'releases' }}
+    steps:
+      - name: Validate inputs
+        shell: bash
+        run: |
+          test -n "$ALIYUN_OSS_ACCESS_KEY_ID" || (echo "Missing ALIYUN_OSS_ACCESS_KEY_ID secret" && exit 1)
+          test -n "$ALIYUN_OSS_ACCESS_KEY_SECRET" || (echo "Missing ALIYUN_OSS_ACCESS_KEY_SECRET secret" && exit 1)
+          test -n "$ALIYUN_OSS_BUCKET" || (echo "Missing ALIYUN_OSS_BUCKET secret" && exit 1)
+          test -n "$ALIYUN_OSS_ENDPOINT" || (echo "Missing ALIYUN_OSS_ENDPOINT secret" && exit 1)
+          test -n "$ALIYUN_OSS_REGION" || (echo "Missing ALIYUN_OSS_REGION secret" && exit 1)
+          test -n "$ALIYUN_OSS_PUBLIC_BASE_URL" || (echo "Missing ALIYUN_OSS_PUBLIC_BASE_URL secret" && exit 1)
+          [[ "$RELEASE_TAG" == v* ]] || (echo "Release tag must start with v" && exit 1)
+
+      - name: Download sync script
+        shell: bash
+        run: |
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/.github/scripts/sync-aliyun-oss-release.sh?ref=${GITHUB_SHA}" |
+            jq --raw-output '.content' |
+            tr -d '\r\n' |
+            base64 --decode > sync-aliyun-oss-release.sh
+          bash -n sync-aliyun-oss-release.sh
+
+      - name: Check ossutil
+        shell: bash
+        run: |
+          command -v ossutil
+          ossutil version
+
+      - name: Prepare release artifacts
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          local_apk="${LOCAL_RELEASE_DIR}/RootLink-${RELEASE_TAG}-android.apk"
+          local_windows="${LOCAL_RELEASE_DIR}/RootLink-${RELEASE_TAG}-windows.zip"
+          if [ "$ARTIFACT_SOURCE" != "github_release" ] &&
+             [ -s "$local_apk" ] &&
+             [ -s "$local_windows" ]; then
+            cp "$local_apk" release-artifacts/
+            cp "$local_windows" release-artifacts/
+            test -s "release-artifacts/RootLink-${RELEASE_TAG}-android.apk"
+            test -s "release-artifacts/RootLink-${RELEASE_TAG}-windows.zip"
+            test "$(find release-artifacts -type f -size +50M | wc -l)" -eq 2
+            echo "Using release artifacts from ${LOCAL_RELEASE_DIR}"
+            exit 0
+          fi
+          if [ "$ARTIFACT_SOURCE" = "local_dist" ]; then
+            echo "Local release artifacts are missing or invalid in ${LOCAL_RELEASE_DIR}"
+            exit 1
+          fi
+
+          github_api_headers=(
+            --header "Authorization: Bearer ${GH_TOKEN}"
+            --header "X-GitHub-Api-Version: 2022-11-28"
+          )
+          release_json="$(
+            curl --fail --silent --show-error \
+              "${github_api_headers[@]}" \
+              --header "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}"
+          )"
+
+          download_asset() {
+            local name="$1"
+            local asset_url
+            asset_url="$(jq --exit-status --raw-output --arg name "$name" \
+              '.assets[] | select(.name == $name) | .url' <<< "$release_json")"
+            curl --fail --location --retry 8 --retry-all-errors \
+              "${github_api_headers[@]}" \
+              --header "Accept: application/octet-stream" \
+              --output "release-artifacts/${name}" \
+              "$asset_url"
+          }
+
+          download_asset "RootLink-${RELEASE_TAG}-android.apk" &
+          apk_pid=$!
+          download_asset "RootLink-${RELEASE_TAG}-windows.zip" &
+          windows_pid=$!
+          wait "$apk_pid"
+          wait "$windows_pid"
+
+      - name: Sync release to Aliyun OSS
+        shell: bash
+        run: bash sync-aliyun-oss-release.sh

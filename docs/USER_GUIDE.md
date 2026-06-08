@@ -4,12 +4,23 @@
 
 当前稳定版本：`v0.1.9`
 
-| 平台 | 下载与使用 |
-|------|------------|
-| Android | [国内下载 APK](https://gitee.com/hyfzero/RootLink/releases/download/v0.1.9/RootLink-v0.1.9-android.apk)，[GitHub 备用](https://github.com/hyfzero/RootLink/releases/download/v0.1.9/RootLink-v0.1.9-android.apk)，支持 Android 9.0 及以上 |
-| Windows | [国内下载 ZIP](https://gitee.com/hyfzero/RootLink/releases/download/v0.1.9/RootLink-v0.1.9-windows.zip)，[GitHub 备用](https://github.com/hyfzero/RootLink/releases/download/v0.1.9/RootLink-v0.1.9-windows.zip)，下载后解压并运行 `RootLink.exe` |
+请复制下面的网址到浏览器打开。小红书不支持稳定的外部超链接，因此这里不使用 Markdown 超链接。
 
-需要查看更新版本或历史版本时，国内用户优先查看 [Gitee Releases](https://gitee.com/hyfzero/RootLink/releases)，也可以查看 [GitHub Releases](https://github.com/hyfzero/RootLink/releases/latest)。
+下载提示：
+
+- Android 建议使用手机系统默认浏览器下载 APK。测试发现，部分手机端 Edge 会把 APK 保存为 `.apk.zip` 或 `.apk..zip`。
+- 如果遇到文件名异常，优先换系统默认浏览器重新下载；如果已下载，请确认文件名最后只保留 `.apk`。
+- Windows 下载 ZIP 后解压，运行 `RootLink.exe`。
+
+国内用户查看更新版本或历史版本：
+
+https://gitee.com/hyfzero/RootLink/releases
+
+GitHub Releases：
+
+https://github.com/hyfzero/RootLink/releases/latest
+
+Android 支持 Android 9.0 及以上。
 
 RootLink 是一款运行在 Android 端的 AI 角色陪伴应用。它把角色资料、长期记忆、每日会话、情绪标签、立绘表情和模型配置组织在同一个体验里，让用户可以创建、导入、维护并长期使用自己的角色。
 
