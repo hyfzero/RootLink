@@ -1,324 +1,65 @@
-# Windows 和 Android 发布流程
+# Windows 与 Android 发布流程
 
-RootLink 的正式发布由 `.github/workflows/release-mobile-desktop.yml` 完成。
-推送版本标签后，GitHub Actions 会构建 Windows ZIP 和正式签名 Android APK，
-把两个文件发布到同一个 GitHub Release。独立的阿里云 OSS 和 Gitee 同步流程随后通过国内
-自托管 runner，同步安装包到国内下载源。
-GitHub 始终是主仓库，日常开发不向 Gitee 推送。
-
-## 阿里云 OSS 国内下载源
-
-阿里云 OSS 是国内用户的主下载源。Gitee Release 保留为备用镜像，但 Gitee 附件可能把
-APK 返回为 `application/zip`，手机浏览器可能把文件保存成 `.apk.zip`。OSS 上传时必须显式设置
-APK 的 `Content-Type`，避免这个问题。
-
-首次启用前，创建公开可读或绑定 CDN/自定义域名的 OSS Bucket，并在发布 runner 上安装
-阿里云 `ossutil` 2.0。然后在 GitHub 仓库的
-[`Actions secrets`](https://github.com/hyfzero/RootLink/settings/secrets/actions/new)
-中添加 Repository secrets：
-
-| 名称 | 内容 |
-|------|------|
-| `ALIYUN_OSS_ACCESS_KEY_ID` | 只允许写入发布目录的 AccessKey ID |
-| `ALIYUN_OSS_ACCESS_KEY_SECRET` | 对应 AccessKey Secret |
-| `ALIYUN_OSS_BUCKET` | OSS Bucket 名称 |
-| `ALIYUN_OSS_ENDPOINT` | OSS endpoint，例如 `https://oss-cn-beijing.aliyuncs.com` |
-| `ALIYUN_OSS_REGION` | OSS region，例如 `cn-beijing` |
-| `ALIYUN_OSS_PUBLIC_BASE_URL` | 用户可访问的公开根地址，不带末尾斜杠 |
-
-可选在 GitHub Actions Variables 中设置：
-
-| 名称 | 默认值 | 说明 |
-|------|--------|------|
-| `ALIYUN_OSS_PREFIX` | `releases` | OSS 中保存 Release 产物的目录前缀 |
-
-Release 发布后，`Sync Aliyun OSS Release` 会上传：
-
-```text
-https://rootlink-release.oss-cn-beijing.aliyuncs.com/releases/v0.1.9/RootLink-v0.1.9-android.apk
-https://rootlink-release.oss-cn-beijing.aliyuncs.com/releases/v0.1.9/RootLink-v0.1.9-windows.zip
-```
-
-上传脚本会为 APK 设置：
-
-```text
-Content-Type: application/vnd.android.package-archive
-Content-Disposition: attachment; filename="RootLink-v<version>-android.apk"
-```
-
-Windows ZIP 设置为：
-
-```text
-Content-Type: application/zip
-Content-Disposition: attachment; filename="RootLink-v<version>-windows.zip"
-```
-
-同步完成后脚本会用公开 URL 做 HEAD 校验。APK MIME 或文件名响应头不正确时，workflow 会失败，
-不要把该 OSS 地址写进用户手册。
-
-## Gitee 发布镜像
-
-首次启用前，在 [Gitee 私人令牌设置](https://gitee.com/profile/personal_access_tokens)
-创建一个启用 `projects` 权限的令牌，然后在 GitHub 仓库的
-[`Actions secrets`](https://github.com/hyfzero/RootLink/settings/secrets/actions/new)
-中添加 Repository secret：
-
-| 名称 | 内容 |
-|------|------|
-| `GITEE_RELEASE` | Gitee 私人令牌 |
-
-不需要手动创建 Gitee 仓库。首次同步时，workflow 会在令牌所属账号下创建公开的
-`RootLink` 仓库。此后的同步由 GitHub Release 的 `published` 事件触发。
-
-Gitee 附件上传必须使用一台位于国内、带 `rootlink-release-cn` 标签的 GitHub
-self-hosted runner。不要使用 GitHub 托管的美国 runner 直接上传大文件，否则跨境链路
-可能持续数小时。runner 只负责读取已经发布的 GitHub 安装包并上传到 Gitee，不参与日常构建。
-
-在仓库的 `Settings > Actions > Runners` 中添加 runner，按 GitHub 页面给出的命令安装，
-配置时增加标签：
-
-```text
-rootlink-release-cn
-```
-
-Windows runner 需要安装 Git for Windows，确保 Actions 可以使用 `bash`、`curl`
-和 `base64`；同时需要提供 `jq`。Linux runner 需要安装 Bash、curl、base64 和 jq。
-
-Gitee 镜像包含同版本 Release、版本标签、Windows ZIP 和 Android APK。同步任务不会检出
-项目源码，也不会日常同步 Git 分支；Gitee 标签以镜像仓库的 `main` 为目标创建。
-
-本地仓库只保留 GitHub `origin`，不要把 Gitee 设置为默认 push 远端。这样普通提交和
-分支仍只进入 GitHub，Gitee 仅保存已经正式发布的版本。
-
-需要补同步已有版本时，在 GitHub Actions 中手动运行 `Sync Gitee Release`，
-输入对应版本标签即可。该流程直接读取现有 GitHub Release，不会重新构建安装包。
-如果国内 runner 暂时离线，GitHub Release 仍会正常完成，Gitee 同步任务会排队等待，
-不会阻塞主发布流程。
-
-如果现有 GitHub Release 产物从国内下载过慢，并且发布机本地 `dist/release` 已保留同版本
-正式产物，`Sync Gitee Release` 会默认优先使用这些文件。这条快速路径只读取国内 runner
-本机文件，然后上传到 Gitee Release；本地文件不存在时才回退到 GitHub 官方 Release 下载。
-手动运行时可以用 `artifact_source` 强制选择 `local_dist` 或 `github_release`。
-
-本地构建用于提前发现问题，不作为正式发布产物来源。
+正式发布由 `.github/workflows/release-mobile-desktop.yml` 完成。版本标签会触发 Flutter 格式检查、静态分析、全部测试、Windows Release、签名 Android APK 和 GitHub Release。阿里云 OSS 与 Gitee 镜像工作流继续消费 GitHub Release 产物。
 
 ## 固定配置
 
-- 应用入口：`main.py`
-- 产品名和 artifact：`RootLink`
+- Flutter：`3.41.4`
+- 产品名与 artifact：`RootLink`
 - Android 包名：`com.amadues.companion`
-- 版本号：`pyproject.toml` 中的 `project.version`
-- Android build number：`pyproject.toml` 中的 `tool.flet.build_number`
-- 正式签名文件：`C:\Users\YY\.rootlink\signing\rootlink-release.jks`
-- 正式发布 workflow：`Release Windows and Android`
+- 版本和 build number：`pubspec.yaml` 的 `version: <semver>+<number>`
+- 发布 workflow：`Release Windows and Android`
 
-`project.version` 使用语义化版本。每次 Android 发布时，
-`tool.flet.build_number` 必须严格递增。
+Android build number 每次发布必须递增；正式 APK 必须使用旧版本同一份 keystore。
 
-## 一次性签名配置
-
-正式 keystore 已经创建并配置到 GitHub。日常发布不得重新生成证书，
-否则新 APK 无法覆盖安装旧版本。
-
-本地签名目录需要单独备份：
-
-```text
-C:\Users\YY\.rootlink\signing\
-```
-
-仓库的 GitHub Actions Secrets 必须包含：
+## GitHub 签名 Secrets
 
 - `ANDROID_KEYSTORE_BASE64`
 - `ANDROID_KEYSTORE_PASSWORD`
 - `ANDROID_KEY_PASSWORD`
 - `ANDROID_KEY_ALIAS`
 
-只检查 Secrets 名称，不读取值：
+密钥、密码和 Base64 内容不得提交到 Git、Release 或构建日志。
+
+## 发布步骤
+
+1. 修改 `pubspec.yaml`，例如 `version: 0.2.1+115`。
+2. 运行 `dart format --output=none --set-exit-if-changed lib test`、`flutter analyze` 和 `flutter test`。
+3. 使用 `scripts/build_release.ps1` 完成本地 Windows/Android Release 验证。
+4. 在旧 APK 上执行真实覆盖升级测试，并用旧 Windows 数据快照验证迁移。
+5. 提交后创建与版本一致的标签：
 
 ```powershell
-gh secret list
-```
-
-`*.jks`、密码、Base64 私钥内容不得提交到 Git、Release 或日志。只有在首次创建
-全新应用签名时才使用 `scripts/prepare_android_signing.ps1`。该脚本会安全提示输入密码，
-不会显示密码或私钥 Base64。
-
-## 1. 更新版本
-
-修改 `pyproject.toml`：
-
-```toml
-[project]
-version = "0.1.10"
-
-[tool.flet]
-build_number = 114
-```
-
-检查版本和工作区：
-
-```powershell
-git status --short --branch
-git diff -- pyproject.toml
-```
-
-## 2. 本地验证
-
-始终使用仓库中的 `.venv`：
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q
-```
-
-同时构建 Windows 和 Android 测试产物：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_release.ps1
-```
-
-也可以只构建其中一个：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_release.ps1 -Targets windows
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_release.ps1 -Targets apk
-```
-
-本地产物位于 `dist/release/`。本地 APK 不替代 GitHub Actions 生成的正式签名 APK。
-
-连接手机后做冒烟测试：
-
-```powershell
-adb devices -l
-adb install -r .\dist\release\RootLink-v0.1.10-android.apk
-adb shell monkey -p com.amadues.companion -c android.intent.category.LAUNCHER 1
-```
-
-至少检查启动、API 设置、主界面和一次模型请求。
-
-## 3. 提交并创建标签
-
-先提交版本和本次发布内容，再推送 `main`：
-
-```powershell
-git add <本次修改的文件>
-git commit -m "release: prepare v0.1.10"
+git tag -a v0.2.1 -m "RootLink v0.2.1"
 git push origin main
+git push origin v0.2.1
 ```
 
-标签必须与 `project.version` 完全一致，格式为 `v<version>`：
+标签必须等于 `v<pubspec semver>`。已公开的标签不得移动或复用。
 
-```powershell
-git tag -a v0.1.10 -m "RootLink v0.1.10"
-git push origin v0.1.10
-```
+## 产物验证
 
-不要在已公开的 Release 上移动或复用标签。发布后需要修复时，递增补丁版本并创建新标签。
+Release 应包含：
 
-## 4. 检查 GitHub Actions
+- `RootLink-v<version>-windows.zip`
+- `RootLink-v<version>-android.apk`
 
-标签推送后，workflow 会依次执行：
+Windows ZIP 解压后启动 `RootLink.exe`。Android 使用 `aapt dump badging` 与 `apksigner verify --print-certs` 检查包名、versionName、versionCode 和正式证书，再执行 `adb install -r` 覆盖测试。
 
-1. `Read release version`
-2. `Windows`
-3. `Android APK`
-4. `GitHub Release`
+## 国内镜像
 
-GitHub Release 发布成功后，会另外触发两个国内同步 workflow：
+GitHub 是主仓库。`Sync Aliyun OSS Release` 把 APK 设为 `application/vnd.android.package-archive`、Windows ZIP 设为 `application/zip`，并通过公开 URL 做响应头检查。`Sync Gitee Release` 由带 `rootlink-release-cn` 标签的国内 self-hosted runner 上传同版本附件；它不参与日常构建，也不镜像开发分支。
 
-- `Sync Aliyun OSS Release`
-- `Sync Gitee Release`
+需要补同步已有版本时，在 Actions 中手动运行对应同步 workflow。国内 runner 暂时离线不会阻塞 GitHub 主发布。
 
-查看运行状态：
+## 旧实现清理门槛
 
-```powershell
-gh run list --workflow release-mobile-desktop.yml --limit 5
-gh run list --workflow sync-aliyun-oss-release.yml --limit 5
-gh run watch <run-id>
-```
+以下条件必须全部满足后，才允许一次性删除 Python/Flet 源码、测试和旧构建配置：
 
-四个 job 全部成功后，Release 应包含：
+- Flutter 数据兼容、Provider、Agent、角色包与 UI 测试全部通过。
+- Windows Release 与正式签名 Android Release 均成功。
+- Android 真实覆盖升级验证角色、聊天、设置、记忆和资源无损。
+- Windows 旧目录快照迁移通过。
+- 新旧 `.amadues` 双向导入验证通过。
 
-- `RootLink-v0.1.10-windows.zip`
-- `RootLink-v0.1.10-android.apk`
-
-Release 标题和说明统一使用英文，避免客户端或终端编码导致乱码。
-
-## 5. 验证正式产物
-
-下载 Release 产物：
-
-```powershell
-gh release download v0.1.10 --dir .\dist\verify\v0.1.10
-```
-
-验证 APK 包名、版本和签名：
-
-```powershell
-aapt dump badging .\dist\verify\v0.1.10\RootLink-v0.1.10-android.apk
-apksigner verify --verbose --print-certs .\dist\verify\v0.1.10\RootLink-v0.1.10-android.apk
-```
-
-确认以下结果：
-
-- 包名是 `com.amadues.companion`
-- `versionName` 等于本次 `project.version`
-- `versionCode` 等于本次 `tool.flet.build_number`
-- APK 签名有效
-- 证书不是 `CN=Android Debug`
-- 证书 SHA-256 与正式证书记录一致
-
-在已安装正式版本的手机上覆盖安装，用于验证后续升级能力：
-
-```powershell
-adb install -r .\dist\verify\v0.1.10\RootLink-v0.1.10-android.apk
-adb shell monkey -p com.amadues.companion -c android.intent.category.LAUNCHER 1
-```
-
-解压 Windows ZIP，启动 `RootLink.exe`，确认程序可以进入主界面。
-
-## 常见失败
-
-### 缺少 Android signing Secrets
-
-确认四个 Secrets 都存在，然后重新运行失败的 job。不要生成新 keystore。
-
-```powershell
-gh secret list
-gh run rerun <run-id> --failed
-```
-
-### 标签与版本不一致
-
-workflow 要求标签等于 `v<project.version>`。如果 Release 尚未公开，可以修正版本并重建标签；
-如果已经公开，发布新的补丁版本，不移动旧标签。
-
-### GitHub 连接超时
-
-这是到 `github.com:443` 的网络问题，不是 Git 分支问题。确认代理或网络恢复后重试：
-
-```powershell
-git push origin main
-git push origin v0.1.10
-```
-
-### APK 无法覆盖安装
-
-先用 `apksigner` 比较新旧 APK 的证书 SHA-256。签名不同只能卸载旧应用，
-会清除本地数据。正式版本必须始终使用同一份 keystore。
-
-### 正式 keystore 丢失
-
-从离线备份恢复。没有原 keystore 就无法为现有安装用户提供可覆盖升级的 APK。
-
-## 发布完成清单
-
-- `main` 已推送，工作区干净
-- 标签与 `project.version` 一致
-- Android build number 已递增
-- GitHub Actions 四个 job 全部成功
-- 阿里云 OSS 同步成功，APK 公开 URL 返回正确 `Content-Type`
-- Release 说明为英文
-- Windows ZIP 和 Android APK 均存在
-- APK 包名、版本、正式证书验证通过
-- 手机覆盖安装和启动通过
-- Windows 解压启动通过
+任一门槛未完成时，旧实现继续作为行为基线保留。

@@ -1,6 +1,5 @@
 # Godot 4+ specific ignores
 .godot/
-/android/
 
 # Local build output and signing material
 /build/
@@ -22,3 +21,10 @@ __pycache__/
 
 # Temporary Android verification screenshots
 /android-*.png
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.idea/
+*.iml
+android/key.properties
+android/app/release.jks

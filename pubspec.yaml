@@ -1,0 +1,38 @@
+name: rootlink
+description: A private, local-first AI companion for Windows and Android.
+publish_to: none
+version: 0.2.0+114
+
+environment:
+  sdk: ">=3.11.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.6.1
+  http: ^1.6.0
+  path: ^1.9.1
+  path_provider: ^2.1.6
+  file_selector: ^1.1.0
+  share_plus: ^13.3.0
+  archive: ^4.2.0
+  crypto: ^3.0.7
+  image: ^4.9.2
+  uuid: ^4.5.2
+  intl: ^0.20.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - resource/key/
+    - resource/key/assets/
+    - resource/key/assets/portraits/
+    - resource/key/assets/portrait_sources/
+    - resource/key/persona/
+    - resource/key/tags/
+    - assets/icon.png
