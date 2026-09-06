@@ -263,6 +263,8 @@ class SessionManager:
         self,
         user_message: str,
         emotion: Optional[str] = None,
+        *,
+        allow_sync_fallback: bool = True,
     ) -> Iterator[dict]:
         """同步生成器版本的消息发送，逐步产出流式事件。
 
@@ -325,7 +327,7 @@ class SessionManager:
                     for delta in self._iter_simulated_deltas(assistant_content):
                         yield {"type": "delta", "delta": delta}
             except Exception as stream_error:
-                if assistant_content:
+                if assistant_content or not allow_sync_fallback:
                     yield {"type": "error", "error": str(stream_error)}
                     return
                 response = self._call_api_sync(system_prompt, context)

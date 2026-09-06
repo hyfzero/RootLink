@@ -1,0 +1,42 @@
+{
+  "version": "1.0",
+  "default_provider": "qwen",
+  "default_model": "qwen-plus",
+  "providers": {
+    "qwen": {
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "api_type": "openai",
+      "auth_header": true,
+      "api_key": "",
+      "headers": {}
+    },
+    "deepseek": {
+      "base_url": "https://api.deepseek.com",
+      "api_type": "openai",
+      "auth_header": true,
+      "api_key": "",
+      "headers": {}
+    },
+    "glm": {
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "api_type": "openai",
+      "auth_header": true,
+      "api_key": "",
+      "headers": {}
+    },
+    "moonshot": {
+      "base_url": "https://api.moonshot.cn/v1",
+      "api_type": "openai",
+      "auth_header": true,
+      "api_key": "",
+      "headers": {}
+    },
+    "minimax": {
+      "base_url": "https://api.minimaxi.com/v1",
+      "api_type": "openai",
+      "auth_header": true,
+      "api_key": "",
+      "headers": {}
+    }
+  }
+}

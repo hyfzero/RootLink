@@ -128,16 +128,29 @@ class ChatAgent:
         )
         yield from self._iter_stream(request)
 
+    def _request_headers(self) -> dict[str, str]:
+        headers = self.adapter.build_headers(self.config)
+        if not hasattr(self, "extra_headers"):
+            return headers
+        # Match the embedded transport: header names are case insensitive and
+        # the resolved API key takes precedence over a stale custom bearer value.
+        defaults = {key.lower(): value for key, value in headers.items()}
+        headers = {key.lower(): value for key, value in self.extra_headers.items()}
+        if not getattr(self, "auth_header", True):
+            defaults.pop("authorization", None)
+        headers.update(defaults)
+        return headers
+
     def _send(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         """发送同步请求。"""
-        url = f"{self.config.resolved_base_url}/chat/completions"
+        url = self.config.resolved_base_url.rstrip("/") + getattr(self, "chat_path", "/chat/completions")
 
-        headers = self.adapter.build_headers(self.config)
+        headers = self._request_headers()
         data = self.adapter.build_request(request, self.config)
 
         logger.debug(f"Request to {url}: {json.dumps(data, ensure_ascii=False)[:500]}")
 
-        response = requests.post(url, headers=headers, json=data, timeout=60)
+        response = requests.post(url, headers=headers, json=data, timeout=getattr(self, "request_timeout", 60))
         response.raise_for_status()
 
         response_data = response.json()
@@ -201,16 +214,17 @@ class ChatAgent:
 
     def _iter_stream(self, request: ChatCompletionRequest) -> Iterator[StreamChunk]:
         """发送流式请求并逐个产出解析后的增量块。"""
-        url = f"{self.config.resolved_base_url}/chat/completions"
+        url = self.config.resolved_base_url.rstrip("/") + getattr(self, "chat_path", "/chat/completions")
 
-        headers = self.adapter.build_headers(self.config)
+        headers = self._request_headers()
         data = self.adapter.build_request(request, self.config)
 
         logger.debug(f"Streaming request to {url}")
 
-        with requests.post(url, headers=headers, json=data, stream=True, timeout=120) as response:
+        with requests.post(url, headers=headers, json=data, stream=True, timeout=getattr(self, "request_timeout", 120)) as response:
             response.raise_for_status()
             accumulated_content = ""
+            completed = False
 
             for line in response.iter_lines():
                 if not line:
@@ -221,6 +235,7 @@ class ChatAgent:
                     line_text = line_text[5:].strip()
 
                 if line_text == "[DONE]":
+                    completed = True
                     break
 
                 try:
@@ -240,7 +255,10 @@ class ChatAgent:
                 yield chunk
 
                 if chunk.is_complete:
+                    completed = True
                     break
+            if getattr(self, "require_complete_stream", False) and not completed:
+                raise RuntimeError("incomplete stream")
 
     @property
     def provider(self) -> APIProvider:
