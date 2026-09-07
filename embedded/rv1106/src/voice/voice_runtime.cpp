@@ -107,9 +107,15 @@ audio::Status VoiceRuntime::run(std::chrono::milliseconds duration,
         ++stats_.authentication_errors;
       else if (status.code() == audio::AudioError::kProviderError)
         ++stats_.provider_errors;
-      setState(VoiceState::kError);
+      // ASR/TTS failures leave the resident personality core usable. A failed
+      // Python exchange terminates that process and must never be replayed.
+      const bool terminal = isFatal(status) ||
+          (config_.persona_backend == "python" && state_ == VoiceState::kThinking);
+      status = {status.code(), std::string("stage=") + voiceStateName(state_) +
+          (terminal ? " action=exit: " : " action=skip_turn_resume_listening: ") + status.message()};
       if (observer_.on_error) observer_.on_error(status);
-      if (isFatal(status) || config_.persona_backend == "python") break;
+      if (terminal) { setState(VoiceState::kError); break; }
+      status = audio::Status::okStatus();
     }
     if (should_stop()) break;
     // ALSA 停止后重新 prepare 能丢弃处理期间的旧采集数据；仿真后端也会重置节拍。
@@ -118,16 +124,18 @@ audio::Status VoiceRuntime::run(std::chrono::milliseconds duration,
     if (!status.ok()) break;
     setState(VoiceState::kListening);
   }
-  setState(VoiceState::kStopping);
+  const bool normal_stop = state_ != VoiceState::kError &&
+      (status.ok() || status.code() == audio::AudioError::kInterrupted ||
+       status.code() == audio::AudioError::kCancelled ||
+       ((status.code() == audio::AudioError::kTimeout || status.code() == audio::AudioError::kClosed) && should_stop()));
+  setState(normal_stop ? VoiceState::kStopping : VoiceState::kError);
   const audio::Status capture_stop = capture_.stop();
   (void)playback_.stop();
   buffer_.close();
   stats_.buffer = buffer_.stats();
   stats_.vad = segmenter_.stats();
-  setState(VoiceState::kIdle);
-  if (status.ok() || status.code() == audio::AudioError::kInterrupted ||
-      status.code() == audio::AudioError::kCancelled ||
-      ((status.code() == audio::AudioError::kTimeout || status.code() == audio::AudioError::kClosed) && should_stop()))
+  setState(normal_stop && capture_stop.ok() ? VoiceState::kIdle : VoiceState::kError);
+  if (normal_stop)
     return capture_stop.ok() ? audio::Status::okStatus() : capture_stop;
   return status;
 }

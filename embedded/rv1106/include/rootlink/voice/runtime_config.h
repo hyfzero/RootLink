@@ -47,6 +47,7 @@ struct RuntimeConfig {
   std::string persona_backend{"simple"};
   std::string ui_backend{"none"};
   std::string ui_device{"/dev/fb0"};
+  std::string ui_input_device; // optional Linux evdev touchscreen, e.g. /dev/input/event0
   unsigned ui_width{320};
   unsigned ui_height{240};
   std::string python_executable;

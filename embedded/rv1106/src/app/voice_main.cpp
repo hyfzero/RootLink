@@ -504,24 +504,43 @@ int main(int argc, char** argv) {
     if (!started.ok()) { std::cerr << started.message() << '\n'; return 1; }
     std::atomic<bool> finished{false};
     int result = 1;
-    std::thread worker([&] {
+    auto run_worker = [&] {
       result = safeRun(argc, argv);
       if (result != 0) g_display_state.publish(rootlink::voice::VoiceState::kError);
       finished.store(true);
-    });
+    };
+    std::thread worker(run_worker);
+    bool resetting = false;
     try {
-      // Failed runs remain visible until the user closes the window or signals exit.
+      // Never join a running worker on a tap: keep servicing the display while
+      // cooperative cancellation closes requests, audio and the Python process.
       while (view.tick(g_display_state.read())) {
-        if (g_stopped || (finished.load() && result == 0)) break;
+        if (g_stopped) break;
+        if (view.takeResetRequest() && !resetting) {
+          resetting = true;
+          g_ui_stopped.store(true);
+          std::cout << "reset=requested; cancelling current turn without replay\n";
+        }
+        if (finished.load()) {
+          if (resetting) {
+            worker.join(); // old providers and audio have now been destroyed
+            g_display_state.reset();
+            g_ui_stopped.store(false);
+            finished.store(false);
+            resetting = false;
+            std::cout << "reset=ready; restarting voice runtime\n";
+            worker = std::thread(run_worker);
+          } else if (result == 0) break;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
       }
     } catch (...) {
       g_ui_stopped.store(true);
-      worker.join();
+      if (worker.joinable()) worker.join();
       throw;
     }
     g_ui_stopped.store(true);
-    worker.join();
+    if (worker.joinable()) worker.join();
     return result;
   } catch (...) {
     std::cerr << "Cannot initialize or run UI resources\n";

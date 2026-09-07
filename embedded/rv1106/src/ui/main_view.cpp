@@ -9,6 +9,7 @@
 #else
 #include <fcntl.h>
 #include <linux/fb.h>
+#include <linux/input.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -20,6 +21,7 @@ using audio::Status;
 using audio::AudioError;
 struct MainView::Impl {
   std::atomic<bool> closed{false};
+  std::atomic<bool> reset_requested{false};
   bool initialized{false};
 #if defined(ROOTLINK_UI_ENABLED)
   lv_display_t* display{nullptr};
@@ -28,6 +30,8 @@ struct MainView::Impl {
   DisplayState shown{DisplayState::Error};
 #if !ROOTLINK_LV_SDL
   int fd{-1};
+  int input_fd{-1};
+  bool touch_down{false};
   void* mapped{MAP_FAILED};
   fb_fix_screeninfo fixed{};
   fb_var_screeninfo variable{};
@@ -58,6 +62,7 @@ MainView::~MainView() {
 #else
   if (impl_->mapped != MAP_FAILED) munmap(impl_->mapped, impl_->fixed.smem_len);
   if (impl_->fd >= 0) close(impl_->fd);
+  if (impl_->input_fd >= 0) close(impl_->input_fd);
 #endif
 #endif
 }
@@ -77,6 +82,9 @@ Status MainView::initialize(const voice::RuntimeConfig& config) {
   if (SDL_Init(SDL_INIT_VIDEO) != 0) return {AudioError::kIoError, "Cannot initialize SDL display"};
   // Intercept close before LVGL's SDL driver deinitializes or exits the process.
   SDL_SetEventFilter([](void* data, SDL_Event* event) -> int {
+    if ((event->type == SDL_MOUSEBUTTONUP && event->button.button == SDL_BUTTON_LEFT) ||
+        event->type == SDL_FINGERUP)
+      static_cast<Impl*>(data)->reset_requested = true;
     if (event->type == SDL_QUIT || (event->type == SDL_WINDOWEVENT &&
                                   event->window.event == SDL_WINDOWEVENT_CLOSE)) {
       static_cast<Impl*>(data)->closed = true;
@@ -86,6 +94,11 @@ Status MainView::initialize(const voice::RuntimeConfig& config) {
   }, impl_.get());
   impl_->display = lv_sdl_window_create(config.ui_width, config.ui_height);
 #else
+  if (!config.ui_input_device.empty()) {
+    impl_->input_fd = open(config.ui_input_device.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if (impl_->input_fd < 0)
+      return {AudioError::kIoError, "Cannot open UI_INPUT_DEVICE touchscreen"};
+  }
   impl_->fd = open(config.ui_device.c_str(), O_RDWR | O_CLOEXEC);
   auto& v = impl_->variable;
   auto& f = impl_->fixed;
@@ -149,6 +162,17 @@ Status MainView::initialize(const voice::RuntimeConfig& config) {
 bool MainView::tick(DisplayState state) {
 #if defined(ROOTLINK_UI_ENABLED)
   if (impl_->closed) return false;
+#if !ROOTLINK_LV_SDL
+  // Only a whole-screen tap is needed; no coordinate calibration or LVGL pointer.
+  input_event event{};
+  for (int n = 0; n < 256 && impl_->input_fd >= 0 &&
+       read(impl_->input_fd, &event, sizeof(event)) == sizeof(event); ++n) {
+    if (event.type == EV_KEY && event.code == BTN_TOUCH) {
+      if (event.value == 0 && impl_->touch_down) impl_->reset_requested = true;
+      impl_->touch_down = event.value != 0;
+    }
+  }
+#endif
   if (state != impl_->shown) {
     impl_->shown = state;
     const bool mark = state == DisplayState::Idle || state == DisplayState::Error;
@@ -171,4 +195,5 @@ bool MainView::tick(DisplayState state) {
 #endif
   return !impl_->closed;
 }
+bool MainView::takeResetRequest() { return impl_->reset_requested.exchange(false); }
 }

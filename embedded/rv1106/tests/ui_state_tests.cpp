@@ -20,5 +20,9 @@ int main() {
   states.publish(VoiceState::kStopping);
   states.publish(VoiceState::kIdle);
   if (states.read() != DisplayState::Error) return 2;
+  states.reset();
+  if (states.read() != DisplayState::Idle) return 3;
+  states.publish(VoiceState::kListening);
+  if (states.read() != DisplayState::Listening) return 4;
   std::cout << "UI mapping, transitions and error latch passed\n";
 }

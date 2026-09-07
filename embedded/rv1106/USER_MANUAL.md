@@ -143,8 +143,9 @@ SECRETS_FILE=config/rootlink-secrets.env
 ASR_PROVIDER=dashscope
 ASR_MODEL=qwen3-asr-flash
 ASR_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-LLM_PROVIDER=qwen
-LLM_MODEL=qwen-plus
+LLM_PROVIDER=deepseek
+LLM_MODEL=deepseek-v4-flash
+LLM_BASE_URL=https://api.deepseek.com
 TTS_PROVIDER=dashscope
 TTS_MODEL=cosyvoice-v3-flash
 TTS_VOICE=longxiaochun_v3
@@ -196,6 +197,8 @@ cd /mnt/d/linux_test/AmaduesBot/RootLink/embedded/rv1106
 
 当前 WSL 配置与新建配置模板默认使用 `characters/kurisu_amadeus` 人格及其预置记忆，配套女声为 `longxiaochun_v3`。首次启动会在 `build/windows-cloud/kurisu-canon-python-data` 初始化数据；后续启动恢复这里的会话。旧人格数据目录保留，不自动合并。更换人格无需重新编译。
 
+当前默认对话 LLM 为 DeepSeek Flash（`deepseek-v4-flash`），使用 `config/rootlink-secrets.env` 中的 `DEEPSEEK_API_KEY`；ASR 和 TTS 仍使用 `DASHSCOPE_API_KEY`，两个密钥均需配置。按照 [DeepSeek 官方说明](https://api-docs.deepseek.com/guides/thinking_mode/)，该模型默认启用思考模式；本配置沿用服务端默认模式。修改模型后重启程序即可，无须重新编译，也不需要清除人格历史。单独的 `windows-kurisu.conf.example` 仍是 Qwen 组合示例。
+
 也可以使用便捷启动脚本：
 
 ```sh
@@ -210,7 +213,21 @@ sh scripts/run-wsl-ui.sh
 | `....` | 正在识别、生成回答或合成语音 |
 | `！` | 正在播放回答 |
 | `—` | 初始化、空闲或正常停止 |
-| `×` | 发生故障；保留到关闭窗口 |
+| `×` | 发生故障；点击屏幕重置，或关闭窗口 |
+
+**点击窗口或轻触屏幕任意位置后松开，可以重置语音运行状态。** 正常收音、思考、播放中及故障时均可使用。程序先取消当前操作并释放声卡、Python 子进程，再重新加载运行配置、恢复已保存的人格数据并收音。取消期间窗口继续响应，重复点击合并处理；不会删除记忆，也不会自动重发失败的消息。已生成并保存、但尚未播放的回答仍可能留在历史中。
+
+ASR 或 TTS 超时、临时网络错误会跳过当前轮，自动恢复 `？`；日志标注失败阶段和 `action=skip_turn_resume_listening`。Python 人格处理失败、密钥或设备错误会停在 `×`，点击重置后再试。持续配置错误需要先修改配置文件，再点击重置。关闭窗口或 Ctrl+C 始终用于退出。
+
+WSL 的 SDL 窗口直接支持鼠标左键点击。嵌入式 framebuffer 还需在运行配置中指定触摸输入节点，例如参考 DeskBot 的配置：
+
+```ini
+UI_BACKEND=fbdev
+UI_DEVICE=/dev/fb0
+UI_INPUT_DEVICE=/dev/input/event0
+```
+
+实际节点以板上的 `/proc/bus/input/devices` 为准，需要可读权限及 `BTN_TOUCH` 按下/松开事件。只配置 `/dev/fb0` 只能显示，不能接收点击；`UI_INPUT_DEVICE` 留空则不启用板端触摸重置。配置了不存在或无权限的节点会直接报告初始化错误。实板触摸与驱动异常恢复仍需在设备上验证。
 
 关闭窗口或 Ctrl+C 退出。真实 `voice`、`chat`、`transcribe`、`synthesize` 会调用对应云服务；对话还会更新人格数据。
 

@@ -23,6 +23,8 @@ class StateMailbox {
     if (state_.load() != DisplayState::Error) state_.store(displayState(state));
   }
   DisplayState read() const noexcept { return state_.load(); }
+  // Only call after the old producer has been joined.
+  void reset() noexcept { state_.store(DisplayState::Idle); }
  private:
   std::atomic<DisplayState> state_{DisplayState::Idle};
 };
@@ -34,6 +36,7 @@ class MainView {
   ~MainView();
   audio::Status initialize(const voice::RuntimeConfig& config);
   bool tick(DisplayState state); // false: window closed
+  bool takeResetRequest(); // coalesces clicks; does not touch voice resources
  private:
   struct Impl;
   std::unique_ptr<Impl> impl_;

@@ -102,7 +102,7 @@ void overrideFromEnvironment(Values& values) {
   // 因调试输出整个配置表而意外泄露。
   static constexpr const char* keys[] = {
       "TARGET", "AUDIO_API", "SERVICE_MODE", "CAPTURE_DEVICE", "PLAYBACK_DEVICE",
-      "UI_BACKEND", "UI_DEVICE", "UI_WIDTH", "UI_HEIGHT",
+      "UI_BACKEND", "UI_DEVICE", "UI_INPUT_DEVICE", "UI_WIDTH", "UI_HEIGHT",
       "BUFFER_FRAMES", "ASR_PROVIDER", "ASR_MODEL", "ASR_BASE_URL", "LLM_PROVIDER",
       "LLM_MODEL", "LLM_BASE_URL", "TTS_PROVIDER", "TTS_MODEL", "TTS_BASE_URL",
       "TTS_VOICE", "TTS_SAMPLE_RATE", "MODELS_FILE", "SECRETS_FILE", "ROLE_DIR",
@@ -237,6 +237,7 @@ audio::Result<RuntimeConfig> loadRuntimeConfig(const std::string& path) {
   RuntimeConfig config;
   stringValue(values, "UI_BACKEND", config.ui_backend);
   stringValue(values, "UI_DEVICE", config.ui_device);
+  stringValue(values, "UI_INPUT_DEVICE", config.ui_input_device);
   stringValue(values, "PERSONA_BACKEND", config.persona_backend);
   stringValue(values, "PYTHON_EXECUTABLE", config.python_executable);
   stringValue(values, "PYTHON_CORE_ENTRY", config.python_core_entry);

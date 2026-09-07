@@ -1,5 +1,13 @@
 # Python 核心、语音与 LVGL 验证记录
 
+## 2026-09-07：超时恢复与点击重置
+
+WSL `build/ubuntu` 完成重新编译，离线测试 **6/6** 通过。新增模拟 ASR/TTS 超时后完成下一轮对话的测试，检查无重复 LLM 消息、无第二份 Python 历史、无误锁存 Error；Python 处理超时仍停止且不重放。SDL dummy 驱动测试覆盖五种状态下点击、重复事件合并，以及真实应用主循环中三次故障→点击→重建工作线程→故障→关闭窗口。
+
+无界面 `build/simulator-simulated-mock` 回归 **5/5** 通过，包括完整 mock CLI 与信号退出。`file` 验证新 Ubuntu 程序为 x86-64，framebuffer 程序为 ARM32 EABI5、加载器 `/lib/ld-uClibc.so.0`。
+
+ARM framebuffer 程序已重新交叉编译至 `build/rv1106-alsa-cloud-fbdev/rootlink-voice`，包含可配置 evdev 触摸输入。尚未在实板验证触摸节点、驱动异常、连续重置及音频资源恢复，也未重新调用付费云服务进行真实语音验收。下文的部署归档及哈希是 2026-09-06 的历史产物，不包含本次重置改动。
+
 日期：2026-09-06。环境：Windows / WSL、项目 .venv、C++17 Release；参考 DeskBot 的 LVGL 9.2.3 开发版本。实板未参与本轮验收。
 
 ## 已通过

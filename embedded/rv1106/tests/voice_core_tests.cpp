@@ -212,7 +212,7 @@ void testRolePromptAndSession() {
 
 class FakeCapture final : public rootlink::audio::AudioCapture {
  public:
-  Status start() override { running = true; ++starts; return start_status; }
+  Status start() override { running = true; ++starts; if (repeat) reads = 0; return start_status; }
   Status readFrame(std::vector<std::int16_t>& output, std::chrono::milliseconds) override {
     ++reads;
     if (reads <= 20) output = frame(0);
@@ -225,6 +225,7 @@ class FakeCapture final : public rootlink::audio::AudioCapture {
   AudioDeviceStats stats() const noexcept override { return {}; }
   int starts{0}; int stops{0}; int reads{0}; bool running{false};
   Status start_status;
+  bool repeat{false};
 };
 
 class FakePlayback final : public rootlink::audio::AudioPlayback {
@@ -289,6 +290,65 @@ class FailingTts final : public rootlink::voice::TtsProvider {
   }
   void cancel() noexcept override {}
 };
+
+void testPythonStageRecovery() {
+  using namespace rootlink::voice;
+  using rootlink::audio::Result;
+  struct Asr : AsrProvider {
+    int calls{0}; bool fail{false};
+    Result<std::string> transcribe(const std::vector<std::int16_t>&, const StopRequested&) override {
+      if (++calls == 1 && fail) return Result<std::string>(Status(AudioError::kTimeout, "injected ASR timeout"));
+      return Result<std::string>(std::string("utterance-") + std::to_string(calls));
+    }
+    void cancel() noexcept override {}
+  };
+  struct Llm : LlmProvider {
+    std::vector<std::string> inputs; bool fail{false};
+    Result<std::string> complete(const std::vector<ChatMessage>& messages,
+                                const TextDelta&, const StopRequested&) override {
+      inputs.push_back(messages.back().content);
+      if (fail) return Result<std::string>(Status(AudioError::kTimeout, "injected Python timeout"));
+      return Result<std::string>(std::string("answer"));
+    }
+    void cancel() noexcept override {}
+  };
+  struct Tts : TtsProvider {
+    int calls{0}; bool fail{false};
+    Result<std::vector<std::int16_t>> synthesize(const std::string&, const StopRequested&) override {
+      if (++calls == 1 && fail) return Result<std::vector<std::int16_t>>(Status(AudioError::kTimeout, "injected TTS timeout"));
+      return Result<std::vector<std::int16_t>>(frame(100));
+    }
+    void cancel() noexcept override {}
+  };
+  const auto root = tempRoot("python-stage-recovery");
+  for (int stage = 0; stage < 3; ++stage) {
+    FakeCapture capture; capture.repeat = true;
+    FakePlayback playback;
+    Asr asr; Llm llm; Tts tts;
+    asr.fail = stage == 0; tts.fail = stage == 1; llm.fail = stage == 2;
+    RuntimeConfig config; config.persona_backend = "python";
+    ConversationSession session(root.string(), "python");
+    std::vector<VoiceState> states;
+    VoiceObserver observer;
+    observer.on_state = [&](VoiceState state) { states.push_back(state); };
+    VoiceRuntime runtime(capture, playback, asr, llm, tts, {}, session, config, observer);
+    const auto status = runtime.run(1000ms, [&] { return playback.drains > 0; });
+    CHECK(status.ok() == (stage != 2));
+    CHECK(runtime.stats().turn_errors == 1);
+    CHECK(!capture.running && !playback.running);
+    CHECK(session.loadRecent(8).value().empty());
+    if (stage == 2) {
+      CHECK(capture.starts == 1 && llm.inputs.size() == 1 && tts.calls == 0);
+      CHECK(states.back() == VoiceState::kError);
+    } else {
+      CHECK(capture.starts == 2 && playback.drains == 1 && asr.calls == 2);
+      CHECK(std::find(states.begin(), states.end(), VoiceState::kError) == states.end());
+      CHECK(llm.inputs.back() == "utterance-2");
+      CHECK(llm.inputs.size() == (stage == 0 ? 1U : 2U));
+    }
+  }
+  std::filesystem::remove_all(root);
+}
 
 // 测试只使用虚构密钥，并恢复原环境；断言失败不会把密钥值打印出来。
 class ScopedEnvironment {
@@ -426,6 +486,7 @@ int main() {
   testRolePromptAndSession();
   testVoiceRuntimeCleanup();
   testCancellationAndErrors();
+  testPythonStageRecovery();
   testConfigPriorityAndValidation();
   if (failures.load() != 0) {
     std::cerr << failures.load() << " Stage 2 checks failed\n";

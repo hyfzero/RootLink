@@ -1,6 +1,8 @@
 TARGET=rv1106
 UI_BACKEND=fbdev
 UI_DEVICE=/dev/fb0
+# DeskBot reference uses event0; adjust to the board's touchscreen event node.
+UI_INPUT_DEVICE=/dev/input/event0
 AUDIO_API=alsa
 SERVICE_MODE=cloud
 CAPTURE_DEVICE=default

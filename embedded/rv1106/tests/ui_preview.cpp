@@ -49,6 +49,15 @@ int main(int argc, char** argv) {
     }
   }
   SDL_Event close{};
+  SDL_Event tap{};
+  tap.type = SDL_MOUSEBUTTONUP;
+  tap.button.button = SDL_BUTTON_LEFT;
+  for (auto state : states) {
+    if (view.takeResetRequest()) return 7;
+    SDL_PushEvent(&tap);
+    SDL_PushEvent(&tap); // duplicate events coalesce to one reset
+    if (!view.tick(state) || !view.takeResetRequest() || view.takeResetRequest()) return 8;
+  }
   close.type = SDL_QUIT;
   SDL_PushEvent(&close);
   if (view.tick(DisplayState::Error)) return 5;
