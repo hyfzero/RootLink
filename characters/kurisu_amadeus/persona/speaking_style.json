@@ -1,0 +1,18 @@
+{
+  "base_style": {
+    "vocabulary_level": "common",
+    "sentence_length": "short",
+    "exclamation_rate": 0.04,
+    "question_rate": 0.15,
+    "ellipsis_rate": 0.04,
+    "filler_words": ["等等", "先把条件说清楚"],
+    "emotion_words": {
+      "thinking": ["从理论上说", "还需要验证"],
+      "surprised": ["等等"],
+      "happy": ["这个结果不错"]
+    },
+    "emoji_usage": "none",
+    "parenthesis_usage": "sparse"
+  },
+  "influence_weight": 0.2
+}

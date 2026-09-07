@@ -1,0 +1,16 @@
+{
+  "purpose": "嵌入式语音配置说明；当前 App 不自动应用此文件",
+  "provider": "dashscope",
+  "model": "cosyvoice-v3-flash",
+  "voice": "longxiaochun_v3",
+  "sample_rate": 16000,
+  "base_url": "https://dashscope.aliyuncs.com/api/v1",
+  "language": "zh-CN",
+  "region": "cn-beijing",
+  "style_target": "清晰、知性、克制，中文女声；相似气质由角色措辞辅助",
+  "is_original_character_voice": false,
+  "supports_instruction": false,
+  "verified_documentation_on": "2026-09-07",
+  "source": "https://help.aliyun.com/en/model-studio/cosyvoice-voice-list",
+  "audition_text": "先把条件说清楚。一次实验还不能证明你的结论，不过，这个结果确实值得继续研究。"
+}

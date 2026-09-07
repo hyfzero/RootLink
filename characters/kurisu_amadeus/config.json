@@ -1,0 +1,6 @@
+{
+  "response": {"max_sentences": 3},
+  "prompt_budget": {
+    "enabled": false
+  }
+}

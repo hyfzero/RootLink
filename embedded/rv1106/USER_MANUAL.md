@@ -4,6 +4,8 @@
 
 程序的工作过程：听取一句话 → 语音识别 → 人格核心生成回答 → 语音合成 → 播放 → 继续听取下一句话。当前处理和播放时会停止采集，不支持边播放边插话。
 
+新增可选的[牧濑红莉栖 · Amadeus 人格包](../../characters/kurisu_amadeus/README.md)，附官方来源考据及 App 可导入的 `.amadues` 文件。已有 Ubuntu 构建可运行 `./build/ubuntu/rootlink-voice voice --config config/windows-kurisu.conf.example`，使用独立人格数据目录和 `longxiaochun_v3` 知性女声。它是非官方风格适配，不是原声复刻；App 当前支持角色导入和文字交流，尚未接通 TTS。
+
 ## 1. 先找到这几份文件
 
 本文命令除特别标注外，均在 **Ubuntu / WSL 终端** 的 `RootLink/embedded/rv1106` 目录执行。Windows 工作区 `D:\linux_test\AmaduesBot` 在 WSL 中对应 `/mnt/d/linux_test/AmaduesBot`。
@@ -131,10 +133,10 @@ UI_HEIGHT=240
 PERSONA_BACKEND=python
 PYTHON_EXECUTABLE=../../.venv/bin/python
 PYTHON_CORE_ENTRY=scripts/persona-worker.py
-PYTHON_DATA_DIR=build/windows-cloud/ui-python-data
+PYTHON_DATA_DIR=build/windows-cloud/kurisu-canon-python-data
 PERSONA_START_TIMEOUT_MS=30000
 PERSONA_TURN_TIMEOUT_MS=300000
-ROLE_DIR=config/role-example
+ROLE_DIR=../../characters/kurisu_amadeus
 SESSION_DIR=build/windows-cloud/sessions
 MODELS_FILE=config/models.json
 SECRETS_FILE=config/rootlink-secrets.env
@@ -145,7 +147,7 @@ LLM_PROVIDER=qwen
 LLM_MODEL=qwen-plus
 TTS_PROVIDER=dashscope
 TTS_MODEL=cosyvoice-v3-flash
-TTS_VOICE=longanyang
+TTS_VOICE=longxiaochun_v3
 TTS_SAMPLE_RATE=16000
 TTS_BASE_URL=https://dashscope.aliyuncs.com/api/v1
 ```
@@ -181,7 +183,20 @@ build/ubuntu/rootlink-voice doctor --config build/windows-cloud/python-ui.conf
 
 `doctor` 不带 `--probe-cloud` 时只做本地检查，不调用云模型；`doctor=ok` 不等于密钥和真实网络已经验证。产物 `build/ubuntu/rootlink-voice` 是 x86 Linux 文件，在 WSL 中运行，不是 Windows `.exe`。
 
-开始真实语音对话：
+编译完成并配置好 API、声卡及 Python 环境后，可以在 WSL Ubuntu 终端直接运行编译产物，开始真实语音对话：
+
+```sh
+cd /mnt/d/linux_test/AmaduesBot/RootLink/embedded/rv1106
+
+./build/ubuntu/rootlink-voice voice \
+  --config build/windows-cloud/python-ui.conf
+```
+
+这里读取已有的 `build/windows-cloud/python-ui.conf`；首次使用请先按第 3 节创建并编辑该文件。直接运行不需要启动脚本，窗口是否启用由配置中的 `UI_BACKEND=sdl` 决定；配置内的相对路径按上面的工作目录使用。
+
+当前 WSL 配置与新建配置模板默认使用 `characters/kurisu_amadeus` 人格及其预置记忆，配套女声为 `longxiaochun_v3`。首次启动会在 `build/windows-cloud/kurisu-canon-python-data` 初始化数据；后续启动恢复这里的会话。旧人格数据目录保留，不自动合并。更换人格无需重新编译。
+
+也可以使用便捷启动脚本：
 
 ```sh
 sh scripts/run-wsl-ui.sh

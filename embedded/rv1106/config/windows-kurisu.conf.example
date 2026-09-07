@@ -1,7 +1,6 @@
-# Run from RootLink/embedded/rv1106 inside WSL.
+# Run from RootLink/embedded/rv1106 in WSL. No API keys belong here.
 TARGET=simulator
-# Optional window: set UI_BACKEND=sdl and build with LVGL_SOURCE_DIR.
-UI_BACKEND=none
+UI_BACKEND=sdl
 UI_WIDTH=320
 UI_HEIGHT=240
 AUDIO_API=alsa
@@ -11,11 +10,11 @@ PLAYBACK_DEVICE=pulse
 MODELS_FILE=config/models.json
 SECRETS_FILE=config/rootlink-secrets.env
 ROLE_DIR=../../characters/kurisu_amadeus
-SESSION_DIR=build/windows-cloud/sessions
+SESSION_DIR=build/windows-cloud/kurisu-sessions
 PERSONA_BACKEND=python
 PYTHON_EXECUTABLE=../../.venv/bin/python
 PYTHON_CORE_ENTRY=scripts/persona-worker.py
-PYTHON_DATA_DIR=build/windows-cloud/kurisu-canon-python-data
+PYTHON_DATA_DIR=build/windows-cloud/kurisu-python-data
 PERSONA_START_TIMEOUT_MS=30000
 PERSONA_TURN_TIMEOUT_MS=300000
 LLM_PROVIDER=qwen
