@@ -75,6 +75,23 @@ build/simulator-alsa-cloud-sdl/rootlink_ui_preview build/ui-preview
 - WSL 挂载盘构建出现约 1 秒文件时间偏差警告，构建退出码均为 0；上述 ELF 检查和主机测试通过。板端仍需按下面清单实测。
 - Windows 启动脚本优先选择 `build/ubuntu/rootlink-voice`，继续使用现有本地运行配置。构建步骤见 [BUILDING.md](BUILDING.md)。
 
+## 2026-09-08：日语翻译与 CosyVoice v3.5
+
+- 实际 WSL SDL 目录 `build/ubuntu` 增量构建成功，CTest **6/6**（UI 状态、预览、重置、云协议、音频核心、语音核心）。未将用户的 SDL 构建改成无界面。
+- 离线翻译测试覆盖源文本/译文为空、取消、下游不得被错误调用、无状态提示、DeepSeek 翻译专用关闭思考、截断/过滤结果拒绝和日本语 TTS 请求。人格请求保持原设置。
+- 音色管理工具独立测试 **12/12**，包含状态轮询、恢复、模型绑定、域名校验、异常脱敏及超时参数校验；测试不访问真实云服务。
+- `build/rv1106-alsa-cloud-fbdev/rootlink-voice` 交叉编译成功，ELF32 ARM EABI5 hard-float，解释器 `/lib/ld-uClibc.so.0`。WSL 挂载盘产生时钟偏差警告，构建成功。
+- 用户授权只读查询音色，选定 ID `cosyvoice-v3.5-plus-bailian-ab03a1beb9264dd9aa221cf3c5e9c760`，模型 `cosyvoice-v3.5-plus`，查询状态 `OK`。本机配置已启用 `TTS_TRANSLATE_TO=ja`。
+- 真实正式 `synthesize` 调用成功：固定中文文本“先把条件说清楚。一次实验还不能证明你的结论。” → 独立 DeepSeek 翻译 → CosyVoice 合成。输出 `build/windows-cloud/kurisu-japanese-check.wav`：110880 帧，6.93 秒，16 kHz / 单声道 / PCM16；通过 WSL `aplay -D pulse` 播放一次。仅执行一次合成链路，无自动重试；不调用人格、不录音、不写历史。不能据此宣称角色相似度、连续语音或实板验收成功。
+- 本次未重新制作完整 ARM Python 部署归档；旧归档不能代表本次新二进制。实板运行与声音相似度不由编译或离线测试代替。
+
+## 2026-09-09：语音超时诊断
+
+- WSL SDL 增量编译成功，CTest **6/6** 通过；增加翻译回调、POST 503 和 GET 504 的阶段、耗时及错误类别验证。
+- 保持当前连接 5000 ms、翻译与 TTS 各 60000 ms 的配置，真实合成三次短句和一次 56 字中文科学句，四次均返回日语译文并生成 WAV，没有复现超时。短句翻译 704–1071 ms、合成 1649–1791 ms、下载 842–990 ms；长句分别为 1116 / 5969 / 1333 ms。
+- 产物为 `build/windows-cloud/kurisu-japanese-diagnostic1.wav` 至 `kurisu-japanese-diagnostic4.wav`。本次未录音、未更新人格历史，也未做听感验收。
+- 原超时根因尚未复现，不能宣称已根治。新版错误明确区分翻译、CosyVoice POST、音频 GET，并提供无密钥和签名 URL 的网络时间诊断。没有扩大自动重试或增加中文回退。
+
 ## 待实板和人工验收
 
 - 与固件匹配的 SDK/rootfs 部署、framebuffer 像素格式、方向、声卡参数及音画状态同步。

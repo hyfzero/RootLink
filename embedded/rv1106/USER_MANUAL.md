@@ -4,6 +4,8 @@
 
 程序的工作过程：听取一句话 → 语音识别 → 人格核心生成回答 → 语音合成 → 播放 → 继续听取下一句话。当前处理和播放时会停止采集，不支持边播放边插话。
 
+2026-09-08 新增可选的日语播报：人格回答 → 独立 LLM 翻译 → CosyVoice v3.5-plus → 播放。配置及音色创建见[日语语音配置](JAPANESE_VOICE.md)。原始回答仍用于显示、历史和记忆；译文只用于播报。新模板需要填写自己的复刻音色 ID，旧配置不会自动切换。
+
 新增可选的[牧濑红莉栖 · Amadeus 人格包](../../characters/kurisu_amadeus/README.md)，附官方来源考据及 App 可导入的 `.amadues` 文件。已有 Ubuntu 构建可运行 `./build/ubuntu/rootlink-voice voice --config config/windows-kurisu.conf.example`，使用独立人格数据目录和 `longxiaochun_v3` 知性女声。它是非官方风格适配，不是原声复刻；App 当前支持角色导入和文字交流，尚未接通 TTS。
 
 ## 1. 先找到这几份文件
@@ -70,6 +72,8 @@ ASR/TTS 当前云实现固定为 DashScope；更换 LLM 后，仍需保留 `DASH
 修改运行配置的 `LLM_PROVIDER`、`LLM_MODEL`，并核对 models.json 对应节点的 `base_url`。模型名填写该账户实际可用的名称。默认地址模板见 [models.json.example](config/models.json.example)。如果曾设置 `LLM_BASE_URL`，它会覆盖 models.json，换供应商时也要同步修改或删除。当前嵌入式入口要求 OpenAI 兼容接口，不能直接填写 Anthropic Messages 端点。
 
 ### TTS 实际调用哪个 API
+
+下面是旧版直读配置。使用 `cosyvoice-v3.5-plus` 和日语翻译时，请使用[新配置示例](config/windows-kurisu-japanese.conf.example)和[配置步骤](JAPANESE_VOICE.md)，不能把下方系统音色直接用于 v3.5。
 
 当前配置：
 

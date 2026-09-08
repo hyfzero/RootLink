@@ -70,6 +70,7 @@ struct RuntimeConfig {
                      "DASHSCOPE_API_KEY", true, {}};
   std::string tts_voice{"longanyang"};
   unsigned tts_sample_rate{16000};
+  std::string tts_translate_to{"none"};
 
   std::string models_file{"/data/rootlink/config/models.json"};
   std::string secrets_file{"/etc/rootlink/rootlink-secrets.env"};
@@ -83,6 +84,7 @@ struct RuntimeConfig {
   long asr_timeout_ms{45000};
   long llm_timeout_ms{60000};
   long tts_timeout_ms{45000};
+  long tts_translation_timeout_ms{60000};
   std::size_t retry_count{1};
   std::size_t max_json_bytes{2U * 1024U * 1024U};
   std::size_t max_tts_bytes{8U * 1024U * 1024U};

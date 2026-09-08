@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -15,6 +16,7 @@ namespace rootlink::voice {
 
 using StopRequested = std::function<bool()>;
 using TextDelta = std::function<void(const std::string&)>;
+using ProviderDiagnostic = std::function<void(const std::string&)>;
 
 /** @brief 单次 HTTPS 请求，正文、响应上限和超时均由调用者显式约束。 */
 struct HttpRequest {
@@ -83,6 +85,23 @@ class TtsProvider {
   virtual audio::Result<std::vector<std::int16_t>> synthesize(
       const std::string& text, const StopRequested& stopped) = 0;
   virtual void cancel() noexcept = 0;
+};
+
+/** @brief 在合成前进行无状态翻译；原回答和会话记录不被修改。 */
+class TranslatedTtsProvider final : public TtsProvider {
+ public:
+  TranslatedTtsProvider(std::unique_ptr<LlmProvider> translator,
+                        std::unique_ptr<TtsProvider> downstream,
+                        TextDelta on_translated = {},
+                        ProviderDiagnostic diagnostics = {});
+  audio::Result<std::vector<std::int16_t>> synthesize(
+      const std::string& text, const StopRequested& stopped) override;
+  void cancel() noexcept override;
+ private:
+  std::unique_ptr<LlmProvider> translator_;
+  std::unique_ptr<TtsProvider> downstream_;
+  TextDelta on_translated_;
+  ProviderDiagnostic diagnostics_;
 };
 
 /** @brief 离线仿真供应商；不读密钥、不访问网络，返回确定性结果。 */
@@ -155,7 +174,9 @@ class DashScopeAsrProvider final : public AsrProvider {
 /** @brief 国内 OpenAI 兼容端点；解析任意分包 SSE，并去重 MiniMax 累积文本。 */
 class OpenAiCompatibleLlmProvider final : public LlmProvider {
  public:
-  OpenAiCompatibleLlmProvider(HttpClient& http, RuntimeConfig config);
+  OpenAiCompatibleLlmProvider(HttpClient& http, RuntimeConfig config,
+                              bool disable_thinking = false,
+                              bool require_complete_output = false);
   audio::Result<std::string> complete(const std::vector<ChatMessage>& messages,
                                       const TextDelta& on_delta,
                                       const StopRequested& stopped) override;
@@ -163,18 +184,22 @@ class OpenAiCompatibleLlmProvider final : public LlmProvider {
  private:
   HttpClient& http_;
   RuntimeConfig config_;
+  bool disable_thinking_{false};
+  bool require_complete_output_{false};
 };
 
 /** @brief CosyVoice HTTP 整段合成；音频下载只允许 HTTPS 且不附带 API 密钥。 */
 class DashScopeTtsProvider final : public TtsProvider {
  public:
-  DashScopeTtsProvider(HttpClient& http, RuntimeConfig config);
+  DashScopeTtsProvider(HttpClient& http, RuntimeConfig config,
+                       ProviderDiagnostic diagnostics = {});
   audio::Result<std::vector<std::int16_t>> synthesize(
       const std::string& text, const StopRequested& stopped) override;
   void cancel() noexcept override;
  private:
   HttpClient& http_;
   RuntimeConfig config_;
+  ProviderDiagnostic diagnostics_;
 };
 #endif
 

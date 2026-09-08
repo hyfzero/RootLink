@@ -131,6 +131,7 @@ add_library(rootlink_voice_core STATIC
   src/voice/python_persona.cpp
   src/voice/role.cpp
   src/voice/runtime_config.cpp
+  src/voice/tts_translation.cpp
   src/voice/vad.cpp
   src/voice/voice_runtime.cpp
 )

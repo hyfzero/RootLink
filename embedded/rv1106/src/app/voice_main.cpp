@@ -311,6 +311,13 @@ int runMain(int argc, char** argv) {
   if (options.buffer_frames != 0) config.buffer_frames = options.buffer_frames;
   const auto validated = config.validate();
   if (!validated.ok()) { std::cerr << validated.message() << '\n'; return 2; }
+  if (options.command == "voice" || options.command == "synthesize") {
+    std::cerr << "tts_translate_to=" << config.tts_translate_to << '\n'
+              << "tts_model=" << config.tts.model << '\n'
+              << "tts_translation_timeout_ms=" << config.tts_translation_timeout_ms << '\n'
+              << "tts_timeout_ms=" << config.tts_timeout_ms << '\n'
+              << "connect_timeout_ms=" << config.connect_timeout_ms << '\n';
+  }
 #if defined(ROOTLINK_AUDIO_API_ALSA)
   if (config.audio_api != "alsa") {
     std::cerr << "config error: 此二进制按 alsa 构建，请设置 AUDIO_API=alsa\n"; return 2;
@@ -350,11 +357,14 @@ int runMain(int argc, char** argv) {
   std::unique_ptr<rootlink::voice::AsrProvider> asr;
   std::unique_ptr<rootlink::voice::LlmProvider> llm;
   std::unique_ptr<rootlink::voice::TtsProvider> tts;
+  const rootlink::voice::ProviderDiagnostic tts_diagnostics = [](const std::string& event) {
+    std::cerr << event << '\n';
+  };
 #if defined(ROOTLINK_SERVICE_API_CURL)
   rootlink::voice::CurlHttpClient http;
   asr = std::make_unique<rootlink::voice::DashScopeAsrProvider>(http, config);
   llm = std::make_unique<rootlink::voice::OpenAiCompatibleLlmProvider>(http, config);
-  tts = std::make_unique<rootlink::voice::DashScopeTtsProvider>(http, config);
+  tts = std::make_unique<rootlink::voice::DashScopeTtsProvider>(http, config, tts_diagnostics);
 #else
   asr = std::make_unique<rootlink::voice::MockAsrProvider>();
   llm = std::make_unique<rootlink::voice::MockLlmProvider>();
@@ -368,6 +378,23 @@ int runMain(int argc, char** argv) {
     if (status.ok()) status = core->health();
     if (!status.ok()) { std::cerr << status.message() << '\n'; return 1; }
     llm = std::move(core);
+  }
+  if (config.tts_translate_to == "ja") {
+    std::unique_ptr<rootlink::voice::LlmProvider> translator;
+#if defined(ROOTLINK_SERVICE_API_CURL)
+    auto translation_config = config;
+    translation_config.retry_count = 0;  // 翻译失败不可重放，避免额外云端请求。
+    translation_config.llm_timeout_ms = config.tts_translation_timeout_ms;
+    translator = std::make_unique<rootlink::voice::OpenAiCompatibleLlmProvider>(
+        http, std::move(translation_config), true, true);
+#else
+    // mock 模式保持离线且确定性；测试可注入专用翻译器覆盖此路径。
+    translator = std::make_unique<rootlink::voice::MockLlmProvider>();
+#endif
+    tts = std::make_unique<rootlink::voice::TranslatedTtsProvider>(
+        std::move(translator), std::move(tts),
+        [](const std::string& japanese) { std::cout << "tts_text_ja=" << japanese << '\n'; },
+        tts_diagnostics);
   }
   if (options.command == "transcribe") {
     auto wav = readWav(options.input);
@@ -448,7 +475,7 @@ int runMain(int argc, char** argv) {
       rootlink::voice::VoiceObserver observer;
       observer.on_state = [](rootlink::voice::VoiceState state) {
         g_display_state.publish(state);
-        std::cout << "state=" << rootlink::voice::voiceStateName(state) << '\n';
+        std::cout << '\n' << "state=" << rootlink::voice::voiceStateName(state) << '\n';
       };
       observer.on_transcript = [](const std::string& value) { std::cout << "user=" << value << '\n'; };
       observer.on_answer_delta = [](const std::string& value) { std::cout << value << std::flush; };

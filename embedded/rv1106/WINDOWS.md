@@ -1,5 +1,7 @@
 # Windows 仿真与真实声卡、LLM API 配置
 
+日语播报与 CosyVoice v3.5-plus 的配置、音色创建和直接运行方法见[日语语音配置](JAPANESE_VOICE.md)。它复用当前 WSL 声卡与 Python 人格数据，仅在播报前增加独立翻译请求。
+
 推荐构建入口见 [一份 CMake 配置切换 Ubuntu / WSL 与 RV1106](BUILDING.md)：修改 `config/build.cmake` 中的 `ROOTLINK_TARGET`，直接使用 CMake 编译。Ubuntu 产物位于 `build/ubuntu/rootlink-voice`。
 
 使用共享 Python 人格核心和 LVGL 单主界面，请接着看 [Python 核心与界面启动指南](PYTHON_CORE.md)。旧配置默认 `PERSONA_BACKEND=simple`、`UI_BACKEND=none`；Python 示例为 `config/windows-python.conf.example`，启用窗口需设 `UI_BACKEND=sdl` 并重新构建。

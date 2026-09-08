@@ -14,13 +14,16 @@ flowchart LR
     Bridge <-->|本地 JSON 行协议| Core[Python SessionManager]
     Core <--> Data[人格 / 记忆 / 历史 JSON]
     Core <--> LLM[对话与摘要 LLM]
-    Bridge --> TTS[DashScope TTS]
+    Bridge --> Translation[可选：独立 LLM 日语翻译]
+    Translation --> TTS[DashScope CosyVoice TTS]
     TTS --> Speaker[ALSA 播放]
     Observer[VoiceObserver 状态通知] --> Mailbox[线程安全状态快照]
     Mailbox --> UI[主线程 LVGL]
 ```
 
 `PERSONA_BACKEND=python` 时，C++ 只提交本轮用户文本，不拼接人格 Prompt、不直接调用对话 LLM、不追加另一份 C++ 历史。`simple` 后端仍保留用于旧配置和离线回归；Python 出错时不会自动切回它。
+
+2026-09-08 增加 `TTS_TRANSLATE_TO=ja`：C++ 在合成阶段独立调用配置中的 LLM 做无状态翻译，输入只有翻译指令和本次完整回答，不加载人格 Prompt、工具或历史。它不属于人格对话调用，不触发 `SessionManager` 的状态更新或摘要。缺省 `none` 时直接合成原文。翻译超时由 `TTS_TRANSLATION_TIMEOUT_MS` 控制；失败不退回原文播报，不重放人格轮次。配置与音色管理见 [JAPANESE_VOICE.md](JAPANESE_VOICE.md)。
 
 首版一个进程只加载一个角色，串行处理消息，不注册工具执行能力。当前语音模式按轮次采集，处理与播放期间停止录音；不是全双工对话，也没有播放打断或回声消除链路。
 
@@ -127,6 +130,10 @@ Python 历史预算由 BrainConfig 的 `history` / `prompt_budget` 等配置管�
 `runtime_config.cpp` 先读运行文件，再应用支持的非空环境变量覆盖，随后加载模型配置和密钥；CLI 提供的显式覆盖在应用入口处理。LLM 端点、模型与密钥的优先级详见用户手册。
 
 当前 ASR 通过 DashScope 兼容端点 `/chat/completions` 发送音频请求。简化 C++ LLM 通过配置的 `chat_path` 请求；Python 后端改由 ChatAgent 调用对话模型。TTS 使用 `/services/audio/tts/SpeechSynthesizer`，拿到音频地址后独立 GET 下载，不把 API Authorization 头转发给存储地址。
+
+启用日语翻译后，provider 装配为 TTS 包装器：独立 OpenAI 兼容 LLM → 原有 DashScope TTS。翻译使用同一供应商/模型及密钥配置，生命周期独立于 Python 人格 provider；译文仅存在于本次合成调用，不发送文本增量到人格观察者，不进入历史。翻译和 TTS 都接收同一取消谓词，窗口退出/点击 reset 可以取消；两者都处于 Synthesizing 状态。每轮翻译禁止自动重试，空结果或未完成结果不得传给下游 TTS。
+
+音色创建是电脑上的一次性工具 `scripts/enroll-cosyvoice.py`，只依赖可选的 `requirements-voice-tools.txt`；不要把它加入板端人格核心依赖，也不要在语音循环内调用创建接口。CosyVoice v3.5 的音色与目标模型绑定，运行时提前校验明显错误的配置。真实模型权限及音色是否就绪仍由云服务判断。
 
 libcurl 负责 C++ HTTPS 和证书验证。已知阿里 OSS HTTP 签名地址只升级 scheme 为 HTTPS，保留路径和查询签名；其他不安全地址拒绝。CosyVoice WAV 占位长度兼容只在受限 TTS 路径启用，不放松通用 WAV 格式校验。
 

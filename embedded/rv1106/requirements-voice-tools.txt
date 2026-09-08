@@ -1,0 +1,2 @@
+# Optional dependency for scripts/enroll-cosyvoice.py
+dashscope==1.27.4

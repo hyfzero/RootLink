@@ -105,11 +105,11 @@ void overrideFromEnvironment(Values& values) {
       "UI_BACKEND", "UI_DEVICE", "UI_INPUT_DEVICE", "UI_WIDTH", "UI_HEIGHT",
       "BUFFER_FRAMES", "ASR_PROVIDER", "ASR_MODEL", "ASR_BASE_URL", "LLM_PROVIDER",
       "LLM_MODEL", "LLM_BASE_URL", "TTS_PROVIDER", "TTS_MODEL", "TTS_BASE_URL",
-      "TTS_VOICE", "TTS_SAMPLE_RATE", "MODELS_FILE", "SECRETS_FILE", "ROLE_DIR",
+      "TTS_VOICE", "TTS_SAMPLE_RATE", "TTS_TRANSLATE_TO", "MODELS_FILE", "SECRETS_FILE", "ROLE_DIR",
       "SESSION_DIR", "HISTORY_TURNS", "HISTORY_TOKEN_BUDGET", "VAD_START_FRAMES",
       "VAD_PRE_ROLL_MS", "VAD_END_SILENCE_MS", "VAD_MIN_UTTERANCE_MS",
       "VAD_MAX_UTTERANCE_MS", "VAD_MIN_RMS", "VAD_NOISE_MULTIPLIER", "VAD_NOISE_ALPHA",
-      "CONNECT_TIMEOUT_MS", "ASR_TIMEOUT_MS", "LLM_TIMEOUT_MS", "TTS_TIMEOUT_MS",
+      "CONNECT_TIMEOUT_MS", "ASR_TIMEOUT_MS", "LLM_TIMEOUT_MS", "TTS_TIMEOUT_MS", "TTS_TRANSLATION_TIMEOUT_MS",
       "RETRY_COUNT", "PERSONA_BACKEND", "PYTHON_EXECUTABLE", "PYTHON_CORE_ENTRY", "PYTHON_DATA_DIR", "PERSONA_START_TIMEOUT_MS", "PERSONA_TURN_TIMEOUT_MS"};
   for (const char* key : keys) {
     if (const char* value = std::getenv(key); value != nullptr && *value != '\0') values[key] = value;
@@ -192,8 +192,8 @@ audio::Status RuntimeConfig::validate() const {
     return {AudioError::kConfigError, "VAD 和缓冲参数无效；毫秒项必须是 20ms 的整数倍"};
   }
   if (retry_count > 1 || connect_timeout_ms <= 0 || asr_timeout_ms <= 0 ||
-      llm_timeout_ms <= 0 || tts_timeout_ms <= 0 || connect_timeout_ms > 60000 ||
-      asr_timeout_ms > 300000 || llm_timeout_ms > 300000 || tts_timeout_ms > 300000 ||
+      llm_timeout_ms <= 0 || tts_timeout_ms <= 0 || tts_translation_timeout_ms < 1 || connect_timeout_ms > 60000 ||
+      asr_timeout_ms > 300000 || llm_timeout_ms > 300000 || tts_timeout_ms > 300000 || tts_translation_timeout_ms > 300000 ||
       history_turns > 100 || history_token_budget > 12000)
     return {AudioError::kConfigError, "超时、历史预算或重试配置超出安全范围"};
   if (service_mode == "cloud" && (audio_api != "alsa" || asr.name != "dashscope" ||
@@ -223,6 +223,12 @@ audio::Status RuntimeConfig::validate() const {
     return {AudioError::kConfigError, "Invalid Python persona configuration"};
   if (tts_sample_rate != 16000)
     return {AudioError::kConfigError, "Stage 2 的 TTS_SAMPLE_RATE 必须是 16000"};
+  if (tts_translate_to != "none" && tts_translate_to != "ja")
+    return {AudioError::kConfigError, "TTS_TRANSLATE_TO 只能是 none 或 ja"};
+  if (service_mode == "cloud" && tts.model.rfind("cosyvoice-v3.5", 0) == 0 &&
+      (tts_voice.empty() || tts_voice.rfind(tts.model + "-", 0) != 0))
+    return {AudioError::kConfigError,
+            "CosyVoice v3.5 需要非空的克隆音色 ID，格式为 " + tts.model + "-{prefix}-{unique}"};
   if (service_mode == "cloud" &&
       (asr.base_url.empty() || llm.base_url.empty() || tts.base_url.empty()))
     return {AudioError::kConfigError, "cloud 模式的供应商 base_url 不能为空"};
@@ -257,6 +263,7 @@ audio::Result<RuntimeConfig> loadRuntimeConfig(const std::string& path) {
   stringValue(values, "TTS_MODEL", config.tts.model);
   stringValue(values, "TTS_BASE_URL", config.tts.base_url);
   stringValue(values, "TTS_VOICE", config.tts_voice);
+  stringValue(values, "TTS_TRANSLATE_TO", config.tts_translate_to);
   stringValue(values, "MODELS_FILE", config.models_file);
   stringValue(values, "SECRETS_FILE", config.secrets_file);
   stringValue(values, "ROLE_DIR", config.role_dir);
@@ -283,6 +290,7 @@ audio::Result<RuntimeConfig> loadRuntimeConfig(const std::string& path) {
   valid_numbers &= parseUnsigned(values, "ASR_TIMEOUT_MS", config.asr_timeout_ms);
   valid_numbers &= parseUnsigned(values, "LLM_TIMEOUT_MS", config.llm_timeout_ms);
   valid_numbers &= parseUnsigned(values, "TTS_TIMEOUT_MS", config.tts_timeout_ms);
+  valid_numbers &= parseUnsigned(values, "TTS_TRANSLATION_TIMEOUT_MS", config.tts_translation_timeout_ms);
   valid_numbers &= parseUnsigned(values, "RETRY_COUNT", config.retry_count);
   if (!valid_numbers)
     return audio::Result<RuntimeConfig>(audio::Status(audio::AudioError::kConfigError,

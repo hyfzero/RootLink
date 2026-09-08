@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <curl/curl.h>
+#include <cmath>
 #include <mutex>
 #include <filesystem>
 #include <fstream>
@@ -90,6 +91,14 @@ audio::AudioError mapHttpStatus(long status) {
   if (status >= 500 && status <= 599) return audio::AudioError::kNetworkError;
   if (status >= 400 && status <= 499) return audio::AudioError::kConfigError;
   return audio::AudioError::kProviderError;
+}
+
+long long elapsedMilliseconds(CURL* handle, CURLINFO info) {
+  double seconds = 0.0;
+  if (curl_easy_getinfo(handle, info, &seconds) != CURLE_OK || !std::isfinite(seconds) ||
+      seconds < 0.0)
+    return 0;
+  return static_cast<long long>(seconds * 1000.0);
 }
 
 }  // namespace
@@ -185,20 +194,39 @@ audio::Result<HttpResponse> CurlHttpClient::perform(
   }
   const CURLcode result = curl_easy_perform(handle);
   curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &response.status_code);
+  // Read diagnostics before cleanup; values contain timing/count metadata only.
+  const long long dns_ms = elapsedMilliseconds(handle, CURLINFO_NAMELOOKUP_TIME);
+  const long long connect_ms = elapsedMilliseconds(handle, CURLINFO_CONNECT_TIME);
+  const long long tls_ms = elapsedMilliseconds(handle, CURLINFO_APPCONNECT_TIME);
+  const long long first_byte_ms = elapsedMilliseconds(handle, CURLINFO_STARTTRANSFER_TIME);
+  const long long total_ms = elapsedMilliseconds(handle, CURLINFO_TOTAL_TIME);
+  const std::string transfer_diagnostic =
+      std::string("HTTP 请求失败：") + curl_easy_strerror(result) +
+      "（curl code " + std::to_string(static_cast<int>(result)) +
+      ", dns_ms " + std::to_string(dns_ms) +
+      ", connect_ms " + std::to_string(connect_ms) +
+      ", tls_ms " + std::to_string(tls_ms) +
+      ", first_byte_ms " + std::to_string(first_byte_ms) +
+      ", total_ms " + std::to_string(total_ms) +
+      ", received_bytes " + std::to_string(context.received_bytes) +
+      ", connect_budget_ms " + std::to_string(request.connect_timeout_ms) +
+      ", total_budget_ms " + std::to_string(request.total_timeout_ms) + ")";
   curl_slist_free_all(headers);
   curl_easy_cleanup(handle);
   if (!context.callback_status.ok()) return audio::Result<HttpResponse>(context.callback_status);
   if (result != CURLE_OK) {
     if (cancelled_.load() || (stopped && stopped()))
       return audio::Result<HttpResponse>(audio::Status(audio::AudioError::kCancelled, "HTTP 请求已取消"));
+    const bool tls_failure = result == CURLE_PEER_FAILED_VERIFICATION ||
+                             result == CURLE_SSL_CACERT_BADFILE;
     const bool connection_failure = context.received_bytes == 0 &&
         (result == CURLE_COULDNT_CONNECT || result == CURLE_COULDNT_RESOLVE_HOST ||
          result == CURLE_COULDNT_RESOLVE_PROXY);
-    const bool tls_failure = result == CURLE_PEER_FAILED_VERIFICATION ||
-                             result == CURLE_SSL_CACERT_BADFILE;
+    // Preserve the existing retry-policy classification: broadening network errors here
+    // would make already-sent non-streaming POST requests eligible for another attempt.
     return audio::Result<HttpResponse>(audio::Status(tls_failure ? audio::AudioError::kConfigError :
         connection_failure ? audio::AudioError::kNetworkError : audio::AudioError::kTimeout,
-                                                     std::string("HTTP 请求失败：") + curl_easy_strerror(result)));
+                                                     transfer_diagnostic));
   }
   if (response.status_code < 200 || response.status_code >= 300) {
     const audio::AudioError code = mapHttpStatus(response.status_code);

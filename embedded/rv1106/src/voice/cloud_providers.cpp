@@ -21,6 +21,28 @@ std::string trimSlash(std::string value) {
 std::vector<std::uint8_t> bytes(const std::string& value) {
   return {value.begin(), value.end()};
 }
+std::int64_t elapsedMs(const std::chrono::steady_clock::time_point& started) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - started).count();
+}
+std::string httpStatusOnly(const std::string& message) {
+  const auto marker = message.find("HTTP ");
+  if (marker == std::string::npos) return {};
+  std::size_t begin = marker + 5;
+  std::size_t end = begin;
+  while (end < message.size() && std::isdigit(static_cast<unsigned char>(message[end]))) ++end;
+  return end == begin ? std::string() : message.substr(begin, end - begin);
+}
+audio::Status ttsStageFailure(const char* stage, const audio::Status& cause,
+                              std::int64_t elapsed_ms) {
+  std::string message = std::string("CosyVoice ") + stage + " 失败，耗时 " +
+      std::to_string(elapsed_ms) + " ms";
+  const std::string http_status = httpStatusOnly(cause.message());
+  if (!http_status.empty()) message += "，HTTP " + http_status;
+  message += "，错误类别=" + std::to_string(static_cast<int>(cause.code()));
+  if (!cause.message().empty()) message += "，原因=" + cause.message();
+  return {cause.code(), std::move(message)};
+}
 std::map<std::string, std::string> headers(const ProviderConfig& provider, bool sse = false) {
   // HTTP 字段名不区分大小写。先规范化，避免私有配置里的 Authorization 与
   // 环境密钥生成的 authorization 同时发出，让密钥优先级在实际请求中失效。
@@ -153,8 +175,11 @@ audio::Result<std::string> DashScopeAsrProvider::transcribe(
   return audio::Result<std::string>(std::move(transcription));
 }
 
-OpenAiCompatibleLlmProvider::OpenAiCompatibleLlmProvider(HttpClient& http, RuntimeConfig config)
-    : http_(http), config_(std::move(config)) {}
+OpenAiCompatibleLlmProvider::OpenAiCompatibleLlmProvider(HttpClient& http, RuntimeConfig config,
+                                                         bool disable_thinking,
+                                                         bool require_complete_output)
+    : http_(http), config_(std::move(config)), disable_thinking_(disable_thinking),
+      require_complete_output_(require_complete_output) {}
 void OpenAiCompatibleLlmProvider::cancel() noexcept { http_.cancel(); }
 
 audio::Result<std::string> OpenAiCompatibleLlmProvider::complete(
@@ -168,6 +193,13 @@ audio::Result<std::string> OpenAiCompatibleLlmProvider::complete(
   json_object_object_add(root, "stream", json_object_new_boolean(1));
   json_object_object_add(root, "temperature", json_object_new_double(0.7));
   json_object_object_add(root, "max_tokens", json_object_new_int(2048));
+  // DeepSeek defaults to thinking mode. Only the stateless translation request
+  // opts out, keeping the persona's normal generation request unchanged.
+  if (disable_thinking_ && config_.llm.name == "deepseek") {
+    json_object* thinking = json_object_new_object();
+    json_object_object_add(thinking, "type", json_object_new_string("disabled"));
+    json_object_object_add(root, "thinking", thinking);
+  }
   json_object* message_array = json_object_new_array();
   for (const ChatMessage& item : messages) {
     json_object* message = json_object_new_object();
@@ -195,6 +227,7 @@ audio::Result<std::string> OpenAiCompatibleLlmProvider::complete(
   bool began = false;
   bool received = false;
   bool done = false;
+  std::string finish_reason;
   bool tools_seen = false;
   auto consume = [&](const SseEvent& event) -> audio::Status {
     if (done) return audio::Status::okStatus();
@@ -216,7 +249,11 @@ audio::Result<std::string> OpenAiCompatibleLlmProvider::complete(
     const auto reasoning = jsonString(member(delta, "reasoning_content"));
     (void)reasoning;
     if (member(delta, "tool_calls")) tools_seen = true;
-    if (!jsonString(member(first, "finish_reason")).empty()) done = true;
+    const std::string event_finish_reason = jsonString(member(first, "finish_reason"));
+    if (!event_finish_reason.empty()) {
+      finish_reason = event_finish_reason;
+      done = true;
+    }
     std::string chunk = jsonString(member(delta, "content"));
     if (chunk.empty()) chunk = jsonString(member(delta, "text"));
     if (config_.llm.name == "minimax" && !chunk.empty()) {
@@ -258,11 +295,15 @@ audio::Result<std::string> OpenAiCompatibleLlmProvider::complete(
   if (!began || answer.empty())
     return audio::Result<std::string>(audio::Status(audio::AudioError::kProviderError,
                                                     "LLM 响应中没有正文"));
+  if (require_complete_output_ && finish_reason != "stop")
+    return audio::Result<std::string>(audio::Status(
+        audio::AudioError::kProviderError, "翻译响应未以 stop 正常完成"));
   return audio::Result<std::string>(std::move(answer));
 }
 
-DashScopeTtsProvider::DashScopeTtsProvider(HttpClient& http, RuntimeConfig config)
-    : http_(http), config_(std::move(config)) {}
+DashScopeTtsProvider::DashScopeTtsProvider(HttpClient& http, RuntimeConfig config,
+                                           ProviderDiagnostic diagnostics)
+    : http_(http), config_(std::move(config)), diagnostics_(std::move(diagnostics)) {}
 void DashScopeTtsProvider::cancel() noexcept { http_.cancel(); }
 
 audio::Result<std::vector<std::int16_t>> DashScopeTtsProvider::synthesize(
@@ -292,15 +333,20 @@ audio::Result<std::vector<std::int16_t>> DashScopeTtsProvider::synthesize(
   request.connect_timeout_ms = config_.connect_timeout_ms;
   request.total_timeout_ms = config_.tts_timeout_ms;
   request.response_limit = config_.max_json_bytes;
+  const auto post_started = std::chrono::steady_clock::now();
   auto response = requestWithRetry(http_, request, config_.retry_count, stopped);
-  if (!response.ok()) return audio::Result<std::vector<std::int16_t>>(response.status());
+  const auto post_ms = elapsedMs(post_started);
+  if (!response.ok()) return audio::Result<std::vector<std::int16_t>>(
+      ttsStageFailure("POST", response.status(), post_ms));
   auto parsed = parseJson(response.value().body);
-  if (!parsed.ok()) return audio::Result<std::vector<std::int16_t>>(parsed.status());
+  if (!parsed.ok()) return audio::Result<std::vector<std::int16_t>>(
+      ttsStageFailure("POST", parsed.status(), post_ms));
   json_object* root_response = parsed.value();
   json_object* output = member(root_response, "output");
   std::string url = jsonString(member(output, "audio_url"));
   if (url.empty()) url = jsonString(member(member(output, "audio"), "url"));
   json_object_put(root_response);
+  if (diagnostics_) diagnostics_("tts_cosyvoice_post_ms=" + std::to_string(post_ms));
   // DashScope may return signed HTTP OSS URLs. Upgrade only its OSS endpoint;
   // preserve path/query byte-for-byte and never send the API key to storage.
   if (url.rfind("http://", 0) == 0) {
@@ -314,18 +360,26 @@ audio::Result<std::vector<std::int16_t>> DashScopeTtsProvider::synthesize(
       url.replace(0, 7, "https://");
   }
   if (url.rfind("https://", 0) != 0)
-    return audio::Result<std::vector<std::int16_t>>(audio::Status(
-        audio::AudioError::kProviderError, "TTS 响应未包含安全的 HTTPS 音频地址"));
+    return audio::Result<std::vector<std::int16_t>>(
+        ttsStageFailure("POST", audio::Status(audio::AudioError::kProviderError,
+                                                "invalid audio URL"), post_ms));
   HttpRequest download;
   download.method = "GET";
   download.url = url;
   download.connect_timeout_ms = config_.connect_timeout_ms;
   download.total_timeout_ms = config_.tts_timeout_ms;
   download.response_limit = config_.max_tts_bytes;
+  const auto get_started = std::chrono::steady_clock::now();
   auto audio_response = requestWithRetry(http_, download, config_.retry_count, stopped);
+  const auto get_ms = elapsedMs(get_started);
   if (!audio_response.ok())
-    return audio::Result<std::vector<std::int16_t>>(audio_response.status());
-  return wavToPcm16(audio_response.value().body, true);
+    return audio::Result<std::vector<std::int16_t>>(
+        ttsStageFailure("音频 GET", audio_response.status(), get_ms));
+  auto decoded = wavToPcm16(audio_response.value().body, true);
+  if (!decoded.ok()) return audio::Result<std::vector<std::int16_t>>(
+      ttsStageFailure("音频 GET", decoded.status(), get_ms));
+  if (diagnostics_) diagnostics_("tts_audio_get_ms=" + std::to_string(get_ms));
+  return decoded;
 }
 
 }  // namespace rootlink::voice

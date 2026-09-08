@@ -20,6 +20,8 @@ class FakeHttp final : public HttpClient {
   std::vector<std::uint8_t> body;
   std::string stream;
   AudioError fail_first{AudioError::kOk};
+  std::size_t fail_request_number{0};
+  std::string fail_message{"injected"};
   bool fail_after_stream{false};
   std::size_t retries{0};
   Result<HttpResponse> perform(const HttpRequest& request, const StopRequested& stopped,
@@ -27,7 +29,9 @@ class FakeHttp final : public HttpClient {
     requests.push_back(request);
     if (stopped && stopped()) return Result<HttpResponse>(Status(AudioError::kCancelled, "cancelled"));
     if (requests.size() == 1 && fail_first != AudioError::kOk)
-      return Result<HttpResponse>(Status(fail_first, "injected"));
+      return Result<HttpResponse>(Status(fail_first, fail_message));
+    if (fail_request_number == requests.size())
+      return Result<HttpResponse>(Status(AudioError::kProviderError, fail_message));
     if (callback) {
       for (const char c : stream) {
         auto status = callback(&c, 1);  // 包括中文 UTF-8 在内，按任意单字节边界拆包。
@@ -52,6 +56,7 @@ RuntimeConfig config() {
 }
 void asrAndTts() {
   auto c = config();
+  c.retry_count = 0;
   FakeHttp http;
   http.json(R"({"choices":[{"message":{"content":"你好"}}]})");
   DashScopeAsrProvider asr(http, c);
@@ -64,7 +69,8 @@ void asrAndTts() {
   CHECK(!asr.transcribe(std::vector<std::int16_t>(480001), {}).ok());
   http.requests.clear();
   http.json(R"({"output":{"audio":{"url":"https://example.invalid/audio.wav"}}})");
-  DashScopeTtsProvider tts(http, c);
+  std::vector<std::string> diagnostics;
+  DashScopeTtsProvider tts(http, c, [&](const std::string& event) { diagnostics.push_back(event); });
   auto speech = tts.synthesize("测试", {});
   CHECK(speech.ok() && speech.value().size() == 3); // 云端不足一帧必须合法。
   request = JsonValue::parse(std::string(http.requests[0].body.begin(), http.requests[0].body.end()));
@@ -72,6 +78,25 @@ void asrAndTts() {
   CHECK(request.value().find("input")->find("sample_rate")->numberOr() == 16000);
   CHECK(request.value().find("input")->find("voice")->stringOr() == "longanyang");
   CHECK(http.requests[1].headers.empty()); // 下载绝不携带云端鉴权头。
+  CHECK(diagnostics.size() == 2 && diagnostics[0].find("tts_cosyvoice_post_ms=") == 0 &&
+        diagnostics[1].find("tts_audio_get_ms=") == 0);
+  FakeHttp post_failure;
+  post_failure.fail_first = AudioError::kProviderError;
+  post_failure.fail_message = "HTTP 503 service unavailable";
+  DashScopeTtsProvider failing_post(post_failure, c);
+  const auto post_result = failing_post.synthesize("测试", {});
+  CHECK(!post_result.ok() && post_result.status().message().find("CosyVoice POST 失败，耗时 ") == 0 &&
+        post_result.status().message().find("HTTP 503") != std::string::npos &&
+        post_result.status().message().find("错误类别=") != std::string::npos);
+  FakeHttp get_failure;
+  get_failure.json(R"({"output":{"audio":{"url":"https://example.invalid/audio.wav"}}})");
+  get_failure.fail_request_number = 2;
+  get_failure.fail_message = "HTTP 504 gateway timeout";
+  DashScopeTtsProvider failing_get(get_failure, c);
+  const auto get_result = failing_get.synthesize("测试", {});
+  CHECK(!get_result.ok() && get_result.status().message().find("CosyVoice 音频 GET 失败，耗时 ") == 0 &&
+        get_result.status().message().find("HTTP 504") != std::string::npos &&
+        get_result.status().message().find("错误类别=") != std::string::npos);
   http.requests.clear();
   http.json(R"({"output":{"audio":{"url":"http://example.invalid/audio.wav"}}})");
   CHECK(!tts.synthesize("测试", {}).ok());
@@ -150,8 +175,31 @@ void retryAndSecurity() {
   HttpRequest cancelled; cancelled.url = "https://example.invalid";
   CHECK(real.perform(cancelled, [] { return true; }).status().code() == AudioError::kCancelled);
 }
+void translationRequestOptions() {
+  auto c = config();
+  c.llm.name = "deepseek";
+  c.retry_count = 0;
+  c.llm_timeout_ms = 12345;
+  FakeHttp http;
+  http.stream = "data: {\"choices\":[{\"delta\":{\"content\":\"日本語\"}}]}\n\n"
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+                "data: [DONE]\n\n";
+  OpenAiCompatibleLlmProvider translator(http, c, true, true);
+  const auto result = translator.complete(
+      {{"system", "translation rules", 0}, {"user", "source answer", 0}}, {}, {});
+  CHECK(result.ok() && result.value() == "日本語" && http.requests.size() == 1 && http.retries == 0);
+  CHECK(http.requests[0].total_timeout_ms == 12345);
+  auto body = JsonValue::parse(std::string(http.requests[0].body.begin(), http.requests[0].body.end()));
+  CHECK(body.ok() && body.value().find("thinking")->find("type")->stringOr() == "disabled");
+  CHECK(body.value().find("messages")->array().size() == 2);
+  http.requests.clear();
+  http.stream = "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n"
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n"
+                "data: [DONE]\n\n";
+  CHECK(!translator.complete({{"user", "source", 0}}, {}, {}).ok());
+}
 }
 int main() {
-  asrAndTts(); strictCloudJson(); llmStreams(); retryAndSecurity();
+  asrAndTts(); strictCloudJson(); llmStreams(); retryAndSecurity(); translationRequestOptions();
   return failures == 0 ? 0 : 1;
 }
