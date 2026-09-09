@@ -171,6 +171,7 @@ audio::Status VoiceRuntime::processUtterance(const std::vector<std::int16_t>& sa
   stats_.llm_total_ms += elapsedMs(begin);
   if (!answer.ok()) return answer.status();
   if (answer.value().empty()) return {audio::AudioError::kProviderError, "LLM 返回了空回答"};
+  if (observer_.on_answer) observer_.on_answer(answer.value());
 
   if (config_.persona_backend != "python") {
   audio::Status stored = session_.append({"user", transcription.value(), 0});

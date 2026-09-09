@@ -6,6 +6,8 @@
 
 2026-09-08 新增可选的日语播报：人格回答 → 独立 LLM 翻译 → CosyVoice v3.5-plus → 播放。配置及音色创建见[日语语音配置](JAPANESE_VOICE.md)。原始回答仍用于显示、历史和记忆；译文只用于播报。新模板需要填写自己的复刻音色 ID，旧配置不会自动切换。
 
+启用界面时，上半部分显示状态，下半部分逐字显示人格返回的原文中文回复；长回复会自动滚动。`UI_TEXT_INTERVAL_MS` 控制每个 Unicode 字符的显示间隔，默认 50 ms、范围 10–1000 ms。点击重置会清空当前显示并取消本轮；日语翻译只影响 TTS，不改变下半部分的原文。显示节奏不保证与语音逐词同步。
+
 新增可选的[牧濑红莉栖 · Amadeus 人格包](../../characters/kurisu_amadeus/README.md)，附官方来源考据及 App 可导入的 `.amadues` 文件。已有 Ubuntu 构建可运行 `./build/ubuntu/rootlink-voice voice --config config/windows-kurisu.conf.example`，使用独立人格数据目录和 `longxiaochun_v3` 知性女声。它是非官方风格适配，不是原声复刻；App 当前支持角色导入和文字交流，尚未接通 TTS。
 
 ## 1. 先找到这几份文件
@@ -306,6 +308,7 @@ mkdir -p /data/rootlink/python-data /data/rootlink/config
 | `CAPTURE_DEVICE`、`PLAYBACK_DEVICE` | ALSA 录音和播放设备名；WSLg 默认 `pulse` |
 | `UI_BACKEND` | `none` / `sdl` / `fbdev`，需与编译能力匹配；启动脚本固定启用 SDL |
 | `UI_WIDTH`、`UI_HEIGHT` | SDL 窗口尺寸，默认 320×240；framebuffer 使用设备实际尺寸 |
+| `UI_TEXT_INTERVAL_MS` | 下半部分回复逐 Unicode 字符显示间隔，默认 50 ms，允许 10–1000 ms；环境变量可覆盖配置 |
 | `UI_DEVICE` | framebuffer 设备，默认 `/dev/fb0` |
 | `PERSONA_START_TIMEOUT_MS` | Python 启动等待，默认 30000 ms |
 | `PERSONA_TURN_TIMEOUT_MS` | 完整人格处理等待，默认 300000 ms |

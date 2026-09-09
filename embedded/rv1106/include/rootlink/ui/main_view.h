@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic>
 #include <memory>
+#include <string>
 #include "rootlink/voice/voice_runtime.h"
 
 namespace rootlink::ui {
@@ -36,6 +37,8 @@ class MainView {
   ~MainView();
   audio::Status initialize(const voice::RuntimeConfig& config);
   bool tick(DisplayState state); // false: window closed
+  // Updates only the already-revealed dialogue text. Call on the UI thread.
+  void setDialogue(const std::string& text);
   bool takeResetRequest(); // coalesces clicks; does not touch voice resources
  private:
   struct Impl;

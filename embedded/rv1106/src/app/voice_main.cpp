@@ -12,6 +12,7 @@
 #include <atomic>
 #include <thread>
 #include "rootlink/ui/main_view.h"
+#include "rootlink/ui/dialogue.h"
 
 #include "rootlink/audio/audio_config.h"
 #include "rootlink/audio/wav_file.h"
@@ -36,6 +37,7 @@ namespace {
 volatile std::sig_atomic_t g_stopped = 0;
 std::atomic<bool> g_ui_stopped{false};
 rootlink::ui::StateMailbox g_display_state;
+rootlink::ui::DialogueMailbox g_dialogue;
 void handleSignal(int) { g_stopped = 1; }
 
 #if defined(ROOTLINK_AUDIO_API_ALSA)
@@ -473,12 +475,21 @@ int runMain(int argc, char** argv) {
       if (status.ok()) std::cout << "doctor=ok\n";
     } else {
       rootlink::voice::VoiceObserver observer;
-      observer.on_state = [](rootlink::voice::VoiceState state) {
+      const bool dialogue_enabled = config.ui_backend != "none";
+      observer.on_state = [dialogue_enabled](rootlink::voice::VoiceState state) {
+        if (dialogue_enabled && state == rootlink::voice::VoiceState::kThinking)
+          g_dialogue.beginTurn();
         g_display_state.publish(state);
         std::cout << '\n' << "state=" << rootlink::voice::voiceStateName(state) << '\n';
       };
       observer.on_transcript = [](const std::string& value) { std::cout << "user=" << value << '\n'; };
-      observer.on_answer_delta = [](const std::string& value) { std::cout << value << std::flush; };
+      observer.on_answer_delta = [dialogue_enabled](const std::string& value) {
+        if (dialogue_enabled) g_dialogue.append(value);
+        std::cout << value << std::flush;
+      };
+      observer.on_answer = [dialogue_enabled](const std::string& value) {
+        if (dialogue_enabled) g_dialogue.replace(value);
+      };
       observer.on_error = [](const rootlink::audio::Status& value) {
         std::cerr << "turn_error=" << value.message() << '\n';
       };
@@ -529,6 +540,14 @@ int main(int argc, char** argv) {
     rootlink::ui::MainView view;
     const auto started = view.initialize(loaded.value());
     if (!started.ok()) { std::cerr << started.message() << '\n'; return 1; }
+    rootlink::ui::DialogueTypewriter dialogue(loaded.value().ui_text_interval_ms);
+    rootlink::ui::DialogueSnapshot dialogue_snapshot;
+    std::uint64_t dialogue_revision = 0;
+    const auto ui_time_ms = [] {
+      return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now().time_since_epoch()).count());
+    };
+    g_dialogue.beginTurn();
     std::atomic<bool> finished{false};
     int result = 1;
     auto run_worker = [&] {
@@ -543,15 +562,25 @@ int main(int argc, char** argv) {
       // cooperative cancellation closes requests, audio and the Python process.
       while (view.tick(g_display_state.read())) {
         if (g_stopped) break;
+        if (!resetting) {
+          const auto now = ui_time_ms();
+          if (g_dialogue.readIfChanged(dialogue_revision, dialogue_snapshot))
+            dialogue.update(dialogue_snapshot, now);
+          dialogue.tick(now);
+          view.setDialogue(dialogue.visible());
+        }
         if (view.takeResetRequest() && !resetting) {
           resetting = true;
           g_ui_stopped.store(true);
+          dialogue.clear(ui_time_ms());
+          view.setDialogue("");
           std::cout << "reset=requested; cancelling current turn without replay\n";
         }
         if (finished.load()) {
           if (resetting) {
             worker.join(); // old providers and audio have now been destroyed
             g_display_state.reset();
+            g_dialogue.beginTurn();
             g_ui_stopped.store(false);
             finished.store(false);
             resetting = false;

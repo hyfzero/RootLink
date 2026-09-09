@@ -253,7 +253,12 @@ void testVoiceRuntimeCleanup() {
   rootlink::voice::ConversationSession session(sessions.string(), "default");
   rootlink::voice::RuntimeConfig config;
   std::vector<rootlink::voice::VoiceState> states;
+  std::string displayed_answer;
   rootlink::voice::VoiceObserver observer;
+  observer.on_answer = [&](const std::string& answer) {
+    CHECK(!states.empty() && states.back() == rootlink::voice::VoiceState::kThinking);
+    displayed_answer = answer;
+  };
   observer.on_state = [&](rootlink::voice::VoiceState state) {
     states.push_back(state);
     if (state == rootlink::voice::VoiceState::kPlaying) CHECK(playback.running);
@@ -271,6 +276,10 @@ void testVoiceRuntimeCleanup() {
   CHECK(capture.starts == 1 && capture.stops >= 1 && !capture.running);
   CHECK(playback.starts == 1 && playback.drains == 1 && !playback.running);
   CHECK(runtime.stats().utterances == 1);
+  auto saved = session.loadRecent(8);
+  CHECK(saved.ok() && saved.value().size() == 2 && !displayed_answer.empty());
+  if (saved.ok() && saved.value().size() == 2)
+    CHECK(saved.value().back().content == displayed_answer);
   CHECK(std::find(states.begin(), states.end(), rootlink::voice::VoiceState::kTranscribing) != states.end());
   CHECK(std::find(states.begin(), states.end(), rootlink::voice::VoiceState::kPlaying) != states.end());
   std::filesystem::remove_all(sessions);
@@ -378,6 +387,7 @@ void testConfigPriorityAndValidation() {
   ScopedEnvironment models_env("MODELS_FILE"), secrets_env("SECRETS_FILE");
   ScopedEnvironment key("DEEPSEEK_API_KEY"), buffer("BUFFER_FRAMES");
   ScopedEnvironment translate_to("TTS_TRANSLATE_TO"), translate_timeout("TTS_TRANSLATION_TIMEOUT_MS");
+  ScopedEnvironment text_interval("UI_TEXT_INTERVAL_MS");
   const auto root = tempRoot("config");
   std::filesystem::create_directories(root);
   const auto config_path = root / "rootlink.conf";
@@ -413,9 +423,11 @@ void testConfigPriorityAndValidation() {
   CHECK(overridden.value().llm.base_url == "https://override.invalid/v1");
   CHECK(overridden.value().buffer_frames == 50);
   translate_to.set("ja"); translate_timeout.set("12345");
+  text_interval.set("75");
   auto translation_config = loadRuntimeConfig(config_path.string());
   CHECK(translation_config.ok() && translation_config.value().tts_translate_to == "ja" &&
-        translation_config.value().tts_translation_timeout_ms == 12345);
+        translation_config.value().tts_translation_timeout_ms == 12345 &&
+        translation_config.value().ui_text_interval_ms == 75);
   translate_to.set("ko");
   CHECK(!loadRuntimeConfig(config_path.string()).ok());
   translate_to.set("ja");
@@ -424,6 +436,11 @@ void testConfigPriorityAndValidation() {
     CHECK(!loadRuntimeConfig(config_path.string()).ok());
   }
   translate_timeout.set("12345");
+  for (const char* invalid : {"0", "9", "1001", "-1", "nope"}) {
+    text_interval.set(invalid);
+    CHECK(!loadRuntimeConfig(config_path.string()).ok());
+  }
+  text_interval.set("75");
   for (const char* invalid : {"-1", "nan", "0", "1001", "18446744073709551616"}) {
     buffer.set(invalid);
     CHECK(!loadRuntimeConfig(config_path.string()).ok());

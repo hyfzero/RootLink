@@ -23,6 +23,10 @@ flowchart LR
 
 `PERSONA_BACKEND=python` 时，C++ 只提交本轮用户文本，不拼接人格 Prompt、不直接调用对话 LLM、不追加另一份 C++ 历史。`simple` 后端仍保留用于旧配置和离线回归；Python 出错时不会自动切回它。
 
+界面上半部分使用状态快照，下半部分消费原始回答的 UTF-8 流并按 Unicode 字符显示；`UI_TEXT_INTERVAL_MS` 的缺省值为 50 ms，允许 10–1000 ms。视图自行滚动长文本，重置清空尚未显示的文本和当前内容。TTS 翻译仍是后置、无状态步骤，日语译文不回写显示、人格历史或 mailbox；逐字显示与播放不存在逐词同步承诺。
+
+`DialogueMailbox` 的单轮显示缓冲上限为 32 KiB，由工作线程写入、主线程按版本读取；达到上限只截断显示，不改动人格历史或 TTS 原文。最终回答通过 `on_answer` 校正流式文本，点击重置后丢弃旧显示，等待旧工作线程退出再启动下一轮。中文使用随 UI 构建链接的 Noto Sans SC 位图字体，许可、覆盖范围及重生成方法见[字体说明](src/ui/fonts/README.md)。
+
 2026-09-08 增加 `TTS_TRANSLATE_TO=ja`：C++ 在合成阶段独立调用配置中的 LLM 做无状态翻译，输入只有翻译指令和本次完整回答，不加载人格 Prompt、工具或历史。它不属于人格对话调用，不触发 `SessionManager` 的状态更新或摘要。缺省 `none` 时直接合成原文。翻译超时由 `TTS_TRANSLATION_TIMEOUT_MS` 控制；失败不退回原文播报，不重放人格轮次。配置与音色管理见 [JAPANESE_VOICE.md](JAPANESE_VOICE.md)。
 
 首版一个进程只加载一个角色，串行处理消息，不注册工具执行能力。当前语音模式按轮次采集，处理与播放期间停止录音；不是全双工对话，也没有播放打断或回声消除链路。
@@ -42,7 +46,7 @@ flowchart LR
 | `src/voice/cloud_providers.cpp`、`curl_http_client.cpp` | DashScope ASR/TTS、简化后端 LLM、HTTPS、响应解析与有限重试 |
 | `src/voice/python_persona.cpp` | Python 常驻进程、JSON 行协议、请求 ID、超时与回收 |
 | `src/voice/role.cpp` | 简化 C++ 后端的角色、Prompt 和会话持久化 |
-| `src/ui/main_view.cpp`、`include/rootlink/ui/main_view.h` | 状态快照、符号映射、LVGL、SDL/framebuffer 生命周期 |
+| `src/ui/main_view.cpp`、`include/rootlink/ui/main_view.h`、`include/rootlink/ui/dialogue.h` | 状态快照、原文回复 mailbox、逐字显示、LVGL、SDL/framebuffer 生命周期 |
 | `scripts/persona-worker.py` | 共享 Python 包的无界面启动入口 |
 | `src/agent_core/headless.py` | 协议服务、角色种子导入、目录锁、模型映射、SessionManager 创建 |
 | `src/agent_core/session/manager.py` | 多轮会话编排、流式回答、状态与历史更新、摘要触发 |

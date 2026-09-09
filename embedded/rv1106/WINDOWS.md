@@ -6,6 +6,8 @@
 
 使用共享 Python 人格核心和 LVGL 单主界面，请接着看 [Python 核心与界面启动指南](PYTHON_CORE.md)。旧配置默认 `PERSONA_BACKEND=simple`、`UI_BACKEND=none`；Python 示例为 `config/windows-python.conf.example`，启用窗口需设 `UI_BACKEND=sdl` 并重新构建。
 
+窗口上半部分显示语音状态，下半部分逐字显示人格返回的原文中文回答；长回答自动滚动。`UI_TEXT_INTERVAL_MS=50` 是每个 Unicode 字符的默认显示间隔，可在 10–1000 ms 调整，并可由同名环境变量覆盖。点击窗口重置会清空当前回答显示；日语翻译仍只供 TTS 使用，显示不会切换为日语，也不保证与播放逐词同步。
+
 ## 先选运行方式
 
 `TARGET=simulator` 表示在电脑上运行，不表示所有输入和服务都必须是假的。

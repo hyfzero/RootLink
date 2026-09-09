@@ -50,6 +50,7 @@ struct RuntimeConfig {
   std::string ui_input_device; // optional Linux evdev touchscreen, e.g. /dev/input/event0
   unsigned ui_width{320};
   unsigned ui_height{240};
+  unsigned ui_text_interval_ms{50};
   std::string python_executable;
   std::string python_core_entry;
   std::string python_data_dir;

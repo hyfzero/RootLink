@@ -92,6 +92,14 @@ build/simulator-alsa-cloud-sdl/rootlink_ui_preview build/ui-preview
 - 产物为 `build/windows-cloud/kurisu-japanese-diagnostic1.wav` 至 `kurisu-japanese-diagnostic4.wav`。本次未录音、未更新人格历史，也未做听感验收。
 - 原超时根因尚未复现，不能宣称已根治。新版错误明确区分翻译、CosyVoice POST、音频 GET，并提供无密钥和签名 URL 的网络时间诊断。没有扩大自动重试或增加中文回退。
 
+## 2026-09-09：下半屏中文对话框
+
+- 上半屏保留状态符号，下半屏增加深色细边框对话框，原始回答默认每 50 ms 显示一个 Unicode 字符。长文本换行并纵向滚动；点击重置清空显示及待显示内容，旧工作线程结束后才能开始新轮。
+- WSL `build/ubuntu` 最终编译完成，CTest **6/6** 通过，包括 UTF-8 分片、无效编码、显示节奏、最终文本校正、显示缓冲上限、重置和实际字形解码。无界面 `build/simulator-simulated-mock` 编译完成、CTest **5/5** 通过。
+- SDL dummy 与真实 WSLg 窗口预览均通过。已人工检查短句、长句滚动和清空截图；补上 `LV_USE_FONT_COMPRESSED=1` 后，中文和假名正常显示。截图位于本地 `build/ui-dialogue-preview/` 和 `build/ui-dialogue-wslg/`，不随源码提交。
+- `build/rv1106-alsa-cloud-fbdev/rootlink-voice` 按最终字体配置交叉编译完成：ELF32 ARM EABI5，解释器 `/lib/ld-uClibc.so.0`；`size` 的 text/data/bss 合计 2,419,178 bytes，这不是运行时内存测量。构建出现已有挂载盘 clock-skew 和 LVGL 配置提示，无编译错误。
+- 本次界面验证未重新调用真实录音与云语音链路，日语合成验证沿用上一节记录；中文显示保持原始回答，日语仅用于播报。尚未实测板端屏幕、中文逐字显示与声音的主观体验及连续运行资源占用，也未重新制作完整 Python 部署归档。
+
 ## 待实板和人工验收
 
 - 与固件匹配的 SDK/rootfs 部署、framebuffer 像素格式、方向、声卡参数及音画状态同步。

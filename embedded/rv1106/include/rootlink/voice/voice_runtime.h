@@ -49,6 +49,7 @@ struct VoiceObserver {
   std::function<void(const std::string&)> on_transcript;
   std::function<void(const std::string&)> on_answer_delta;
   std::function<void(const audio::Status&)> on_error;
+  std::function<void(const std::string&)> on_answer; // authoritative completed original text
 };
 
 /**

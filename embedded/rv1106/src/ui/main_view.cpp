@@ -2,8 +2,10 @@
 #include <chrono>
 #include <cstring>
 #include <vector>
+#include <string>
 #if defined(ROOTLINK_UI_ENABLED)
 #include "lvgl.h"
+LV_FONT_DECLARE(ui_font_dialogue16);
 #if ROOTLINK_LV_SDL
 #include <SDL2/SDL.h>
 #else
@@ -27,6 +29,9 @@ struct MainView::Impl {
   lv_display_t* display{nullptr};
   lv_obj_t* label{nullptr};
   lv_obj_t* mark{nullptr};
+  lv_obj_t* dialogue_panel{nullptr};
+  lv_obj_t* dialogue{nullptr};
+  std::string dialogue_text;
   DisplayState shown{DisplayState::Error};
 #if !ROOTLINK_LV_SDL
   int fd{-1};
@@ -128,17 +133,35 @@ Status MainView::initialize(const voice::RuntimeConfig& config) {
 #endif
   if (!impl_->display) return {AudioError::kIoError, "Cannot create display"};
   auto* screen = lv_display_get_screen_active(impl_->display);
+  const int width = lv_display_get_horizontal_resolution(impl_->display);
+  const int height = lv_display_get_vertical_resolution(impl_->display);
   lv_obj_set_style_bg_color(screen, lv_color_black(), 0);
   lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
   lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+  impl_->dialogue_panel = lv_obj_create(screen);
+  lv_obj_set_size(impl_->dialogue_panel, width - 16, height / 2 - 12);
+  lv_obj_set_pos(impl_->dialogue_panel, 8, height / 2 + 2);
+  lv_obj_set_style_bg_color(impl_->dialogue_panel, lv_color_hex(0x10141c), 0);
+  lv_obj_set_style_bg_opa(impl_->dialogue_panel, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_color(impl_->dialogue_panel, lv_color_hex(0x667080), 0);
+  lv_obj_set_style_border_width(impl_->dialogue_panel, 1, 0);
+  lv_obj_set_style_radius(impl_->dialogue_panel, 2, 0);
+  lv_obj_set_style_pad_all(impl_->dialogue_panel, 8, 0);
+  lv_obj_add_flag(impl_->dialogue_panel, LV_OBJ_FLAG_SCROLLABLE);
+  impl_->dialogue = lv_label_create(impl_->dialogue_panel);
+  lv_obj_set_width(impl_->dialogue, lv_pct(100));
+  lv_obj_set_style_text_color(impl_->dialogue, lv_color_white(), 0);
+  lv_obj_set_style_text_font(impl_->dialogue, &ui_font_dialogue16, 0);
+  lv_label_set_long_mode(impl_->dialogue, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(impl_->dialogue, "");
   impl_->label = lv_label_create(screen);
   lv_obj_set_style_text_color(impl_->label, lv_color_white(), 0);
   lv_obj_set_style_text_font(impl_->label, &lv_font_montserrat_48, 0);
-  // Draw dash/cross ourselves, avoiding a full CJK font dependency for 5 symbols.
+  // Keep the existing large dash/cross shape independent of the dialogue font.
   impl_->mark = lv_obj_create(screen);
   lv_obj_remove_style_all(impl_->mark);
   lv_obj_set_size(impl_->mark, 64, 64);
-  lv_obj_center(impl_->mark);
+  lv_obj_align(impl_->mark, LV_ALIGN_TOP_MID, 0, height / 4 - 32);
   lv_obj_add_event_cb(impl_->mark, [](lv_event_t* event) {
     auto* self = static_cast<Impl*>(lv_event_get_user_data(event));
     lv_area_t area;
@@ -157,6 +180,19 @@ Status MainView::initialize(const voice::RuntimeConfig& config) {
   }, LV_EVENT_DRAW_MAIN, impl_.get());
   tick(DisplayState::Idle);
   return {};
+#endif
+}
+void MainView::setDialogue(const std::string& text) {
+#if defined(ROOTLINK_UI_ENABLED)
+  if (text == impl_->dialogue_text) return;
+  impl_->dialogue_text = text;
+  if (impl_->dialogue) {
+    lv_label_set_text(impl_->dialogue, text.c_str());
+    lv_obj_update_layout(impl_->dialogue_panel);
+    lv_obj_scroll_to_y(impl_->dialogue_panel, LV_COORD_MAX, LV_ANIM_OFF);
+  }
+#else
+  (void)text;
 #endif
 }
 bool MainView::tick(DisplayState state) {
@@ -185,8 +221,9 @@ bool MainView::tick(DisplayState state) {
       lv_obj_remove_flag(impl_->label, LV_OBJ_FLAG_HIDDEN);
       lv_label_set_text(impl_->label, state == DisplayState::Listening ? "?" :
                        state == DisplayState::Thinking ? "...." : "!");
-      lv_obj_center(impl_->label);
-      if (state == DisplayState::Thinking) lv_obj_set_y(impl_->label, -14);
+      const int height = lv_display_get_vertical_resolution(impl_->display);
+      lv_obj_align(impl_->label, LV_ALIGN_CENTER, 0,
+                   -height / 4 + (state == DisplayState::Thinking ? -14 : 0));
     }
   }
   lv_timer_handler();
