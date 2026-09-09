@@ -100,6 +100,14 @@ build/simulator-alsa-cloud-sdl/rootlink_ui_preview build/ui-preview
 - `build/rv1106-alsa-cloud-fbdev/rootlink-voice` 按最终字体配置交叉编译完成：ELF32 ARM EABI5，解释器 `/lib/ld-uClibc.so.0`；`size` 的 text/data/bss 合计 2,419,178 bytes，这不是运行时内存测量。构建出现已有挂载盘 clock-skew 和 LVGL 配置提示，无编译错误。
 - 本次界面验证未重新调用真实录音与云语音链路，日语合成验证沿用上一节记录；中文显示保持原始回答，日语仅用于播报。尚未实测板端屏幕、中文逐字显示与声音的主观体验及连续运行资源占用，也未重新制作完整 Python 部署归档。
 
+## 2026-09-09：标点补字与三行分页
+
+- 字库补充 U+2000–U+206F 通用标点范围，确认弯引号、破折号及省略号具有实际字形并能解码。保持 16px / 2bpp；未宣称覆盖所有 Unicode 字符。
+- 对话框按实际字体和宽度排版，每页最多三行；默认停留 2000 ms 后清屏逐字显示下一页，最后一页保留，替代上一节的纵向滚动。`UI_PAGE_HOLD_MS=0..10000` 可配置停留时间，字符间隔仍由 `UI_TEXT_INTERVAL_MS` 控制。
+- WSL `build/ubuntu` 编译完成，CTest **6/6** 通过。新增验证覆盖连续三页、停顿、不突发补字、最终页保留、跨页换行、重置和配置边界；实际 LVGL 测量验证三行可容纳、四行拒绝。
+- SDL dummy 与真实 WSLg 窗口预览通过，人工检查通用标点和完整三行无裁切。截图在本地 `build/ui-pages-preview/`、`build/ui-pages-wslg/`。本轮未调用录音或云服务，未做实板显示验收。
+- 无界面回归 **5/5** 通过；framebuffer 版本交叉编译完成，产物确认为 ARM32 EABI5，解释器 `/lib/ld-uClibc.so.0`。当前 WSL 配置已写入 `UI_PAGE_HOLD_MS=2000`。
+
 ## 待实板和人工验收
 
 - 与固件匹配的 SDK/rootfs 部署、framebuffer 像素格式、方向、声卡参数及音画状态同步。

@@ -7,6 +7,7 @@
 #include <vector>
 #include <cstring>
 #include "lvgl.h"
+#include "rootlink/ui/dialogue.h"
 LV_FONT_DECLARE(ui_font_dialogue16);
 int main(int argc, char** argv) {
   rootlink::voice::RuntimeConfig config;
@@ -15,7 +16,8 @@ int main(int argc, char** argv) {
   if (!view.initialize(config).ok()) return 1;
   // A cmap match alone is insufficient: disabled compressed-font support can
   // leave every character rendered as a box despite successful layout tests.
-  for (const auto codepoint : {0x4e2dU, 0x6587U, 0x7267U, 0x6fd1U, 0x3042U, 0x41U}) {
+  for (const auto codepoint : {0x4e2dU, 0x6587U, 0x7267U, 0x6fd1U, 0x3042U, 0x41U,
+                              0x201cU, 0x201dU, 0x2014U, 0x2026U}) {
     lv_font_glyph_dsc_t glyph{};
     if (!lv_font_get_glyph_dsc(&ui_font_dialogue16, &glyph, codepoint, 0) ||
         glyph.is_placeholder || !glyph.box_w || !glyph.box_h) return 17;
@@ -25,7 +27,9 @@ int main(int argc, char** argv) {
     lv_draw_buf_destroy(buffer);
     if (!decoded) return 19;
   }
-  view.setDialogue("牧瀬紅莉栖：こんにちは。中文对白测试。\n这是第二行。");
+  if (!view.dialogueFits("第一行\n第二行\n第三行") ||
+      view.dialogueFits("第一行\n第二行\n第三行\n第四行")) return 20;
+  view.setDialogue("“七个豆腐”？——这是什么奇怪的谜题？\n先把完整句子说清楚……");
   for (int tick = 0; tick < 8; ++tick) {
     if (!view.tick(rootlink::ui::DisplayState::Idle)) return 9;
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -46,7 +50,23 @@ int main(int argc, char** argv) {
     if (SDL_SaveBMP(dialogue_surface,
         (std::filesystem::path(argv[1]) / "dialogue.bmp").string().c_str()) != 0) return 11;
   }
-  view.setDialogue("这是一段较长的中文对白，用于确认固定对话框会自动滚动到最新内容，且不会破坏 UTF-8 字符。ABCDEFGHIJKLMNOPQRSTUVWXYZ。这里继续追加内容以覆盖多行并触发纵向滚动。重复测试中文显示和滚动行为，确保每次更新都安全。再追加一段文本，验证长句不会越界。最后保留足够的行数让对话框滚动到底部。");
+  rootlink::ui::DialogueTypewriter pages(50);
+  pages.setPageLayout([&view](const std::string& value) { return view.dialogueFits(value); }, 2000);
+  const std::string reply = "第一行：这是分页测试。\n第二行：显示三行停一下。\n第三行：两秒后继续。\n新的一页，从这里逐字显示。";
+  pages.update({1, reply}, 0);
+  std::string previous;
+  bool turned = false;
+  for (std::uint64_t now = 0; now < 10000; now += 50) {
+    pages.tick(now);
+    if (!view.dialogueFits(pages.visible())) return 21;
+    if (!previous.empty() && pages.visible().size() < previous.size()) {
+      turned = true;
+      break;
+    }
+    previous = pages.visible();
+  }
+  if (!turned) return 22;
+  view.setDialogue(previous); // Capture the held, full three-line page.
   for (int tick = 0; tick < 12; ++tick) {
     view.tick(rootlink::ui::DisplayState::Speaking);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -54,7 +74,7 @@ int main(int argc, char** argv) {
   if (SDL_RenderReadPixels(dialogue_renderer, nullptr, dialogue_surface->format->format,
                           dialogue_surface->pixels, dialogue_surface->pitch) != 0) return 16;
   if (argc == 2 && SDL_SaveBMP(dialogue_surface,
-      (std::filesystem::path(argv[1]) / "dialogue-long.bmp").string().c_str()) != 0) return 15;
+      (std::filesystem::path(argv[1]) / "dialogue-page.bmp").string().c_str()) != 0) return 15;
   view.setDialogue("");
   for (int tick = 0; tick < 5; ++tick) {
     view.tick(rootlink::ui::DisplayState::Speaking);

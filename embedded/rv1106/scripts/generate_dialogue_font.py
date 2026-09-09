@@ -14,12 +14,14 @@ parser.add_argument("--output", required=True, type=Path)
 parser.add_argument("--converter", default="lv_font_conv")
 args = parser.parse_args()
 args.output.parent.mkdir(parents=True, exist_ok=True)
-# Common CJK unified ideographs, punctuation, kana, ASCII and replacement glyph.
+# Common CJK unified ideographs, CJK and general punctuation, kana, ASCII and
+# replacement glyph. General Punctuation includes typographic quotes, dashes
+# and ellipses commonly emitted by dialogue sources.
 # Extension-plane ideographs and emoji are not included.
 subprocess.run([
     args.converter, "--bpp", "2", "--size", "16", "--font", str(args.font),
     "--format", "lvgl", "-r",
-    "0x20-0x7f,0x3000-0x303f,0x3040-0x30ff,0xff01-0xff60,0x4e00-0x9fff",
+    "0x20-0x7f,0x2000-0x206f,0x3000-0x303f,0x3040-0x30ff,0xff01-0xff60,0x4e00-0x9fff",
     "--symbols", "牧瀬紅莉栖�", "-o", str(args.output),
     "--force-fast-kern-format",
 ], check=True)

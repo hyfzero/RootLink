@@ -4,7 +4,7 @@
 
 来源：参考工程 `Amadues_chatRobo/Demo/DeskBot_demo/lvgl/tests/src/test_files/fonts/noto/NotoSansSC-Regular.ttf`。源文件 SHA-256：`ae82f4e2a55e1316a55bcc1d05e9555ce08d8bda07e893b486896b626fd852ff`。版权与 SIL OFL 1.1 许可全文见同目录 `OFL.txt`，分发字体时须一并保留。
 
-生成范围包含 ASCII、中文标点、假名、全角标点、U+4E00–U+9FFF 常用统一汉字区，以及替换符 U+FFFD。具体字形以源字体为准；未包含扩展平面汉字及 emoji，不承诺任意 Unicode 都能显示。
+生成范围包含 ASCII、U+2000–U+206F 通用标点（弯引号、破折号、省略号等）、中文标点、假名、全角标点、U+4E00–U+9FFF 常用统一汉字区，以及替换符 U+FFFD。具体字形以源字体为准；未包含扩展平面汉字及 emoji，不承诺任意 Unicode 都能显示。
 
 普通编译直接使用已生成的 C 文件，无需安装生成工具。需要修改字号或字符集时，在开发机安装 `lv_font_conv`，从 `embedded/rv1106` 运行：
 

@@ -51,6 +51,7 @@ struct RuntimeConfig {
   unsigned ui_width{320};
   unsigned ui_height{240};
   unsigned ui_text_interval_ms{50};
+  unsigned ui_page_hold_ms{2000};
   std::string python_executable;
   std::string python_core_entry;
   std::string python_data_dir;

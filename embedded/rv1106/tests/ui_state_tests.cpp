@@ -110,24 +110,81 @@ int main() {
   if (!expect(final_writer.visible() == "f",
               "final-only answer did not replace streamed draft")) return 16;
 
+  // A layout callback owns the actual font/wrapping decision.  With this
+  // fixed three-scalar page stand-in, the typewriter must retain every byte,
+  // hold a full page, and then reveal exactly one next-page scalar per tick.
+  rootlink::ui::DialogueTypewriter paged(50);
+  paged.setPageLayout([](const std::string& text) { return text.size() <= 3; }, 200);
+  paged.update({91, "abcdefghi"}, 0);
+  if (!expect(paged.tick(0) && paged.visible() == "a", "first page did not begin")) return 17;
+  if (!expect(paged.tick(50) && paged.tick(100) && paged.visible() == "abc",
+              "first page was not filled one scalar at a time")) return 18;
+  if (!expect(!paged.tick(150) && paged.visible() == "abc",
+              "typewriter turned the page before the hold")) return 19;
+  if (!expect(!paged.tick(349) && paged.visible() == "abc",
+              "full page changed before its hold expired")) return 20;
+  if (!expect(paged.tick(350) && paged.visible() == "d",
+              "second page did not start with its pending character")) return 21;
+  if (!expect(!paged.tick(399) && paged.visible() == "d",
+              "next page ignored normal typing cadence")) return 22;
+  if (!expect(paged.tick(400) && paged.tick(450) && paged.visible() == "def",
+              "second page lost characters")) return 23;
+  if (!expect(!paged.tick(500) && paged.visible() == "def",
+              "second page did not enter its hold when full")) return 24;
+  // Arriving far after the second hold must clear once and reveal one scalar,
+  // never consume a whole page in a catch-up burst.
+  if (!expect(paged.tick(1000) && paged.visible() == "g",
+              "page transition burst or lost its next character")) return 25;
+  if (!expect(paged.tick(1050) && paged.tick(1100) && paged.visible() == "ghi",
+              "third page did not contain the remaining characters")) return 26;
+  if (!expect(!paged.tick(60000) && paged.visible() == "ghi",
+              "final full page was cleared without a following character")) return 27;
+
+  // A generation change (including reset/retry) cancels the old page hold and
+  // starts the new answer immediately.  A leading newline after a page break
+  // is consumed at the break, so it cannot create a blank new page.
+  rootlink::ui::DialogueTypewriter reset_paged(50);
+  reset_paged.setPageLayout([](const std::string& text) { return text.size() <= 2; }, 200);
+  reset_paged.update({101, "abc"}, 0);
+  reset_paged.tick(0);
+  reset_paged.tick(50);
+  reset_paged.tick(100);  // waits on c until 300ms
+  reset_paged.update({102, "XY"}, 101);
+  if (!expect(reset_paged.tick(101) && reset_paged.visible() == "X",
+              "new generation retained the old page wait")) return 28;
+  reset_paged.clear(102);
+  reset_paged.update({102, "Z"}, 102);
+  if (!expect(reset_paged.tick(102) && reset_paged.visible() == "Z",
+              "reset did not cancel the pending page wait")) return 29;
+
+  rootlink::ui::DialogueTypewriter newline_paged(50);
+  newline_paged.setPageLayout([](const std::string& text) { return text.size() <= 2; }, 200);
+  newline_paged.update({103, "ab\nc"}, 0);
+  newline_paged.tick(0);
+  newline_paged.tick(50);
+  if (!expect(!newline_paged.tick(100) && newline_paged.visible() == "ab",
+              "newline triggered a page break too early")) return 30;
+  if (!expect(newline_paged.tick(300) && newline_paged.visible() == "c",
+              "cross-page newline created a blank page or lost content")) return 31;
+
   dialogue.beginTurn();
   dialogue.append(std::string(rootlink::ui::DialogueMailbox::kMaxBytes, 'x'));
   dialogue.append("overflow");
   if (!expect(dialogue.readIfChanged(revision, snapshot) &&
                   snapshot.text.size() == rootlink::ui::DialogueMailbox::kMaxBytes,
-              "dialogue mailbox did not enforce its 32768-byte bound")) return 17;
+              "dialogue mailbox did not enforce its 32768-byte bound")) return 32;
   if (!expect(!dialogue.readIfChanged(revision, snapshot),
-              "discarded overflow published another visible update")) return 18;
+              "discarded overflow published another visible update")) return 33;
 
   dialogue.replace("final");
   if (!expect(dialogue.readIfChanged(revision, snapshot) && snapshot.text == "final",
-              "final answer did not replace streamed dialogue")) return 19;
+              "final answer did not replace streamed dialogue")) return 34;
   dialogue.replace(std::string(rootlink::ui::DialogueMailbox::kMaxBytes + 1, 'z'));
   if (!expect(dialogue.readIfChanged(revision, snapshot) &&
                   snapshot.text.size() == rootlink::ui::DialogueMailbox::kMaxBytes,
-              "final answer replacement exceeded mailbox bound")) return 20;
+              "final answer replacement exceeded mailbox bound")) return 35;
 
   generation_writer.clear(200);
-  if (!expect(generation_writer.visible().empty(), "reset did not clear dialogue immediately")) return 21;
+  if (!expect(generation_writer.visible().empty(), "reset did not clear dialogue immediately")) return 36;
   std::cout << "UI mapping, transitions and error latch passed\n";
 }

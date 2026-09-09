@@ -541,6 +541,8 @@ int main(int argc, char** argv) {
     const auto started = view.initialize(loaded.value());
     if (!started.ok()) { std::cerr << started.message() << '\n'; return 1; }
     rootlink::ui::DialogueTypewriter dialogue(loaded.value().ui_text_interval_ms);
+    dialogue.setPageLayout([&view](const std::string& text) { return view.dialogueFits(text); },
+                           loaded.value().ui_page_hold_ms);
     rootlink::ui::DialogueSnapshot dialogue_snapshot;
     std::uint64_t dialogue_revision = 0;
     const auto ui_time_ms = [] {

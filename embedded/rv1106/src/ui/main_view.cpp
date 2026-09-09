@@ -1,5 +1,6 @@
 #include "rootlink/ui/main_view.h"
 #include <chrono>
+#include <algorithm>
 #include <cstring>
 #include <vector>
 #include <string>
@@ -147,11 +148,13 @@ Status MainView::initialize(const voice::RuntimeConfig& config) {
   lv_obj_set_style_border_width(impl_->dialogue_panel, 1, 0);
   lv_obj_set_style_radius(impl_->dialogue_panel, 2, 0);
   lv_obj_set_style_pad_all(impl_->dialogue_panel, 8, 0);
-  lv_obj_add_flag(impl_->dialogue_panel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_remove_flag(impl_->dialogue_panel, LV_OBJ_FLAG_SCROLLABLE);
   impl_->dialogue = lv_label_create(impl_->dialogue_panel);
   lv_obj_set_width(impl_->dialogue, lv_pct(100));
   lv_obj_set_style_text_color(impl_->dialogue, lv_color_white(), 0);
   lv_obj_set_style_text_font(impl_->dialogue, &ui_font_dialogue16, 0);
+  // Font ascender/descender metrics are 31 px; three lines need 89 px.
+  lv_obj_set_style_text_line_space(impl_->dialogue, -2, 0);
   lv_label_set_long_mode(impl_->dialogue, LV_LABEL_LONG_WRAP);
   lv_label_set_text(impl_->dialogue, "");
   impl_->label = lv_label_create(screen);
@@ -189,10 +192,27 @@ void MainView::setDialogue(const std::string& text) {
   if (impl_->dialogue) {
     lv_label_set_text(impl_->dialogue, text.c_str());
     lv_obj_update_layout(impl_->dialogue_panel);
-    lv_obj_scroll_to_y(impl_->dialogue_panel, LV_COORD_MAX, LV_ANIM_OFF);
   }
 #else
   (void)text;
+#endif
+}
+bool MainView::dialogueFits(const std::string& text) const {
+#if defined(ROOTLINK_UI_ENABLED)
+  if (!impl_->dialogue) return false;
+  lv_obj_update_layout(impl_->dialogue_panel);
+  const auto* font = lv_obj_get_style_text_font(impl_->dialogue, 0);
+  const auto line_space = lv_obj_get_style_text_line_space(impl_->dialogue, 0);
+  lv_point_t size{};
+  lv_text_get_size(&size, text.c_str(), font,
+                  lv_obj_get_style_text_letter_space(impl_->dialogue, 0), line_space,
+                  lv_obj_get_width(impl_->dialogue), LV_TEXT_FLAG_NONE);
+  const auto page_height = std::min<int32_t>(lv_obj_get_content_height(impl_->dialogue_panel),
+                                           3 * font->line_height + 2 * line_space);
+  return size.y <= page_height;
+#else
+  (void)text;
+  return true;
 #endif
 }
 bool MainView::tick(DisplayState state) {

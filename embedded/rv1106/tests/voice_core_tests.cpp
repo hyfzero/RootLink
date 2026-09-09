@@ -388,6 +388,7 @@ void testConfigPriorityAndValidation() {
   ScopedEnvironment key("DEEPSEEK_API_KEY"), buffer("BUFFER_FRAMES");
   ScopedEnvironment translate_to("TTS_TRANSLATE_TO"), translate_timeout("TTS_TRANSLATION_TIMEOUT_MS");
   ScopedEnvironment text_interval("UI_TEXT_INTERVAL_MS");
+  ScopedEnvironment page_hold("UI_PAGE_HOLD_MS");
   const auto root = tempRoot("config");
   std::filesystem::create_directories(root);
   const auto config_path = root / "rootlink.conf";
@@ -423,11 +424,12 @@ void testConfigPriorityAndValidation() {
   CHECK(overridden.value().llm.base_url == "https://override.invalid/v1");
   CHECK(overridden.value().buffer_frames == 50);
   translate_to.set("ja"); translate_timeout.set("12345");
-  text_interval.set("75");
+  text_interval.set("75"); page_hold.set("0");
   auto translation_config = loadRuntimeConfig(config_path.string());
   CHECK(translation_config.ok() && translation_config.value().tts_translate_to == "ja" &&
         translation_config.value().tts_translation_timeout_ms == 12345 &&
-        translation_config.value().ui_text_interval_ms == 75);
+        translation_config.value().ui_text_interval_ms == 75 &&
+        translation_config.value().ui_page_hold_ms == 0);
   translate_to.set("ko");
   CHECK(!loadRuntimeConfig(config_path.string()).ok());
   translate_to.set("ja");
@@ -441,6 +443,15 @@ void testConfigPriorityAndValidation() {
     CHECK(!loadRuntimeConfig(config_path.string()).ok());
   }
   text_interval.set("75");
+  for (const char* valid : {"0", "10000"}) {
+    page_hold.set(valid);
+    CHECK(loadRuntimeConfig(config_path.string()).ok());
+  }
+  for (const char* invalid : {"10001", "-1", "nope", "18446744073709551616"}) {
+    page_hold.set(invalid);
+    CHECK(!loadRuntimeConfig(config_path.string()).ok());
+  }
+  page_hold.set("2000");
   for (const char* invalid : {"-1", "nan", "0", "1001", "18446744073709551616"}) {
     buffer.set(invalid);
     CHECK(!loadRuntimeConfig(config_path.string()).ok());

@@ -5,6 +5,7 @@
 #include <mutex>
 #include <string>
 #include <utility>
+#include <functional>
 
 namespace rootlink::ui {
 struct DialogueSnapshot {
@@ -55,6 +56,12 @@ class DialogueTypewriter {
  public:
   explicit DialogueTypewriter(unsigned interval_ms = 50)
       : interval_ms_(std::max(1U, interval_ms)) {}
+  // The view measures with its real font and wrapping width; no byte/character
+  // count approximation for Chinese, Latin words or explicit newlines.
+  void setPageLayout(std::function<bool(const std::string&)> fits, unsigned hold_ms) {
+    fits_page_ = std::move(fits);
+    page_hold_ms_ = hold_ms;
+  }
   void update(const DialogueSnapshot& value, std::uint64_t now_ms) {
     if (value.generation != generation_ ||
         value.text.compare(0, target_.size(), target_) != 0) {
@@ -66,10 +73,17 @@ class DialogueTypewriter {
   void clear(std::uint64_t now_ms) {
     target_.clear(); visible_.clear(); cursor_ = 0; due_ms_ = now_ms;
     awaiting_utf8_ = false;
+    page_waiting_ = false;
   }
   bool tick(std::uint64_t now_ms) {
     if (cursor_ == target_.size()) { due_ms_ = std::max(due_ms_, now_ms); return false; }
     if (now_ms < due_ms_) return false;
+    if (page_waiting_) {
+      if (now_ms < page_due_ms_) return false;
+      visible_.clear();
+      page_waiting_ = false;
+      due_ms_ = now_ms; // Start the next page at normal speed, never catch up.
+    }
     const auto budget = std::min<std::uint64_t>(64, 1 + (now_ms - due_ms_) / interval_ms_);
     bool changed = false;
     for (std::uint64_t n = 0; n < budget && cursor_ < target_.size(); ++n) {
@@ -98,13 +112,16 @@ class DialogueTypewriter {
           bytes = 0; break;
         }
       }
-      if (!bytes || first == 0) {
-        visible_ += "\xef\xbf\xbd";
-        ++cursor_;
-      } else {
-        visible_.append(target_, cursor_, bytes);
-        cursor_ += bytes;
+      const std::string scalar = !bytes || first == 0 ? "\xef\xbf\xbd" :
+          target_.substr(cursor_, bytes);
+      if (!visible_.empty() && fits_page_ && !fits_page_(visible_ + scalar)) {
+        page_waiting_ = true;
+        page_due_ms_ = now_ms + page_hold_ms_;
+        if (scalar == "\n") cursor_ += bytes;
+        break; // Keep the scalar for the next page; a newline is the page break.
       }
+      visible_ += scalar;
+      cursor_ += !bytes || first == 0 ? 1 : bytes;
       changed = true;
       due_ms_ += interval_ms_;
       if (resumed_split_scalar) break;
@@ -118,6 +135,10 @@ class DialogueTypewriter {
   std::uint64_t generation_{0}, due_ms_{0};
   std::size_t cursor_{0};
   bool awaiting_utf8_{false};
+  bool page_waiting_{false};
+  unsigned page_hold_ms_{2000};
+  std::uint64_t page_due_ms_{0};
+  std::function<bool(const std::string&)> fits_page_;
   std::string target_, visible_;
 };
 }

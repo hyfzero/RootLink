@@ -102,7 +102,7 @@ void overrideFromEnvironment(Values& values) {
   // 因调试输出整个配置表而意外泄露。
   static constexpr const char* keys[] = {
       "TARGET", "AUDIO_API", "SERVICE_MODE", "CAPTURE_DEVICE", "PLAYBACK_DEVICE",
-      "UI_BACKEND", "UI_DEVICE", "UI_INPUT_DEVICE", "UI_WIDTH", "UI_HEIGHT", "UI_TEXT_INTERVAL_MS",
+      "UI_BACKEND", "UI_DEVICE", "UI_INPUT_DEVICE", "UI_WIDTH", "UI_HEIGHT", "UI_TEXT_INTERVAL_MS", "UI_PAGE_HOLD_MS",
       "BUFFER_FRAMES", "ASR_PROVIDER", "ASR_MODEL", "ASR_BASE_URL", "LLM_PROVIDER",
       "LLM_MODEL", "LLM_BASE_URL", "TTS_PROVIDER", "TTS_MODEL", "TTS_BASE_URL",
       "TTS_VOICE", "TTS_SAMPLE_RATE", "TTS_TRANSLATE_TO", "MODELS_FILE", "SECRETS_FILE", "ROLE_DIR",
@@ -216,8 +216,9 @@ audio::Status RuntimeConfig::validate() const {
   }
   if ((ui_backend != "none" && ui_backend != "sdl" && ui_backend != "fbdev") ||
       ui_device.empty() || ui_width < 80 || ui_height < 80 || ui_width > 1920 || ui_height > 1080 ||
-      ui_text_interval_ms < 10 || ui_text_interval_ms > 1000)
-    return {AudioError::kConfigError, "Invalid UI backend/device/size or UI_TEXT_INTERVAL_MS (10-1000)"};
+      ui_text_interval_ms < 10 || ui_text_interval_ms > 1000 || ui_page_hold_ms > 10000)
+    return {AudioError::kConfigError,
+            "Invalid UI backend/device/size, UI_TEXT_INTERVAL_MS (10-1000), or UI_PAGE_HOLD_MS (0-10000)"};
   if ((persona_backend != "simple" && persona_backend != "python") ||
       persona_start_timeout_ms <= 0 || persona_turn_timeout_ms <= 0 ||
       (persona_backend == "python" && (python_executable.empty() || python_core_entry.empty() || python_data_dir.empty())))
@@ -274,6 +275,7 @@ audio::Result<RuntimeConfig> loadRuntimeConfig(const std::string& path) {
   valid_numbers &= parseUnsigned(values, "UI_WIDTH", config.ui_width);
   valid_numbers &= parseUnsigned(values, "UI_HEIGHT", config.ui_height);
   valid_numbers &= parseUnsigned(values, "UI_TEXT_INTERVAL_MS", config.ui_text_interval_ms);
+  valid_numbers &= parseUnsigned(values, "UI_PAGE_HOLD_MS", config.ui_page_hold_ms);
   valid_numbers &= parseUnsigned(values, "PERSONA_START_TIMEOUT_MS", config.persona_start_timeout_ms);
   valid_numbers &= parseUnsigned(values, "PERSONA_TURN_TIMEOUT_MS", config.persona_turn_timeout_ms);
   valid_numbers &= parseUnsigned(values, "BUFFER_FRAMES", config.buffer_frames);
