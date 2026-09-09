@@ -38,6 +38,7 @@ volatile std::sig_atomic_t g_stopped = 0;
 std::atomic<bool> g_ui_stopped{false};
 rootlink::ui::StateMailbox g_display_state;
 rootlink::ui::DialogueMailbox g_dialogue;
+rootlink::ui::SpeechMailbox g_speech;
 void handleSignal(int) { g_stopped = 1; }
 
 #if defined(ROOTLINK_AUDIO_API_ALSA)
@@ -477,20 +478,30 @@ int runMain(int argc, char** argv) {
       rootlink::voice::VoiceObserver observer;
       const bool dialogue_enabled = config.ui_backend != "none";
       observer.on_state = [dialogue_enabled](rootlink::voice::VoiceState state) {
-        if (dialogue_enabled && state == rootlink::voice::VoiceState::kThinking)
+        if (dialogue_enabled && state == rootlink::voice::VoiceState::kThinking) {
           g_dialogue.beginTurn();
+          g_speech.reset();
+        }
+        if (dialogue_enabled && state == rootlink::voice::VoiceState::kError)
+          g_speech.reset();
         g_display_state.publish(state);
         std::cout << '\n' << "state=" << rootlink::voice::voiceStateName(state) << '\n';
       };
       observer.on_transcript = [](const std::string& value) { std::cout << "user=" << value << '\n'; };
-      observer.on_answer_delta = [dialogue_enabled](const std::string& value) {
-        if (dialogue_enabled) g_dialogue.append(value);
-        std::cout << value << std::flush;
-      };
-      observer.on_answer = [dialogue_enabled](const std::string& value) {
-        if (dialogue_enabled) g_dialogue.replace(value);
-      };
-      observer.on_error = [](const rootlink::audio::Status& value) {
+      observer.on_answer_delta = [](const std::string& value) { std::cout << value << std::flush; };
+      observer.on_answer = [](const std::string&) {};
+      if (dialogue_enabled) {
+        observer.on_speech_segment = [](const std::string& chinese,
+                                        std::uint64_t duration_ms) {
+          const auto started_ms = static_cast<std::uint64_t>(
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                  std::chrono::steady_clock::now().time_since_epoch()).count());
+          g_speech.publish(chinese, duration_ms, started_ms);
+        };
+        observer.speech_segment_complete = [] { return g_speech.consumeFrontAcknowledgement(); };
+      }
+      observer.on_error = [dialogue_enabled](const rootlink::audio::Status& value) {
+        if (dialogue_enabled) g_speech.reset();
         std::cerr << "turn_error=" << value.message() << '\n';
       };
       rootlink::voice::VoiceRuntime runtime(capture, playback, *asr, *llm, *tts,
@@ -540,21 +551,26 @@ int main(int argc, char** argv) {
     rootlink::ui::MainView view;
     const auto started = view.initialize(loaded.value());
     if (!started.ok()) { std::cerr << started.message() << '\n'; return 1; }
-    rootlink::ui::DialogueTypewriter dialogue(loaded.value().ui_text_interval_ms);
+    rootlink::ui::SpeechTypewriter dialogue;
     dialogue.setPageLayout([&view](const std::string& text) { return view.dialogueFits(text); },
                            loaded.value().ui_page_hold_ms);
-    rootlink::ui::DialogueSnapshot dialogue_snapshot;
+    rootlink::ui::SpeechSegmentSnapshot dialogue_snapshot;
     std::uint64_t dialogue_revision = 0;
+    std::uint64_t dialogue_reset_epoch = 0;
     const auto ui_time_ms = [] {
       return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::steady_clock::now().time_since_epoch()).count());
     };
     g_dialogue.beginTurn();
+    g_speech.reset();
     std::atomic<bool> finished{false};
     int result = 1;
     auto run_worker = [&] {
       result = safeRun(argc, argv);
-      if (result != 0) g_display_state.publish(rootlink::voice::VoiceState::kError);
+      if (result != 0) {
+        g_speech.reset();
+        g_display_state.publish(rootlink::voice::VoiceState::kError);
+      }
       finished.store(true);
     };
     std::thread worker(run_worker);
@@ -566,15 +582,25 @@ int main(int argc, char** argv) {
         if (g_stopped) break;
         if (!resetting) {
           const auto now = ui_time_ms();
-          if (g_dialogue.readIfChanged(dialogue_revision, dialogue_snapshot))
-            dialogue.update(dialogue_snapshot, now);
+          if (g_speech.readFrontIfChanged(dialogue_revision, dialogue_snapshot)) {
+            if (dialogue_snapshot.reset_epoch != dialogue_reset_epoch) {
+              dialogue_reset_epoch = dialogue_snapshot.reset_epoch;
+              dialogue.clear();
+              view.setDialogue("");
+            }
+            if (dialogue_snapshot.generation != 0 &&
+                dialogue_snapshot.generation != dialogue.generation())
+              dialogue.begin(dialogue_snapshot);
+          }
           dialogue.tick(now);
           view.setDialogue(dialogue.visible());
+          if (dialogue.complete()) g_speech.acknowledge(dialogue.generation());
         }
         if (view.takeResetRequest() && !resetting) {
           resetting = true;
           g_ui_stopped.store(true);
-          dialogue.clear(ui_time_ms());
+          dialogue.clear();
+          g_speech.reset();
           view.setDialogue("");
           std::cout << "reset=requested; cancelling current turn without replay\n";
         }
@@ -583,6 +609,7 @@ int main(int argc, char** argv) {
             worker.join(); // old providers and audio have now been destroyed
             g_display_state.reset();
             g_dialogue.beginTurn();
+            g_speech.reset();
             g_ui_stopped.store(false);
             finished.store(false);
             resetting = false;

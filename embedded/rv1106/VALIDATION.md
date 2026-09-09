@@ -108,6 +108,16 @@ build/simulator-alsa-cloud-sdl/rootlink_ui_preview build/ui-preview
 - SDL dummy 与真实 WSLg 窗口预览通过，人工检查通用标点和完整三行无裁切。截图在本地 `build/ui-pages-preview/`、`build/ui-pages-wslg/`。本轮未调用录音或云服务，未做实板显示验收。
 - 无界面回归 **5/5** 通过；framebuffer 版本交叉编译完成，产物确认为 ARM32 EABI5，解释器 `/lib/ld-uClibc.so.0`。当前 WSL 配置已写入 `UI_PAGE_HOLD_MS=2000`。
 
+## 2026-09-10：日语音频与中文句段同步
+
+- 有界面对话按中文句段分别翻译、合成日语；第一帧音频写入成功后才发布对应中文字幕，逐字速度由该段 PCM 时长计算。最多预取下一段；当前音频播放和字幕显示都结束后才切换。无界面仍使用完整回答合成。
+- 保留每页三行及 `UI_PAGE_HOLD_MS` 停留；翻页停留冻结逐字时钟，可能使字幕结束晚于音频，此时等待字幕完成。属于句段级同步，不是中文词语与日语音素的时间戳对齐。
+- WSL `build/ubuntu/rootlink-voice` 最终源码编译完成，CTest **6/6** 通过；无界面 `build/simulator-simulated-mock` 编译完成，CTest **5/5** 通过。覆盖 UTF-8 分句、连续三段播放、字幕确认、预取取消、等待超时、分页时钟及重置后拒绝旧确认。
+- 真实 WSLg `rootlink_ui_preview` 退出码为 0，实际 LVGL 字体测量的字幕节奏、三行限制及窗口关闭检查通过；输出目录为 `build/ui-sync-wslg/`。本轮没有调用云服务、录音或进行真实日语音画听感验收。
+- 字幕确认等待复用 `PERSONA_TURN_TIMEOUT_MS`（默认 300 秒）。超时或重置会取消并等待预取结束，不自动重放；字幕与下一段音频不会因丢失确认无限等待。
+- framebuffer 交叉编译完成，`build/rv1106-alsa-cloud-fbdev/rootlink-voice` 为 ELF32 ARM EABI5，解释器 `/lib/ld-uClibc.so.0`。本轮未重新生成完整 Python 部署归档，未执行板端运行。
+- 分段会增加翻译与 TTS 请求次数，也可能影响跨句语气连贯性；预取不能保证网络条件下无间隙。真实云语音、声卡缓冲延迟及板端资源占用仍需验收。
+
 ## 待实板和人工验收
 
 - 与固件匹配的 SDK/rootfs 部署、framebuffer 像素格式、方向、声卡参数及音画状态同步。

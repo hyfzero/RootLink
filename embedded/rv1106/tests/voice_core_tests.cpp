@@ -7,6 +7,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "rootlink/audio/audio_capture.h"
@@ -15,6 +16,7 @@
 #include "rootlink/voice/json_value.h"
 #include "rootlink/voice/providers.h"
 #include "rootlink/voice/role.h"
+#include "rootlink/voice/sentence_split.h"
 #include "rootlink/voice/vad.h"
 #include "rootlink/voice/voice_runtime.h"
 
@@ -283,6 +285,144 @@ void testVoiceRuntimeCleanup() {
   CHECK(std::find(states.begin(), states.end(), rootlink::voice::VoiceState::kTranscribing) != states.end());
   CHECK(std::find(states.begin(), states.end(), rootlink::voice::VoiceState::kPlaying) != states.end());
   std::filesystem::remove_all(sessions);
+}
+
+void testSentenceSpeechSync() {
+  using namespace rootlink::voice;
+  const std::string long_text = "第一句。第二句，保留逗号。😀第三句";
+  const auto split = splitSpeechSegments(long_text, 5);
+  std::string joined;
+  for (const auto& part : split) joined += part;
+  CHECK(joined == long_text && split.size() >= 3);
+  for (const auto& part : split) CHECK(!part.empty());
+  const std::string quoted = "她说：\"你好。\"\n\n然后离开。";
+  const auto quoted_split = splitSpeechSegments(quoted);
+  std::string quoted_joined;
+  for (const auto& part : quoted_split) quoted_joined += part;
+  CHECK(quoted_joined == quoted && quoted_split.size() == 2);
+  const std::string leading_whitespace = " \n\n你好。";
+  const auto leading_split = splitSpeechSegments(leading_whitespace);
+  CHECK(leading_split.size() == 1 && leading_split.front() == leading_whitespace);
+  CHECK(splitSpeechSegments(" \n\r\t").empty());
+
+  struct Llm final : LlmProvider {
+    int calls{0};
+    rootlink::audio::Result<std::string> complete(const std::vector<ChatMessage>&,
+        const TextDelta&, const StopRequested&) override {
+      ++calls;
+      return rootlink::audio::Result<std::string>("第一段。第二段。第三段。");
+    }
+    void cancel() noexcept override {}
+  };
+  struct Tts final : TtsProvider {
+    int calls{0}; int active{0}; int max_active{0}; bool stopped{false};
+    rootlink::audio::Result<std::vector<std::int16_t>> synthesize(const std::string&,
+        const StopRequested& should_stop) override {
+      ++calls;
+      ++active;
+      max_active = std::max(max_active, active);
+      if (calls == 2) {
+        while (!(should_stop && should_stop())) std::this_thread::sleep_for(1ms);
+        stopped = true;
+        --active;
+        return rootlink::audio::Result<std::vector<std::int16_t>>(
+            Status(AudioError::kCancelled, "prefetch cancelled"));
+      }
+      --active;
+      return rootlink::audio::Result<std::vector<std::int16_t>>(frame(1));
+    }
+    void cancel() noexcept override {}
+  };
+  FakeCapture capture;
+  FakePlayback playback;
+  MockAsrProvider asr;
+  Llm llm;
+  Tts tts;
+  const auto sessions = tempRoot("sentence-sync");
+  ConversationSession session(sessions.string(), "default");
+  std::atomic<bool> stop{false};
+  int waits = 0;
+  std::vector<std::string> notified;
+  VoiceObserver observer;
+  observer.on_speech_segment = [&](const std::string& text, std::uint64_t duration) {
+    CHECK(playback.writes > 0 && playback.running);
+    CHECK(duration == 20);
+    notified.push_back(text);
+  };
+  observer.speech_segment_complete = [&] {
+    ++waits;
+    if (waits == 1) { stop.store(true); return false; }
+    return true;
+  };
+  RuntimeConfig config;
+  VoiceRuntime runtime(capture, playback, asr, llm, tts, {}, session, config, observer);
+  const auto status = runtime.run(1000ms, [&] { return stop.load(); });
+  CHECK(status.ok() && notified.size() == 1 && notified.front() == "第一段。");
+  CHECK(tts.calls == 2 && tts.max_active == 1 && tts.stopped);
+  CHECK(!capture.running && !playback.running);
+  std::filesystem::remove_all(sessions);
+
+  struct CompleteTts final : TtsProvider {
+    std::vector<std::string> inputs;
+    rootlink::audio::Result<std::vector<std::int16_t>> synthesize(const std::string& input,
+        const StopRequested&) override {
+      inputs.push_back(input);
+      return rootlink::audio::Result<std::vector<std::int16_t>>(frame(1));
+    }
+    void cancel() noexcept override {}
+  };
+  FakeCapture complete_capture;
+  FakePlayback complete_playback;
+  MockAsrProvider complete_asr;
+  Llm complete_llm;
+  CompleteTts complete_tts;
+  const auto complete_sessions = tempRoot("sentence-complete");
+  ConversationSession complete_session(complete_sessions.string(), "default");
+  std::atomic<bool> complete_stop{false};
+  std::vector<std::string> complete_notified;
+  std::vector<int> drains_at_notification;
+  VoiceObserver complete_observer;
+  complete_observer.on_speech_segment = [&](const std::string& text, std::uint64_t) {
+    complete_notified.push_back(text);
+    drains_at_notification.push_back(complete_playback.drains);
+  };
+  complete_observer.speech_segment_complete = [&] {
+    if (complete_notified.size() == 3) complete_stop.store(true);
+    return true;
+  };
+  VoiceRuntime complete_runtime(complete_capture, complete_playback, complete_asr, complete_llm,
+                                complete_tts, {}, complete_session, config, complete_observer);
+  CHECK(complete_runtime.run(1000ms, [&] { return complete_stop.load(); }).ok());
+  const std::vector<std::string> expected{"第一段。", "第二段。", "第三段。"};
+  CHECK(complete_tts.inputs == expected && complete_notified == expected);
+  CHECK((drains_at_notification == std::vector<int>{0, 1, 2}) && complete_playback.drains == 3);
+  CHECK(complete_llm.calls == 1 && complete_session.loadRecent(8).value().size() == 2 &&
+        complete_runtime.stats().utterances == 1);
+  std::filesystem::remove_all(complete_sessions);
+
+  FakeCapture timeout_capture;
+  FakePlayback timeout_playback;
+  MockAsrProvider timeout_asr;
+  Llm timeout_llm;
+  MockTtsProvider timeout_tts;
+  const auto timeout_sessions = tempRoot("sentence-timeout");
+  ConversationSession timeout_session(timeout_sessions.string(), "default");
+  std::atomic<bool> timeout_stop{false};
+  std::vector<Status> timeout_errors;
+  VoiceObserver timeout_observer;
+  timeout_observer.on_speech_segment = [](const std::string&, std::uint64_t) {};
+  timeout_observer.speech_segment_complete = [] { return false; };
+  timeout_observer.on_error = [&](const Status& status) {
+    timeout_errors.push_back(status);
+    timeout_stop.store(true);
+  };
+  RuntimeConfig timeout_config;
+  timeout_config.persona_turn_timeout_ms = 1;
+  VoiceRuntime timeout_runtime(timeout_capture, timeout_playback, timeout_asr, timeout_llm,
+                               timeout_tts, {}, timeout_session, timeout_config, timeout_observer);
+  CHECK(timeout_runtime.run(1000ms, [&] { return timeout_stop.load(); }).ok());
+  CHECK(timeout_errors.size() == 1 && timeout_errors.front().code() == AudioError::kTimeout);
+  std::filesystem::remove_all(timeout_sessions);
 }
 
 class FailingAsr final : public rootlink::voice::AsrProvider {
@@ -614,6 +754,7 @@ int main() {
   testVadBoundariesAndStress();
   testRolePromptAndSession();
   testVoiceRuntimeCleanup();
+  testSentenceSpeechSync();
   testCancellationAndErrors();
   testPythonStageRecovery();
   testConfigPriorityAndValidation();

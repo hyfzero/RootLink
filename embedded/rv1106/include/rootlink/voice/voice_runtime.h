@@ -1,9 +1,11 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "rootlink/audio/audio_capture.h"
 #include "rootlink/audio/audio_playback.h"
@@ -50,6 +52,10 @@ struct VoiceObserver {
   std::function<void(const std::string&)> on_answer_delta;
   std::function<void(const audio::Status&)> on_error;
   std::function<void(const std::string&)> on_answer; // authoritative completed original text
+  // 仅设置该回调时启用句子级中日语音同步；参数为原中文分段与 PCM 时长。
+  std::function<void(const std::string&, std::uint64_t)> on_speech_segment;
+  // 分段音频 drain 后轮询；返回 true 表示 UI 已展示完该段。
+  std::function<bool()> speech_segment_complete;
 };
 
 /**
@@ -77,7 +83,8 @@ class VoiceRuntime {
   audio::Status processUtterance(const std::vector<std::int16_t>& samples,
                                  const StopRequested& stopped);
   audio::Status playSamples(const std::vector<std::int16_t>& samples,
-                            const StopRequested& stopped);
+                            const StopRequested& stopped,
+                            const std::function<void()>& on_first_frame = {});
   void setState(VoiceState state);
   bool isFatal(const audio::Status& status) const noexcept;
 

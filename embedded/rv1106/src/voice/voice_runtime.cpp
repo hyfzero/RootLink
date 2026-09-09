@@ -1,9 +1,12 @@
 #include "rootlink/voice/voice_runtime.h"
 
 #include <algorithm>
+#include <future>
+#include <memory>
 #include <thread>
 
 #include "rootlink/audio/audio_config.h"
+#include "rootlink/voice/sentence_split.h"
 
 namespace rootlink::voice {
 namespace {
@@ -13,6 +16,11 @@ std::uint64_t elapsedMs(std::chrono::steady_clock::time_point begin) {
                                         std::chrono::steady_clock::now() - begin)
                                         .count());
 }
+
+struct SynthesizedSpeech {
+  audio::Result<std::vector<std::int16_t>> speech;
+  std::uint64_t elapsed_ms{0};
+};
 
 }  // namespace
 
@@ -181,21 +189,104 @@ audio::Status VoiceRuntime::processUtterance(const std::vector<std::int16_t>& sa
   }
   ++stats_.utterances;
 
+  // 未接入分段 UI 时保持原有整句 TTS/播放路径及状态序列。
+  if (!observer_.on_speech_segment) {
+    setState(VoiceState::kSynthesizing);
+    begin = std::chrono::steady_clock::now();
+    auto speech = tts_.synthesize(answer.value(), stopped);
+    stats_.tts_ms += elapsedMs(begin);
+    if (!speech.ok()) return speech.status();
+    const auto played = playSamples(speech.value(), stopped);
+    if (!played.ok() && (cancelled_ || (stopped && stopped())))
+      return {audio::AudioError::kCancelled, "播放已取消"};
+    if (!played.ok() && played.code() != audio::AudioError::kCancelled)
+      return {audio::AudioError::kDeviceError, played.message()};
+    return played;
+  }
+
+  const auto segments = splitSpeechSegments(answer.value());
+  if (segments.empty()) return {audio::AudioError::kProviderError, "回答无法拆分为语音段"};
+  const auto prefetch_cancelled = std::make_shared<std::atomic<bool>>(false);
+  const StopRequested segment_stopped = [cancelled = &cancelled_, prefetch_cancelled, stopped] {
+    return cancelled->load() || prefetch_cancelled->load() || (stopped && stopped());
+  };
+  TtsProvider* const tts = &tts_;
+  const auto synthesize = [tts, segment_stopped](const std::string& text) {
+    const auto started = std::chrono::steady_clock::now();
+    auto speech = tts->synthesize(text, segment_stopped);
+    return SynthesizedSpeech{std::move(speech), elapsedMs(started)};
+  };
+  const auto join_prefetch = [&](std::future<SynthesizedSpeech>& future) {
+    SynthesizedSpeech completed = future.get();
+    stats_.tts_ms += completed.elapsed_ms;  // 仅由主工作线程写统计。
+    return std::move(completed);
+  };
+
   setState(VoiceState::kSynthesizing);
-  begin = std::chrono::steady_clock::now();
-  auto speech = tts_.synthesize(answer.value(), stopped);
-  stats_.tts_ms += elapsedMs(begin);
-  if (!speech.ok()) return speech.status();
-  const auto played = playSamples(speech.value(), stopped);
-  if (!played.ok() && (cancelled_ || (stopped && stopped())))
-    return {audio::AudioError::kCancelled, "播放已取消"};
-  if (!played.ok() && played.code() != audio::AudioError::kCancelled)
-    return {audio::AudioError::kDeviceError, played.message()};
-  return played;
+  SynthesizedSpeech current = synthesize(segments.front());
+  stats_.tts_ms += current.elapsed_ms;
+  if (!current.speech.ok()) return current.speech.status();
+
+  for (std::size_t index = 0; index < segments.size(); ++index) {
+    std::future<SynthesizedSpeech> prefetched;
+    if (index + 1 < segments.size()) {
+      const std::string next_segment = segments[index + 1];
+      // 预取仅在当前段播放期间运行；每轮先 get/join 再发起下一次，避免并发 TTS。
+      prefetched = std::async(std::launch::async, [synthesize, next_segment] {
+        return synthesize(next_segment);
+      });
+    }
+    struct PrefetchGuard {
+      std::shared_ptr<std::atomic<bool>> cancelled;
+      std::future<SynthesizedSpeech>& future;
+      ~PrefetchGuard() {
+        if (!future.valid()) return;
+        cancelled->store(true);
+        try { (void)future.get(); } catch (...) {}
+      }
+    } prefetch_guard{prefetch_cancelled, prefetched};
+    const auto duration_ms = static_cast<std::uint64_t>(current.speech.value().size()) *
+        1000U / audio::kSampleRate;
+    const auto played = playSamples(current.speech.value(), segment_stopped, [&] {
+      observer_.on_speech_segment(segments[index], duration_ms);
+    });
+    if (!played.ok()) {
+      const bool externally_stopped = cancelled_.load() || (stopped && stopped());
+      prefetch_cancelled->store(true);
+      if (prefetched.valid()) (void)join_prefetch(prefetched);
+      if (externally_stopped) return {audio::AudioError::kCancelled, "播放已取消"};
+      return played.code() == audio::AudioError::kCancelled
+          ? played : audio::Status(audio::AudioError::kDeviceError, played.message());
+    }
+    if (observer_.speech_segment_complete) {
+      setState(VoiceState::kSynthesizing);
+      const auto display_deadline = std::chrono::steady_clock::now() +
+          std::chrono::milliseconds(config_.persona_turn_timeout_ms);
+      while (!observer_.speech_segment_complete()) {
+        if (segment_stopped()) {
+          prefetch_cancelled->store(true);
+          if (prefetched.valid()) (void)join_prefetch(prefetched);
+          return {audio::AudioError::kCancelled, "分段展示已取消"};
+        }
+        if (std::chrono::steady_clock::now() >= display_deadline) {
+          prefetch_cancelled->store(true);
+          if (prefetched.valid()) (void)join_prefetch(prefetched);
+          return {audio::AudioError::kTimeout, "分段展示超时"};
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+    }
+    if (index + 1 == segments.size()) break;
+    setState(VoiceState::kSynthesizing);
+    current = join_prefetch(prefetched);
+    if (!current.speech.ok()) return current.speech.status();
+  }
+  return audio::Status::okStatus();
 }
 
 audio::Status VoiceRuntime::playSamples(const std::vector<std::int16_t>& samples,
-                                        const StopRequested& stopped) {
+                                        const StopRequested& stopped,
+                                        const std::function<void()>& on_first_frame) {
   if (samples.empty())
     return {audio::AudioError::kUnsupportedFormat, "TTS PCM 为空"};
   const auto begin = std::chrono::steady_clock::now();
@@ -203,6 +294,7 @@ audio::Status VoiceRuntime::playSamples(const std::vector<std::int16_t>& samples
   if (!status.ok()) return status;
   setState(VoiceState::kPlaying);
   std::vector<std::int16_t> frame(audio::kSamplesPerFrame);
+  bool first_frame = true;
   for (std::size_t offset = 0; offset < samples.size(); offset += audio::kSamplesPerFrame) {
     if ((stopped && stopped()) || cancelled_) {
       (void)playback_.stop();
@@ -215,6 +307,8 @@ audio::Status VoiceRuntime::playSamples(const std::vector<std::int16_t>& samples
                 frame.begin());
     status = playback_.writeFrame(frame);
     if (!status.ok()) { (void)playback_.stop(); return status; }
+    if (first_frame && on_first_frame) on_first_frame();
+    first_frame = false;
   }
   status = playback_.drain();
   const audio::Status stop_status = playback_.stop();

@@ -186,5 +186,90 @@ int main() {
 
   generation_writer.clear(200);
   if (!expect(generation_writer.visible().empty(), "reset did not clear dialogue immediately")) return 36;
+
+  // Speech subtitles stay empty until a real playback notification. Cadence
+  // uses PCM duration / Unicode scalar count, and cannot complete early.
+  rootlink::ui::SpeechMailbox speech;
+  rootlink::ui::SpeechSegmentSnapshot speech_snapshot;
+  std::uint64_t speech_revision = 0;
+  rootlink::ui::SpeechTypewriter subtitles;
+  subtitles.setPageLayout([](const std::string&) { return true; }, 200);
+  if (!expect(!speech.readFrontIfChanged(speech_revision, speech_snapshot) ||
+                  speech_snapshot.generation == 0, "subtitle appeared before playback")) return 37;
+  speech.publish("\xe4\xbd\xa0\xe5\xa5\xbd", 1000, 100); // 你好
+  speech.readFrontIfChanged(speech_revision, speech_snapshot);
+  subtitles.begin(speech_snapshot);
+  subtitles.tick(99);
+  if (!expect(subtitles.visible().empty(), "subtitle typed before playback start")) return 38;
+  subtitles.tick(100);
+  if (!expect(subtitles.visible() == "\xe4\xbd\xa0" && !subtitles.complete(),
+              "first Unicode scalar did not follow the playback clock")) return 39;
+  subtitles.tick(599);
+  if (!expect(subtitles.visible() == "\xe4\xbd\xa0", "subtitle cadence ignored PCM duration")) return 40;
+  subtitles.tick(600);
+  if (!expect(subtitles.visible() == "\xe4\xbd\xa0\xe5\xa5\xbd" && !subtitles.complete(),
+              "second scalar appeared at the wrong duration-derived cadence")) return 41;
+  subtitles.tick(1100);
+  if (!expect(subtitles.complete(), "long PCM duration acknowledged too early")) return 42;
+  speech.acknowledge(speech_snapshot.generation);
+  if (!expect(speech.consumeFrontAcknowledgement(), "completed subtitle did not acknowledge playback")) return 43;
+
+  // An acknowledgement for an old entry cannot consume a prefetched newer
+  // entry, and reset invalidates all pending display work.
+  speech.publish("A", 1, 0);
+  speech.readFrontIfChanged(speech_revision, speech_snapshot);
+  const auto old_generation = speech_snapshot.generation;
+  speech.publish("B", 1, 0);
+  speech.acknowledge(old_generation + 1);
+  if (!expect(!speech.consumeFrontAcknowledgement(), "new-generation ack released old subtitle")) return 44;
+  speech.acknowledge(old_generation);
+  if (!expect(speech.consumeFrontAcknowledgement(), "current subtitle ack was not accepted")) return 45;
+  speech.reset();
+  if (!expect(speech.readFrontIfChanged(speech_revision, speech_snapshot) &&
+                  speech_snapshot.generation == 0 && speech_snapshot.reset_epoch != 0,
+              "reset retained pending subtitle")) return 46;
+
+  // A real layout callback can discover a three-line overflow late. The page
+  // remains held before the next scalar and completion follows the final page.
+  rootlink::ui::SpeechTypewriter speech_paged;
+  speech_paged.setPageLayout([](const std::string& value) { return value.size() <= 3; }, 200);
+  speech_paged.begin({700, 0, "abcd", 100, 0});
+  speech_paged.tick(0);
+  speech_paged.tick(30);
+  speech_paged.tick(60);
+  speech_paged.tick(90);
+  if (!expect(speech_paged.visible() == "abc" && !speech_paged.complete(),
+              "three-line overflow did not defer the next subtitle page")) return 47;
+  speech_paged.tick(289);
+  if (!expect(speech_paged.visible() == "abc", "subtitle page cleared before hold elapsed")) return 48;
+  speech_paged.tick(290);
+  if (!expect(speech_paged.visible() == "d" && !speech_paged.complete(),
+              "page hold was not deducted from the subtitle clock")) return 49;
+  speech_paged.tick(300);
+  if (!expect(speech_paged.complete(), "subtitle did not finish after the deferred page")) return 50;
+
+  rootlink::ui::SpeechTypewriter newline_speech_paged;
+  newline_speech_paged.setPageLayout([](const std::string& value) { return value.size() <= 2; }, 200);
+  newline_speech_paged.begin({701, 0, "ab\nc", 100, 0});
+  newline_speech_paged.tick(0);
+  newline_speech_paged.tick(50);  // b fills page; newline becomes the separator.
+  newline_speech_paged.tick(250);
+  newline_speech_paged.tick(275);
+  if (!expect(newline_speech_paged.visible() == "c",
+              "cross-page newline created a blank subtitle page")) return 51;
+
+  // Real UTF-8 Chinese plus explicit page-boundary newlines: each page holds
+  // exactly three glyphs, and the two consumed newlines still count toward
+  // the segment's Unicode schedule.
+  rootlink::ui::SpeechTypewriter chinese_pages;
+  chinese_pages.setPageLayout([](const std::string& value) { return value.size() <= 9; }, 200);
+  chinese_pages.begin({702, 0, u8"甲乙丙\n丁戊己\n庚", 0, 0});
+  chinese_pages.tick(0);
+  if (!expect(chinese_pages.visible() == u8"甲乙丙", "first Chinese subtitle page was wrong")) return 52;
+  chinese_pages.tick(200);
+  if (!expect(chinese_pages.visible() == u8"丁戊己", "second Chinese subtitle page was blank or wrong")) return 53;
+  chinese_pages.tick(400);
+  if (!expect(chinese_pages.visible() == u8"庚" && chinese_pages.complete(),
+              "third Chinese subtitle page did not complete")) return 54;
   std::cout << "UI mapping, transitions and error latch passed\n";
 }

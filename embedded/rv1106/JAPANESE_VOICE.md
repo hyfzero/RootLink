@@ -11,7 +11,7 @@ DASHSCOPE_API_KEY=你的北京地域百炼密钥
 DEEPSEEK_API_KEY=你的DeepSeek密钥
 ```
 
-`DASHSCOPE_API_KEY` 用于 ASR、创建音色和 TTS；`DEEPSEEK_API_KEY` 用于人格对话及独立翻译。每轮新增一次翻译调用，会增加等待时间和相应模型用量。翻译复用 `LLM_PROVIDER / LLM_MODEL / LLM_BASE_URL` 及其认证配置。
+`DASHSCOPE_API_KEY` 用于 ASR、创建音色和 TTS；`DEEPSEEK_API_KEY` 用于人格对话及独立翻译。无界面每轮新增一次翻译调用；界面同步模式按句段分别翻译和合成，会增加请求次数和模型用量。播放当前段时提前合成下一段，以减少句间等待，但不保证无缝衔接；分段也可能影响语气和上下文连贯性。翻译复用 `LLM_PROVIDER / LLM_MODEL / LLM_BASE_URL` 及其认证配置。
 
 在当前运行配置 `build/windows-cloud/python-ui.conf` 中更新以下部分即可。**先获得真实音色 ID，再替换模型和音色；不要把占位符当作 ID。**
 

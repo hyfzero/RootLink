@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 #include <functional>
+#include <deque>
 
 namespace rootlink::ui {
 struct DialogueSnapshot {
@@ -139,6 +140,136 @@ class DialogueTypewriter {
   unsigned page_hold_ms_{2000};
   std::uint64_t page_due_ms_{0};
   std::function<bool(const std::string&)> fits_page_;
+  std::string target_, visible_;
+};
+
+// A sentence is published only after its PCM has reached the playback device.
+// The UI owns the acknowledgement: a stale acknowledgement can never remove a
+// newer sentence because each entry has a monotonic generation.
+struct SpeechSegmentSnapshot {
+  std::uint64_t generation{0};
+  std::uint64_t reset_epoch{0};
+  std::string text;
+  std::uint64_t duration_ms{0};
+  std::uint64_t started_ms{0};
+};
+
+class SpeechMailbox {
+ public:
+  void reset() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    pending_.clear();
+    acknowledged_ = 0;
+    ++reset_epoch_;
+    ++revision_;
+  }
+  void publish(std::string text, std::uint64_t duration_ms, std::uint64_t started_ms) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    pending_.push_back({++generation_, reset_epoch_, std::move(text), duration_ms, started_ms});
+    ++revision_;
+  }
+  bool readFrontIfChanged(std::uint64_t& seen, SpeechSegmentSnapshot& value) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (seen == revision_) return false;
+    if (pending_.empty()) value = {};
+    else value = pending_.front();
+    value.reset_epoch = reset_epoch_;
+    seen = revision_;
+    return true;
+  }
+  void acknowledge(std::uint64_t generation) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!pending_.empty() && pending_.front().generation == generation)
+      acknowledged_ = generation;
+  }
+  // Called by the voice worker after drain. It consumes at most the front
+  // entry, so an acknowledgement from a prior generation cannot release one
+  // that was prefetched later.
+  bool consumeFrontAcknowledgement() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (pending_.empty() || acknowledged_ != pending_.front().generation) return false;
+    pending_.pop_front();
+    acknowledged_ = 0;
+    ++revision_;
+    return true;
+  }
+ private:
+  mutable std::mutex mutex_;
+  std::deque<SpeechSegmentSnapshot> pending_;
+  std::uint64_t generation_{0};
+  std::uint64_t acknowledged_{0};
+  std::uint64_t reset_epoch_{0};
+  std::uint64_t revision_{1};
+};
+
+// Sentence-local deterministic typewriter. Its cadence is derived from the
+// PCM duration and Unicode scalar count. Page holds pause this clock: without
+// a predictive layout pass, a late font-wrap adds its hold to the display
+// duration, so the runtime waits rather than overwriting unread text.
+class SpeechTypewriter {
+ public:
+  void setPageLayout(std::function<bool(const std::string&)> fits, unsigned hold_ms) {
+    fits_page_ = std::move(fits); page_hold_ms_ = hold_ms;
+  }
+  void begin(const SpeechSegmentSnapshot& segment) {
+    generation_ = segment.generation; target_ = segment.text; visible_.clear();
+    cursor_ = shown_ = 0; total_ = scalarCount(target_); duration_ms_ = segment.duration_ms;
+    started_ms_ = segment.started_ms; last_ms_ = started_ms_; typing_ms_ = 0;
+    page_waiting_ = false; completed_ = false;
+  }
+  void clear() { generation_ = 0; target_.clear(); visible_.clear(); cursor_ = shown_ = total_ = 0;
+                 page_waiting_ = completed_ = false; }
+  bool active() const { return generation_ != 0; }
+  std::uint64_t generation() const { return generation_; }
+  bool tick(std::uint64_t now_ms) {
+    if (!active() || completed_ || now_ms < started_ms_) return false;
+    if (page_waiting_) {
+      if (now_ms < page_due_ms_) return false;
+      visible_.clear(); page_waiting_ = false; last_ms_ = now_ms;
+    }
+    typing_ms_ += now_ms - last_ms_;
+    last_ms_ = now_ms;
+    const auto wanted = duration_ms_ == 0 ? total_ :
+        std::min(total_, static_cast<std::size_t>((typing_ms_ * total_) / duration_ms_ + 1));
+    bool changed = false;
+    while (shown_ < wanted && cursor_ < target_.size()) {
+      const auto bytes = scalarBytes(target_, cursor_);
+      const auto scalar = target_.substr(cursor_, bytes);
+      if (!visible_.empty() && fits_page_ && !fits_page_(visible_ + scalar)) {
+        // A newline at an already-full page is the page separator, not the
+        // first (blank) line of the next page.
+        if (scalar == "\n") { cursor_ += bytes; ++shown_; }
+        page_waiting_ = true; page_due_ms_ = now_ms + page_hold_ms_; break;
+      }
+      visible_ += scalar; cursor_ += bytes; ++shown_; changed = true;
+    }
+    if (cursor_ == target_.size() && !page_waiting_ &&
+        (duration_ms_ == 0 || typing_ms_ >= duration_ms_)) completed_ = true;
+    return changed;
+  }
+  bool complete() const { return completed_; }
+  const std::string& visible() const { return visible_; }
+ private:
+  static std::size_t scalarBytes(const std::string& text, std::size_t offset) {
+    const auto first = static_cast<unsigned char>(text[offset]);
+    const std::size_t bytes = first < 0x80 ? 1 : first >= 0xc2 && first <= 0xdf ? 2 :
+        first >= 0xe0 && first <= 0xef ? 3 : first >= 0xf0 && first <= 0xf4 ? 4 : 1;
+    if (offset + bytes > text.size()) return 1;
+    for (std::size_t i = 1; i < bytes; ++i)
+      if ((static_cast<unsigned char>(text[offset + i]) & 0xc0) != 0x80) return 1;
+    return bytes;
+  }
+  static std::size_t scalarCount(const std::string& text) {
+    std::size_t count = 0;
+    for (std::size_t offset = 0; offset < text.size(); ++count) offset += scalarBytes(text, offset);
+    return count;
+  }
+  std::function<bool(const std::string&)> fits_page_;
+  std::uint64_t generation_{0}, duration_ms_{0}, started_ms_{0}, last_ms_{0},
+      typing_ms_{0}, page_due_ms_{0};
+  std::size_t cursor_{0}, shown_{0}, total_{0};
+  unsigned page_hold_ms_{2000};
+  bool page_waiting_{false}, completed_{false};
   std::string target_, visible_;
 };
 }

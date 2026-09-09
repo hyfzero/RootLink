@@ -29,6 +29,22 @@ int main(int argc, char** argv) {
   }
   if (!view.dialogueFits("第一行\n第二行\n第三行") ||
       view.dialogueFits("第一行\n第二行\n第三行\n第四行")) return 20;
+  // Exercise duration-driven subtitles against the actual font/layout, not
+  // just a character-count approximation of the three-line panel.
+  rootlink::ui::SpeechTypewriter synced;
+  synced.setPageLayout([&view](const std::string& value) { return view.dialogueFits(value); }, 2000);
+  const std::string spoken = "先把条件说清楚。一次实验还不能证明你的结论。";
+  rootlink::ui::SpeechSegmentSnapshot spoken_segment;
+  spoken_segment.generation = 1;
+  spoken_segment.text = spoken;
+  spoken_segment.duration_ms = 2000;
+  synced.begin(spoken_segment);
+  for (std::uint64_t now = 0; now <= 2000; now += 10) {
+    synced.tick(now);
+    if (!view.dialogueFits(synced.visible())) return 23;
+    if (now < 2000 && synced.complete()) return 24;
+  }
+  if (!synced.complete() || synced.visible() != spoken) return 25;
   view.setDialogue("“七个豆腐”？——这是什么奇怪的谜题？\n先把完整句子说清楚……");
   for (int tick = 0; tick < 8; ++tick) {
     if (!view.tick(rootlink::ui::DisplayState::Idle)) return 9;
