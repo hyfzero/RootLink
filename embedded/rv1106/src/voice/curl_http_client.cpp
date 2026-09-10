@@ -14,6 +14,8 @@
 namespace rootlink::voice {
 namespace {
 
+constexpr char kSystemCaBundle[] = "/etc/ssl/certs/ca-certificates.crt";
+
 struct TransferContext {
   HttpResponse* response{nullptr};
   const HttpRequest* request{nullptr};
@@ -168,6 +170,11 @@ audio::Result<HttpResponse> CurlHttpClient::perform(
   curl_easy_setopt(handle, CURLOPT_TIMEOUT_MS, request.total_timeout_ms);
   curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, 1L);
   curl_easy_setopt(handle, CURLOPT_SSL_VERIFYHOST, 2L);
+  // Buildroot's default CAPATH may exist without hashed certificate entries.
+  // The deployment bundle always installs this PEM file, so select it
+  // explicitly instead of relying on libcurl's compile-time default.
+  if (std::ifstream(kSystemCaBundle).good())
+    curl_easy_setopt(handle, CURLOPT_CAINFO, kSystemCaBundle);
   // 带认证的 POST 不跟随重定向，避免自定义密钥头跨主机泄露；无认证音频 GET 可跳转。
   curl_easy_setopt(handle, CURLOPT_FOLLOWLOCATION, request.method == "GET" ? 1L : 0L);
   curl_easy_setopt(handle, CURLOPT_MAXREDIRS, 3L);

@@ -6,11 +6,14 @@
 
 归档是匹配 SDK 的 rootfs overlay。推荐合入该 SDK 的固件根文件系统；也可在确认板端使用相同 SDK/rootfs 后安装。包内含动态加载器、libc 和 OpenSSL，不能覆盖到不匹配的系统。已有安装应先备份 `/etc/rootlink` 和 `/data/rootlink`；退出正在运行的 DeskBot/RootLink，避免争用屏幕和声卡。
 
-将 `rootlink-rv1106-20260910-r2.tar.gz` 复制到板端 `/tmp` 后，以 root 执行：
+将 `rootlink-rv1106-20260910-r3.tar.gz` 复制到板端持久存储（建议
+`/userdata`）后，以 root 执行。不要长期将归档留在 `/tmp`：该板的
+`/tmp` 是内存文件系统，13 MiB 的归档会挤占 Python 人格进程所需内存。
 
 ```sh
 # BusyBox tar 不一定支持 GNU tar 的 -z；明确使用 gzip 解压。
-gzip -dc /tmp/rootlink-rv1106-20260910-r2.tar.gz | tar -xf - -C /
+gzip -dc /userdata/rootlink-rv1106-20260910-r3.tar.gz | tar -xf - -C /
+rm -f /userdata/rootlink-rv1106-20260910-r3.tar.gz
 mkdir -p /data/rootlink/python-data /data/rootlink/sessions
 if [ ! -f /etc/rootlink/rootlink-secrets.env ]; then
   cp /etc/rootlink/rootlink-secrets.env.example /etc/rootlink/rootlink-secrets.env

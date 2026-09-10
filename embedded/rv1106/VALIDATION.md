@@ -128,9 +128,11 @@ build/simulator-alsa-cloud-sdl/rootlink_ui_preview build/ui-preview
 
 ## 2026-09-10：首块 RV1106 实板部署
 
-- 实板通过 BusyBox 的 `gzip -dc <archive> | tar -xf - -C /` 安装 overlay；该 BusyBox 不支持 GNU tar 的 `-z`，安装手册已改为兼容写法。
+- 实板通过 BusyBox 的 `gzip -dc <archive> | tar -xf - -C /` 安装 overlay；该 BusyBox 不支持 GNU tar 的 `-z`，安装手册已改为兼容写法。`/tmp` 是 27 MiB tmpfs，归档会占用运行内存；安装后必须删除，后续手册改为从 `/userdata` 解压并删除归档。
 - 包内 `persona-worker.py` 曾错误地在 `/opt/rootlink` 按开发目录层级访问 `parents[3]`，导致 Python IPC 启动失败。修复为优先导入已安装的 `agent_core`，实板替换入口后 `rootlink-voice doctor --config /etc/rootlink/python.conf` 成功。
-- 实板检查结果：Python 3.11、共享人格核心、OpenSSL 1.1.1v、CA 导入通过；`/dev/fb0` 和 `/dev/input/event0` 存在；ALSA 录放均为 card 0 / device 0（`rv-acodec`）。尚未执行真实录音、云请求、屏幕绘制和声音播放验收。
+- r3 显式将 libcurl 的 `CURLOPT_CAINFO` 指向包内 `/etc/ssl/certs/ca-certificates.crt`。Python requests 对 DashScope HTTPS 校验成功；此前 C++ libcurl 使用不含哈希链接的默认 CA 目录，ASR 请求报 curl 60。
+- 实板检查结果：Python 3.11、共享人格核心、OpenSSL 1.1.1v、CA 导入通过；`/dev/fb0` 和 `/dev/input/event0` 存在；ALSA 录放均为 card 0 / device 0（`rv-acodec`）。删除 `/tmp` 中的安装包后，Python 常驻人格可启动。
+- 真实链路验收成功：`你好` 录音被 ASR 识别；DeepSeek 返回中文人格回复；三段回复翻译为日语并由 CosyVoice 合成、播放。实测 ASR 2431 ms、LLM 总计 1243 ms、TTS 总计 7260 ms、播放 7354 ms，峰值 RSS 9088 KiB，未发生重试或声卡恢复错误。屏幕视觉效果和长时间稳定性仍需人工验收。
 
 ## 待实板和人工验收
 
