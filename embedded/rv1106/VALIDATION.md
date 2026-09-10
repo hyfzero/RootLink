@@ -118,6 +118,20 @@ build/simulator-alsa-cloud-sdl/rootlink_ui_preview build/ui-preview
 - framebuffer 交叉编译完成，`build/rv1106-alsa-cloud-fbdev/rootlink-voice` 为 ELF32 ARM EABI5，解释器 `/lib/ld-uClibc.so.0`。本轮未重新生成完整 Python 部署归档，未执行板端运行。
 - 分段会增加翻译与 TTS 请求次数，也可能影响跨句语气连贯性；预取不能保证网络条件下无间隙。真实云语音、声卡缓冲延迟及板端资源占用仍需验收。
 
+## 2026-09-10：更新完整 RV1106 部署归档
+
+- 归档 `build/rootlink-rv1106-20260910.tar.gz`：13,352,906 bytes；展开普通文件大小合计 33,669,054 bytes（不是运行内存）。SHA256：`7e9b2e77df3e5c05208197693449121bdb7c1db95f701c4aea65df9545206516`，同目录提供 `.sha256`。
+- DeskBot 的 SDK 输出链接与本次 target 均指向 `/home/asd665940056/.cache/amadues/rv1106-buildroot-output`。最新 framebuffer 程序增量编译通过，包内二进制哈希与当前构建一致；归档内 932 个文件逐项对照 manifest 哈希通过，71 个 ELF 已检查为 ARM32。
+- QEMU 使用包内 Python、标准库和目标动态库执行 `check-python-target.py` 成功：32 位、人格核心及 requests 导入成功、OpenSSL 1.1.1v、CA 可加载、未加载 Flet/Pillow。ARM 主程序 `--help` 执行成功，编译后端 ALSA/curl。
+- 包含红莉栖角色及 memories.json、DeepSeek/日语 CosyVoice 配置、models.json、ALSA 数据、字体与 LVGL 许可、安装手册。没有真实密钥和运行历史；源码提交基线为 `c71544c`，manifest 明确记录打包配置存在工作区修改。
+- 本次已替代旧归档，尚未连接实板测试；DeskBot 已运行的事实不作为新增 Python、字幕和云语音链路的实板验收结果。安装见 [RV1106_DEPLOY.md](RV1106_DEPLOY.md)。
+
+## 2026-09-10：首块 RV1106 实板部署
+
+- 实板通过 BusyBox 的 `gzip -dc <archive> | tar -xf - -C /` 安装 overlay；该 BusyBox 不支持 GNU tar 的 `-z`，安装手册已改为兼容写法。
+- 包内 `persona-worker.py` 曾错误地在 `/opt/rootlink` 按开发目录层级访问 `parents[3]`，导致 Python IPC 启动失败。修复为优先导入已安装的 `agent_core`，实板替换入口后 `rootlink-voice doctor --config /etc/rootlink/python.conf` 成功。
+- 实板检查结果：Python 3.11、共享人格核心、OpenSSL 1.1.1v、CA 导入通过；`/dev/fb0` 和 `/dev/input/event0` 存在；ALSA 录放均为 card 0 / device 0（`rv-acodec`）。尚未执行真实录音、云请求、屏幕绘制和声音播放验收。
+
 ## 待实板和人工验收
 
 - 与固件匹配的 SDK/rootfs 部署、framebuffer 像素格式、方向、声卡参数及音画状态同步。

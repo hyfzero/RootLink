@@ -94,6 +94,8 @@ LVGL 使用参考目录现有版本，仅链接核心和选定显示后端，不
 
 ## ARM 部署包
 
+当前板端安装与配置清单见 [RV1106_DEPLOY.md](RV1106_DEPLOY.md)。新包默认包含红莉栖角色（含 memories.json）、DeepSeek 与日语 CosyVoice 配置、模型端点、ALSA 配置和字体许可；不包含真实 API 密钥。旧 `python-arm-release.tar.gz` 不代表最新源码，请重新打包。
+
 必须使用与实际固件匹配的 SDK Buildroot target 根目录，不能打包 WSL 的 x86 解释器。当前使用 SDK Python 3.11、ARM32 EABI5、uClibc。构建时给出 SDK 与 LVGL 路径：
 
 ```sh

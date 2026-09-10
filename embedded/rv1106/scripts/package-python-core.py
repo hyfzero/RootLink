@@ -13,6 +13,16 @@ import subprocess
 import sys
 import tarfile
 
+
+MEMORY_BUCKETS = (
+    'episodic_memories', 'preference_memories', 'fact_memories',
+    'daily_summary_memories', 'monthly_summary_memories',
+)
+CREDENTIAL_KEYS = {
+    'api_key', 'apikey', 'access_token', 'token', 'secret', 'password',
+    'authorization', 'credential', 'credentials',
+}
+
 def command(*args):
     return subprocess.check_output(args, text=True)
 
@@ -20,6 +30,53 @@ def check_arm(path):
     header=command('readelf','-h',str(path))
     if not re.search(r'Class:\s+ELF32',header) or not re.search(r'Machine:\s+ARM\s*$',header,re.M):
         raise RuntimeError(f'Not ARM32: {path}')
+
+
+def read_json_object(path, label):
+    try:
+        value = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(f'Invalid {label}: {path}') from error
+    if not isinstance(value, dict):
+        raise RuntimeError(f'{label} must be a JSON object: {path}')
+    return value
+
+
+def validate_role_seed(role):
+    profile = read_json_object(role/'persona/profile.json', 'role profile')
+    if not isinstance(profile.get('name'), str) or not profile['name'].strip():
+        raise RuntimeError('Role profile requires a nonempty name')
+    memories = read_json_object(role/'persona/memories.json', 'role memories')
+    for bucket in MEMORY_BUCKETS:
+        entries = memories.get(bucket)
+        if not isinstance(entries, list):
+            raise RuntimeError(f'Role memories requires a list: {bucket}')
+        if bucket.endswith('summary_memories') and entries:
+            raise RuntimeError(f'Role seed must not include local history: {bucket}')
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise RuntimeError(f'Role memories contains a non-object entry: {bucket}')
+            context = entry.get('context', '')
+            if not isinstance(context, str) or 'local_user_memory=true' in context.lower():
+                raise RuntimeError('Role seed must not include local user memories')
+
+
+def sanitized_models(source, destination):
+    models = read_json_object(source, 'models.json')
+
+    def reject_credentials(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key.lower() in CREDENTIAL_KEYS and isinstance(item, str) and item.strip():
+                    raise RuntimeError('Refusing to package nonempty model credentials')
+                reject_credentials(item)
+        elif isinstance(value, list):
+            for item in value:
+                reject_credentials(item)
+
+    reject_credentials(models)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(models, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
 def main():
     parser=argparse.ArgumentParser()
@@ -58,10 +115,21 @@ def main():
         licenses=entry.parent/'licenses'
         licenses.mkdir()
         shutil.copy2(args.lvgl_source/'LICENCE.txt',licenses/'LVGL-LICENCE.txt')
-    shutil.copytree(embedded/'config/role-example',out/'opt/rootlink/role-seed')
+    role_seed=project/'characters/kurisu_amadeus'
+    validate_role_seed(role_seed)
+    shutil.copytree(role_seed,out/'opt/rootlink/role-seed',
+        ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
     (out/'etc/rootlink').mkdir(parents=True)
     shutil.copy2(embedded/'config/rv1106-python.conf.example',out/'etc/rootlink/python.conf')
     shutil.copy2(embedded/'config/rootlink-secrets.env.example',out/'etc/rootlink/rootlink-secrets.env.example')
+    sanitized_models(embedded/'config/models.json',out/'data/rootlink/config/models.json')
+    licenses=out/'opt/rootlink/licenses'
+    licenses.mkdir(parents=True,exist_ok=True)
+    shutil.copy2(embedded/'src/ui/fonts/OFL.txt',licenses/'OFL.txt')
+    shutil.copy2(embedded/'RV1106_DEPLOY.md',entry.parent/'README.md')
+    alsa_config=target/'usr/share/alsa'
+    if alsa_config.is_dir():
+        shutil.copytree(alsa_config,out/'usr/share/alsa')
     (out/'etc/ssl/certs').mkdir(parents=True)
     shutil.copy2(site/'certifi/cacert.pem',out/'etc/ssl/certs/ca-certificates.crt')
     # Follow only runtime dependencies, avoiding unrelated SDK/site-package libraries.
@@ -94,8 +162,14 @@ def main():
         'elf_files_checked':len(checked),'board_validated':False,
         'files':{str(p.relative_to(out)):hashlib.sha256(p.read_bytes()).hexdigest()
                  for p in out.rglob('*') if p.is_file()}}
+    try:
+        manifest['source_commit']=command('git','-C',str(project),'rev-parse','HEAD').strip()
+        manifest['source_dirty']=bool(command(
+            'git','-C',str(project),'status','--porcelain').strip())
+    except (OSError, subprocess.CalledProcessError):
+        pass
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2))
-    archive=out.with_suffix('.tar.gz')
+    archive=out.parent/(out.name + '.tar.gz')
     if archive.exists(): raise RuntimeError('Archive already exists')
     with tarfile.open(archive,'w:gz') as tar:
         for p in sorted(out.iterdir()): tar.add(p,arcname=p.name)
