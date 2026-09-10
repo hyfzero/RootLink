@@ -23,6 +23,27 @@ chmod 600 /etc/rootlink/rootlink-secrets.env
 
 编辑 `/etc/rootlink/rootlink-secrets.env`，填写自己的 `DEEPSEEK_API_KEY` 和 `DASHSCOPE_API_KEY`。包内不含真实密钥，不需要填写其他供应商。预设音色 ID 必须属于该 DashScope 账号且处于可用状态；换账号后修改 `/etc/rootlink/python.conf` 的 `TTS_VOICE`。
 
+## SSH 与 Wi-Fi
+
+本次实板联调使用的 SSH 地址为 `172.32.0.93`，账号为 `root`：
+
+```sh
+ssh root@172.32.0.93
+```
+
+密码只在本机的 SSH 登录提示中输入，不能保存到仓库、配置文件、命令历史或部署包。该地址可能随接入网络而变化；无法连接时，在串口或屏幕终端运行 `ifconfig` 确认实际地址。
+
+板端已有 `/etc/wpa_supplicant.conf` 时，按以下顺序联网：
+
+```sh
+ifconfig wlan0 up
+wpa_supplicant -B -c /etc/wpa_supplicant.conf -i wlan0
+udhcpc -i wlan0
+ifconfig wlan0
+```
+
+本次 DHCP 获得的 Wi-Fi 地址为 `192.168.71.72`，网关为 `192.168.71.1`；这是动态地址，下一次租约可能不同。若 `wpa_supplicant` 已运行，不要重复启动它，只需执行最后两条检查当前连接或重新获取租约。
+
 ## 板端配置
 
 主要配置在 `/etc/rootlink/python.conf`，供应商端点配置在 `/data/rootlink/config/models.json`。
